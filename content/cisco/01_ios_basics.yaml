@@ -1,53 +1,92 @@
 title: "Cisco IOS Basics"
-description: "Get started with Cisco IOS — the operating system that powers Cisco routers and switches."
+order: 1
+summary: "Cisco IOS (Internetwork Operating System) is the software that runs on Cisco routers and switches. Learning IOS is the foundation of Cisco networking."
 sections:
-  - heading: "What is Cisco IOS?"
-    text: >
-      Cisco IOS (Internetwork Operating System) is the software that runs on most Cisco
-      routers and switches. It provides a command-line interface (CLI) to configure,
-      monitor, and manage network devices.
+  - heading: "Connecting to a Cisco Device"
+    content: |
+      You can access a Cisco device through:
+      - **Console port** – Direct physical connection using a rollover/console cable
+      - **Telnet** – Unencrypted remote access (not recommended)
+      - **SSH** – Encrypted remote access (preferred)
 
-  - heading: "CLI Modes"
-    table:
-      headers: ["Mode", "Prompt", "Access Command", "Purpose"]
-      rows:
-        - ["User EXEC",       "Router>",         "—",             "Basic monitoring only"]
-        - ["Privileged EXEC", "Router#",         "enable",        "Full monitoring, save configs"]
-        - ["Global Config",   "Router(config)#", "configure terminal", "Make global changes"]
-        - ["Interface Config","Router(config-if)#","interface <id>","Configure a specific interface"]
-        - ["Line Config",     "Router(config-line)#","line vty 0 4","Configure console/VTY lines"]
+      When you first connect, you'll see a prompt like:
+      ```
+      Router>
+      ```
 
-  - heading: "Essential Commands"
-    code: |
-      ! Enter privileged mode
-      Router> enable
+  - heading: "IOS Modes"
+    content: |
+      Cisco IOS has several privilege modes:
 
-      ! Enter global configuration mode
-      Router# configure terminal
+      | Mode | Prompt | Access | Purpose |
+      |---|---|---|---|
+      | User EXEC | `Router>` | Default | Basic monitoring |
+      | Privileged EXEC | `Router#` | `enable` | Full monitoring, exec commands |
+      | Global Config | `Router(config)#` | `configure terminal` | Device-wide changes |
+      | Interface Config | `Router(config-if)#` | `interface <type><#>` | Per-interface settings |
+      | Line Config | `Router(config-line)#` | `line console 0` | Console/VTY settings |
 
-      ! Set the hostname
-      Router(config)# hostname R1
+  - heading: "Essential Navigation Commands"
+    content: |
+      ```
+      Router> enable                    ! Enter privileged EXEC mode
+      Router# configure terminal        ! Enter global config mode
+      Router(config)# exit              ! Go back one level
+      Router(config)# end               ! Return to privileged EXEC
+      Router# disable                   ! Return to user EXEC
+      ```
 
-      ! Show running configuration
-      R1# show running-config
+      **Keyboard shortcuts:**
+      - `Ctrl+C` – Interrupt/abort
+      - `Ctrl+Z` – Return to privileged EXEC
+      - `Tab` – Auto-complete a command
+      - `?` – Show available commands
 
-      ! Show interfaces
-      R1# show ip interface brief
+  - heading: "Show Commands (Your Best Friend)"
+    content: |
+      ```
+      Router# show version              ! IOS version, uptime, hardware
+      Router# show running-config       ! Current active configuration
+      Router# show startup-config       ! Saved configuration in NVRAM
+      Router# show interfaces           ! All interfaces status
+      Router# show ip interface brief   ! Quick interface summary
+      Router# show ip route             ! Routing table
+      Router# show cdp neighbors        ! Discover connected Cisco devices
+      Router# show arp                  ! ARP table
+      ```
 
-      ! Save configuration to NVRAM
-      R1# copy running-config startup-config
+      > **Tip:** `show ip interface brief` is one of the most-used commands for troubleshooting.
 
-      ! Show version info
-      R1# show version
+  - heading: "Basic Configuration"
+    content: |
+      ```
+      Router(config)# hostname R1                      ! Set device name
+      R1(config)# enable secret cisco123               ! Set privileged password
+      R1(config)# service password-encryption          ! Encrypt passwords
+      R1(config)# banner motd # Authorized Access Only! #  ! Login banner
+      R1(config)# no ip domain-lookup                  ! Disable DNS lookup on typos
+      ```
 
-  - heading: "Getting Help in IOS"
-    points:
-      - "Type ? at any point to see available commands."
-      - "Partial completion: type the first few letters and press Tab."
-      - "show ? lists all show commands."
-      - "Use up/down arrows to recall command history."
+  - heading: "Saving Your Configuration"
+    content: |
+      Changes in IOS are applied immediately but are **not saved** unless you explicitly save:
 
-key_takeaways:
-  - "IOS uses a hierarchical CLI with distinct modes (User, Privileged, Config)."
-  - "Always enter Privileged EXEC mode before making or viewing configurations."
-  - "Save with 'copy running-config startup-config' to persist changes after reboot."
+      ```
+      R1# copy running-config startup-config   ! Save config (long form)
+      R1# write memory                         ! Save config (short form)
+      R1# write erase                          ! ⚠️ Erase saved config (careful!)
+      ```
+
+      - **Running config** – stored in RAM (lost on reboot)
+      - **Startup config** – stored in NVRAM (survives reboot)
+
+quiz:
+  - question: "What prompt indicates you are in Global Configuration mode?"
+    options: ["Router>", "Router#", "Router(config)#", "Router(config-if)#"]
+    answer: 2
+    explanation: "Router(config)# is the Global Configuration mode prompt, accessed with 'configure terminal'."
+
+  - question: "Which command saves the running configuration to survive a reboot?"
+    options: ["save config", "copy running-config startup-config", "write running", "save startup"]
+    answer: 1
+    explanation: "'copy running-config startup-config' copies the active config from RAM to NVRAM, where it persists after reboot."

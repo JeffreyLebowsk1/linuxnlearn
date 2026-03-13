@@ -1,86 +1,86 @@
 {% extends "base.html" %}
-{% block title %}{{ lesson.title }} — {{ cat_info.title }} — LinuxNLearn{% endblock %}
+{% block title %}{{ lesson.title }} — {{ meta.title }} — LinuxNLearn{% endblock %}
+
 {% block content %}
-<div class="page-header category-header-{{ cat_info.color }}">
-    <div class="page-header-content">
-        <a href="{{ url_for('category', category=category) }}" class="back-link">← {{ cat_info.title }}</a>
+<div class="page-container lesson-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <a href="{{ url_for('category', category=category) }}">{{ meta.title }}</a>
+        <span>›</span>
+        <span>{{ lesson.title }}</span>
+    </div>
+
+    <div class="lesson-header">
+        <span class="lesson-badge category-{{ meta.color }}">{{ meta.icon }} {{ meta.title }}</span>
         <h1>{{ lesson.title }}</h1>
-        <p>{{ lesson.description }}</p>
+        <p class="lesson-summary">{{ lesson.summary }}</p>
+    </div>
+
+    <div class="lesson-body">
+        {% for section in lesson.sections %}
+        <div class="lesson-section">
+            <h2>{{ section.heading }}</h2>
+            <div class="section-content">{{ section.content | markdown_to_html }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if lesson.quiz %}
+    <div class="quiz-section">
+        <h2>🧠 Knowledge Check</h2>
+        <p>Test your understanding of this lesson.</p>
+        <div class="quiz-questions" id="quiz">
+            {% for q in lesson.quiz %}
+            <div class="quiz-question" data-correct="{{ q.answer }}">
+                <p class="question-text">{{ loop.index }}. {{ q.question }}</p>
+                <div class="quiz-options">
+                    {% for option in q.options %}
+                    <button class="quiz-option" data-index="{{ loop.index0 }}">{{ option }}</button>
+                    {% endfor %}
+                </div>
+                <div class="quiz-feedback hidden">
+                    <p class="explanation">{{ q.explanation }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="lesson-ai-prompt">
+        <div class="ai-prompt-content">
+            <span>🤖</span>
+            <div>
+                <strong>Have a question about this lesson?</strong>
+                <p>Ask the AI assistant for more details, examples, or clarifications.</p>
+            </div>
+            <a href="{{ url_for('assistant') }}?context={{ category }}" class="btn btn-ai-small">Ask AI</a>
+        </div>
+    </div>
+
+    <div class="lesson-nav">
+        <div class="lesson-nav-prev">
+            {% if prev_lesson %}
+            <a href="{{ url_for('lesson', category=category, slug=prev_lesson.slug) }}" class="btn btn-nav">
+                ← {{ prev_lesson.title }}
+            </a>
+            {% endif %}
+        </div>
+        <a href="{{ url_for('category', category=category) }}" class="btn btn-outline">
+            📚 All {{ meta.title }} Lessons
+        </a>
+        <div class="lesson-nav-next">
+            {% if next_lesson %}
+            <a href="{{ url_for('lesson', category=category, slug=next_lesson.slug) }}" class="btn btn-nav">
+                {{ next_lesson.title }} →
+            </a>
+            {% endif %}
+        </div>
     </div>
 </div>
-
-<div class="lesson-layout">
-    <article class="lesson-content">
-        {% for section in lesson.sections %}
-        <section class="content-section">
-            <h2>{{ section.heading }}</h2>
-            {% if section.text %}
-            <p>{{ section.text }}</p>
-            {% endif %}
-            {% if section.points %}
-            <ul>
-                {% for point in section.points %}
-                <li>{{ point }}</li>
-                {% endfor %}
-            </ul>
-            {% endif %}
-            {% if section.code %}
-            <pre><code>{{ section.code }}</code></pre>
-            {% endif %}
-            {% if section.table %}
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            {% for header in section.table.headers %}
-                            <th>{{ header }}</th>
-                            {% endfor %}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in section.table.rows %}
-                        <tr>
-                            {% for cell in row %}
-                            <td>{{ cell }}</td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-        </section>
-        {% endfor %}
-
-        {% if lesson.key_takeaways %}
-        <section class="content-section takeaways">
-            <h2>🎯 Key Takeaways</h2>
-            <ul>
-                {% for point in lesson.key_takeaways %}
-                <li>{{ point }}</li>
-                {% endfor %}
-            </ul>
-        </section>
-        {% endif %}
-    </article>
-
-    <aside class="lesson-sidebar">
-        <div class="ai-chat-widget">
-            <h3>💬 Ask the AI</h3>
-            <p>Have a question about this lesson?</p>
-            <div id="chat-messages" class="mini-chat-messages"></div>
-            <div class="mini-chat-input">
-                <input type="text" id="chat-input" placeholder="Ask a question..." />
-                <button id="chat-send" class="btn btn-primary btn-sm">Send</button>
-            </div>
-        </div>
-    </aside>
-</div>
 {% endblock %}
+
 {% block scripts %}
-<script>
-    const CHAT_CATEGORY = "{{ cat_info.title }}";
-    const CHAT_LESSON = "{{ lesson.title }}";
-</script>
-<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
 {% endblock %}

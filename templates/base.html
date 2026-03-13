@@ -9,13 +9,18 @@
 <body>
     <nav class="navbar">
         <div class="nav-container">
-            <a href="{{ url_for('index') }}" class="nav-brand">🖥️ LinuxNLearn</a>
-            <ul class="nav-links">
-                {% for key, cat in categories.items() %}
-                <li><a href="{{ url_for('category', category=key) }}">{{ cat.icon }} {{ cat.title }}</a></li>
-                {% endfor %}
-                <li><a href="{{ url_for('chat') }}">💬 AI Chat</a></li>
-            </ul>
+            <a href="{{ url_for('index') }}" class="nav-brand">
+                🖥️ LinuxNLearn
+            </a>
+            <div class="nav-links">
+                <a href="{{ url_for('index') }}">Home</a>
+                <a href="{{ url_for('category', category='networking') }}">Networking</a>
+                <a href="{{ url_for('category', category='cisco') }}">Cisco</a>
+                <a href="{{ url_for('category', category='python') }}">Python</a>
+                <a href="{{ url_for('category', category='linux') }}">Linux</a>
+                <a href="{{ url_for('assignments_home') }}" class="btn-assignments">📝 Assignments</a>
+                <a href="{{ url_for('assistant') }}" class="btn-ai">🤖 AI Assistant</a>
+            </div>
         </div>
     </nav>
 
@@ -24,10 +29,13 @@
     </main>
 
     <footer class="footer">
-        <p>LinuxNLearn — AI-assisted IT education. Always expanding.</p>
+        <div class="footer-container">
+            <p>LinuxNLearn — AI-assisted education for networking, Cisco, Python &amp; Linux</p>
+            <p>Ever-expanding as you learn 🚀</p>
+        </div>
     </footer>
 
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

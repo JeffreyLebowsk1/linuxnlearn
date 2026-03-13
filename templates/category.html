@@ -1,32 +1,45 @@
 {% extends "base.html" %}
-{% block title %}{{ cat_info.title }} — LinuxNLearn{% endblock %}
+{% block title %}{{ meta.title }} — LinuxNLearn{% endblock %}
+
 {% block content %}
-<div class="page-header category-header-{{ cat_info.color }}">
-    <div class="page-header-content">
-        <span class="category-icon-large">{{ cat_info.icon }}</span>
+<div class="page-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <span>{{ meta.title }}</span>
+    </div>
+
+    <div class="category-header category-{{ meta.color }}">
+        <div class="category-header-icon">{{ meta.icon }}</div>
         <div>
-            <h1>{{ cat_info.title }}</h1>
-            <p>{{ cat_info.description }}</p>
+            <h1>{{ meta.title }}</h1>
+            <p>{{ meta.description }}</p>
         </div>
     </div>
-</div>
 
-<section class="lessons-section">
     {% if lessons %}
-    <div class="lessons-grid">
+    <div class="lessons-list">
         {% for lesson in lessons %}
-        <a href="{{ url_for('lesson', category=category, slug=lesson.slug) }}" class="lesson-card">
-            <div class="lesson-order">Lesson {{ loop.index }}</div>
-            <h3>{{ lesson.title }}</h3>
-            <p>{{ lesson.description }}</p>
-            <span class="lesson-cta">Read Lesson →</span>
+        <a href="{{ url_for('lesson', category=category, slug=lesson.slug) }}" class="lesson-item">
+            <div class="lesson-number">{{ loop.index }}</div>
+            <div class="lesson-info">
+                <h3>{{ lesson.title }}</h3>
+                <p>{{ lesson.summary }}</p>
+            </div>
+            <div class="lesson-arrow">→</div>
         </a>
         {% endfor %}
     </div>
     {% else %}
     <div class="empty-state">
-        <p>No lessons available yet. Check back soon!</p>
+        <p>🚧 Lessons for this category are coming soon!</p>
+        <p>In the meantime, ask the <a href="{{ url_for('assistant') }}">AI Assistant</a> your questions.</p>
     </div>
     {% endif %}
-</section>
+
+    <div class="category-ai-prompt">
+        <p>Have a question about {{ meta.title }}?</p>
+        <a href="{{ url_for('assistant') }}?context={{ category }}" class="btn btn-ai-small">🤖 Ask AI Assistant</a>
+    </div>
+</div>
 {% endblock %}

@@ -1,0 +1,94 @@
+title: "Linux Networking Commands Assignment"
+category: "linux"
+difficulty: "beginner"
+estimated_minutes: 20
+related_lesson: "02_networking_commands"
+instructions: |
+  Demonstrate your knowledge of Linux networking commands. Write the exact commands
+  you would run in a Bash shell. Explain your reasoning where asked.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "Which command shows all listening TCP and UDP ports on a modern Linux system?"
+    options:
+      - "netstat -rn"
+      - "ip route show"
+      - "ss -tuln"
+      - "ifconfig -a"
+    answer: 2
+    explanation: "'ss -tuln' shows all listening (-l) TCP (-t) and UDP (-u) sockets with numeric port numbers (-n). It is the modern replacement for 'netstat -tuln'."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "You want to verify the default gateway configured on a Linux host. Which command shows it?"
+    options:
+      - "ping -g"
+      - "ip route show"
+      - "ss -r"
+      - "dig +gateway"
+    answer: 1
+    explanation: "'ip route show' displays the routing table, including the default gateway line: 'default via <gateway-ip> dev <interface>'."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      A Linux server cannot reach the internet. Write the sequence of shell commands
+      you would run to systematically diagnose the problem, starting from the most
+      basic check and working up to the application layer. Briefly explain each command.
+    rubric: |
+      Award up to 20 points. Expect a layered approach:
+      1. Check interface/IP: ip addr show or ifconfig (3 pts)
+      2. Check gateway reachability: ping <gateway> (3 pts)
+      3. Check DNS resolution: dig google.com or nslookup google.com (4 pts)
+      4. Check internet reachability by IP: ping 8.8.8.8 (3 pts)
+      5. Check routing table: ip route show (3 pts)
+      6. Optional bonus: check firewall (iptables -L / ufw status), traceroute, curl (4 pts)
+      Award partial credit for reasonable alternative commands.
+    sample_answer: |
+      # 1. Check local interface has an IP
+      ip addr show eth0
+
+      # 2. Find the gateway and test reachability
+      ip route show                     # shows "default via X.X.X.X"
+      ping -c 3 <gateway-ip>
+
+      # 3. Test internet reachability by IP (bypasses DNS issues)
+      ping -c 3 8.8.8.8
+
+      # 4. Test DNS resolution
+      dig google.com +short
+
+      # 5. Test full HTTP connectivity
+      curl -sv https://google.com 2>&1 | head -20
+
+      # 6. Check firewall rules
+      sudo iptables -L -n -v
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Explain the difference between 'ping 8.8.8.8' succeeding but 'ping google.com' failing.
+      What does this tell you about the network issue, and which command would you run next to investigate?
+    rubric: |
+      Full marks require:
+      1. Understanding that ping 8.8.8.8 tests IP connectivity (Layer 3 works).
+      2. Understanding that ping google.com requires DNS resolution (if it fails, DNS is broken).
+      3. Conclusion: DNS resolution is the problem, not network connectivity.
+      4. Next step: run 'dig google.com', 'nslookup google.com', or check /etc/resolv.conf.
+    sample_answer: |
+      If 'ping 8.8.8.8' works but 'ping google.com' fails, it means:
+      - IP connectivity is working fine (Layer 3 is up, gateway is reachable, internet is accessible).
+      - DNS resolution is failing — the system cannot resolve the hostname 'google.com' to an IP address.
+
+      This is a DNS issue, not a network connectivity issue.
+
+      Next steps to investigate:
+        dig google.com            # check DNS resolution directly
+        cat /etc/resolv.conf      # check which DNS servers are configured
+        ping 1.1.1.1              # try a different DNS server IP to rule out routing
+        dig @8.8.8.8 google.com   # query Google DNS directly to test if the issue is local config

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Page Not Found — LinuxNLearn{% endblock %}
+
+{% block content %}
+<div class="page-container not-found">
+    <div class="not-found-content">
+        <div class="not-found-icon">🔍</div>
+        <h1>404 — Page Not Found</h1>
+        <p>The lesson or page you're looking for doesn't exist yet.</p>
+        <div class="not-found-actions">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">Go Home</a>
+            <a href="{{ url_for('assistant') }}" class="btn btn-secondary">Ask AI Assistant</a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,41 +1,98 @@
-title: "TCP/IP Fundamentals"
-description: "Learn how the TCP/IP protocol suite powers the modern internet."
+title: "TCP/IP and IP Addressing"
+order: 2
+summary: "TCP/IP is the foundational protocol suite of the internet. Understanding IP addressing is essential for any networking professional."
 sections:
-  - heading: "TCP/IP vs OSI"
-    text: >
-      While the OSI model has 7 layers, the TCP/IP model (also called the Internet model)
-      condenses them into 4 layers. TCP/IP is the actual protocol suite used on the internet.
-    table:
-      headers: ["TCP/IP Layer", "Corresponding OSI Layers", "Key Protocols"]
-      rows:
-        - ["Application",  "5, 6, 7", "HTTP, HTTPS, DNS, FTP, SMTP, SSH"]
-        - ["Transport",    "4",       "TCP, UDP"]
-        - ["Internet",     "3",       "IP (v4/v6), ICMP, ARP"]
-        - ["Network Access","1, 2",   "Ethernet, Wi-Fi"]
+  - heading: "What is TCP/IP?"
+    content: |
+      **TCP/IP** (Transmission Control Protocol/Internet Protocol) is the communication protocol suite that powers the internet and most modern networks. While the OSI model has 7 layers, TCP/IP uses a simplified **4-layer model**:
 
-  - heading: "TCP vs UDP"
-    text: "The two main transport protocols serve different needs:"
-    table:
-      headers: ["Feature", "TCP", "UDP"]
-      rows:
-        - ["Connection",   "Connection-oriented (3-way handshake)", "Connectionless"]
-        - ["Reliability",  "Guaranteed delivery, ordering",         "Best-effort, no guarantee"]
-        - ["Speed",        "Slower (overhead)",                     "Faster (minimal overhead)"]
-        - ["Use Cases",    "Web browsing, email, file transfers",   "DNS, video streaming, VoIP"]
+      | TCP/IP Layer | OSI Equivalent | Examples |
+      |---|---|---|
+      | Application | Layers 5-7 | HTTP, DNS, FTP |
+      | Transport | Layer 4 | TCP, UDP |
+      | Internet | Layer 3 | IP, ICMP |
+      | Network Access | Layers 1-2 | Ethernet, Wi-Fi |
 
-  - heading: "The TCP 3-Way Handshake"
-    points:
-      - "SYN — Client sends a synchronise (SYN) segment to the server."
-      - "SYN-ACK — Server acknowledges with SYN-ACK."
-      - "ACK — Client sends a final ACK to establish the connection."
+  - heading: "IPv4 Addresses"
+    content: |
+      An **IPv4 address** is a 32-bit number written in dotted decimal notation:
 
-  - heading: "IP Addresses"
-    text: >
-      Every device on an IP network has an IP address. IPv4 addresses are 32-bit numbers
-      written as four octets (e.g., 192.168.1.1). IPv6 uses 128-bit addresses in hex
-      (e.g., 2001:db8::1).
+      ```
+      192.168.1.100
+      ```
 
-key_takeaways:
-  - "TCP/IP is a 4-layer model that maps to the 7-layer OSI model."
-  - "TCP provides reliable, ordered delivery; UDP trades reliability for speed."
-  - "The TCP 3-way handshake establishes a connection before data transfer."
+      Each section (octet) is 8 bits, ranging from 0–255.
+
+      **Classes of IPv4 addresses:**
+      | Class | Range | Default Mask | Use |
+      |---|---|---|---|
+      | A | 1.0.0.0 – 126.x.x.x | /8 | Large networks |
+      | B | 128.0.0.0 – 191.255.x.x | /16 | Medium networks |
+      | C | 192.0.0.0 – 223.255.255.x | /24 | Small networks |
+
+  - heading: "Private vs Public IP Ranges"
+    content: |
+      **Private IP addresses** are used inside local networks and are not routable on the internet:
+
+      | Range | CIDR | Common Use |
+      |---|---|---|
+      | 10.0.0.0 – 10.255.255.255 | 10.0.0.0/8 | Large enterprises |
+      | 172.16.0.0 – 172.31.255.255 | 172.16.0.0/12 | Medium networks |
+      | 192.168.0.0 – 192.168.255.255 | 192.168.0.0/16 | Home/small office |
+
+      **NAT (Network Address Translation)** translates private IPs to public IPs for internet access.
+
+  - heading: "Subnet Masks"
+    content: |
+      A **subnet mask** defines the network and host portions of an IP address.
+
+      ```
+      IP Address:   192.168.1.100   = 11000000.10101000.00000001.01100100
+      Subnet Mask:  255.255.255.0   = 11111111.11111111.11111111.00000000
+      Network:      192.168.1.0
+      Host Range:   192.168.1.1 – 192.168.1.254
+      Broadcast:    192.168.1.255
+      ```
+
+      In CIDR notation, `255.255.255.0` is written as `/24` (24 bits for the network).
+
+  - heading: "Common Subnet Masks"
+    content: |
+      | CIDR | Subnet Mask | # of Hosts |
+      |---|---|---|
+      | /8 | 255.0.0.0 | 16,777,214 |
+      | /16 | 255.255.0.0 | 65,534 |
+      | /24 | 255.255.255.0 | 254 |
+      | /25 | 255.255.255.128 | 126 |
+      | /26 | 255.255.255.192 | 62 |
+      | /27 | 255.255.255.224 | 30 |
+      | /28 | 255.255.255.240 | 14 |
+      | /30 | 255.255.255.252 | 2 |
+
+      > **/30 subnets** are commonly used for point-to-point links between routers.
+
+  - heading: "IPv6 Basics"
+    content: |
+      **IPv6** uses 128-bit addresses, providing a virtually unlimited address space.
+
+      ```
+      IPv6 Example: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+      Shortened:    2001:db8:85a3::8a2e:370:7334
+      ```
+
+      Key differences from IPv4:
+      - No broadcast (uses multicast instead)
+      - Built-in IPsec support
+      - Link-local address: `fe80::/10`
+      - Loopback: `::1`
+
+quiz:
+  - question: "What is the default subnet mask for a Class C network?"
+    options: ["255.0.0.0", "255.255.0.0", "255.255.255.0", "255.255.255.255"]
+    answer: 2
+    explanation: "Class C networks use a /24 mask (255.255.255.0), which allows for 254 usable hosts."
+
+  - question: "Which IP range is reserved for private use in home networks?"
+    options: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]
+    answer: 2
+    explanation: "192.168.0.0/16 is the private range most commonly used in home and small office networks."

@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}{{ assignment.title }} — {{ meta.title }} — LinuxNLearn{% endblock %}
+
+{% block content %}
+<div class="page-container lesson-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <a href="{{ url_for('assignments_home') }}">Assignments</a>
+        <span>›</span>
+        <a href="{{ url_for('assignments', category=category) }}">{{ meta.title }}</a>
+        <span>›</span>
+        <span>{{ assignment.title }}</span>
+    </div>
+
+    <div class="lesson-header">
+        <span class="lesson-badge category-{{ meta.color }}">{{ meta.icon }} {{ meta.title }}</span>
+        <h1>{{ assignment.title }}</h1>
+        <div class="assignment-header-meta">
+            <span class="tag tag-difficulty tag-{{ assignment.difficulty }}">{{ assignment.difficulty | title }}</span>
+            <span class="tag">⏱ ~{{ assignment.estimated_minutes }} min</span>
+            <span class="tag">{{ assignment.tasks | length }} task{{ 's' if assignment.tasks | length != 1 else '' }}</span>
+            {% if assignment.related_lesson %}
+            <a href="{{ url_for('lesson', category=category, slug=assignment.related_lesson) }}" class="tag tag-link">
+                📖 Related lesson
+            </a>
+            {% endif %}
+        </div>
+        <div class="assignment-instructions">
+            {{ assignment.instructions | markdown_to_html }}
+        </div>
+    </div>
+
+    {# ------------------------------------------------------------------ #}
+    {# Assignment form                                                      #}
+    {# ------------------------------------------------------------------ #}
+    <form id="assignment-form" data-category="{{ category }}" data-slug="{{ assignment.slug }}">
+        {% for task in assignment.tasks %}
+        <div class="assignment-task" id="task-{{ task.id }}">
+            <div class="task-header">
+                <span class="task-number">Task {{ loop.index }}</span>
+                <span class="task-points">{{ task.points }} pts</span>
+                <span class="task-type-badge task-type-{{ task.type }}">
+                    {% if task.type == 'multiple_choice' %}Multiple Choice
+                    {% elif task.type == 'short_answer' %}Short Answer
+                    {% elif task.type == 'practical' %}Practical
+                    {% elif task.type == 'code' %}Code
+                    {% else %}{{ task.type | replace('_', ' ') | title }}{% endif %}
+                </span>
+            </div>
+
+            <div class="task-question">
+                {{ task.question | markdown_to_html }}
+            </div>
+
+            {# ---- Multiple choice ---- #}
+            {% if task.type == 'multiple_choice' %}
+            <div class="mc-options" data-task-id="{{ task.id }}">
+                {% for option in task.options %}
+                <label class="mc-option">
+                    <input type="radio" name="task_{{ task.id }}" value="{{ loop.index0 }}">
+                    <span>{{ option }}</span>
+                </label>
+                {% endfor %}
+            </div>
+
+            {# ---- Open-ended (short_answer / practical / code) ---- #}
+            {% else %}
+            <textarea
+                class="open-answer"
+                name="task_{{ task.id }}"
+                placeholder="{% if task.type == 'code' %}Write your Python code here...{% elif task.type == 'practical' %}Write your commands / configuration here...{% else %}Write your answer here...{% endif %}"
+                rows="8"
+                spellcheck="false"
+            ></textarea>
+            {% endif %}
+
+            {# Per-task feedback panel — hidden until graded #}
+            <div class="task-feedback hidden" id="feedback-{{ task.id }}">
+                <div class="feedback-score">
+                    <span class="feedback-score-value"></span>
+                    <span class="feedback-score-label"></span>
+                </div>
+                <div class="feedback-text"></div>
+                <details class="ideal-answer-details">
+                    <summary>💡 Show ideal answer</summary>
+                    <div class="ideal-answer-body"></div>
+                </details>
+            </div>
+        </div>
+        {% endfor %}
+
+        {# ------------------------------------------------------------------ #}
+        {# Submit button and results banner                                    #}
+        {# ------------------------------------------------------------------ #}
+        <div class="assignment-submit-row">
+            <button type="button" id="submit-btn" class="btn btn-primary btn-lg" onclick="submitAssignment()">
+                🎯 Submit for Grading
+            </button>
+            <p class="submit-hint">All tasks will be graded when you submit. You can re-read your answers before clicking.</p>
+        </div>
+    </form>
+
+    {# Results panel — hidden until graded #}
+    <div id="results-panel" class="results-panel hidden">
+        <div class="results-score-ring">
+            <div class="score-circle">
+                <span id="results-grade" class="grade-letter"></span>
+                <span id="results-pct" class="grade-pct"></span>
+            </div>
+        </div>
+        <div class="results-details">
+            <h2 id="results-headline"></h2>
+            <p id="results-feedback" class="results-overall-feedback"></p>
+            <p id="results-points" class="results-points-text"></p>
+            <button class="btn btn-outline" onclick="resetAssignment()">🔄 Try Again</button>
+        </div>
+    </div>
+
+    {# Navigation #}
+    <div class="lesson-nav">
+        <div class="lesson-nav-prev">
+            {% if prev_assignment %}
+            <a href="{{ url_for('assignment', category=category, slug=prev_assignment.slug) }}" class="btn btn-nav">
+                ← {{ prev_assignment.title }}
+            </a>
+            {% endif %}
+        </div>
+        <a href="{{ url_for('assignments', category=category) }}" class="btn btn-outline">
+            📝 All {{ meta.title }} Assignments
+        </a>
+        <div class="lesson-nav-next">
+            {% if next_assignment %}
+            <a href="{{ url_for('assignment', category=category, slug=next_assignment.slug) }}" class="btn btn-nav">
+                {{ next_assignment.title }} →
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function submitAssignment() {
+    const form = document.getElementById("assignment-form");
+    const category = form.dataset.category;
+    const slug = form.dataset.slug;
+    const submitBtn = document.getElementById("submit-btn");
+
+    // Collect answers
+    const answers = {};
+    form.querySelectorAll("input[type=radio]:checked").forEach(input => {
+        const taskId = input.name.replace("task_", "");
+        answers[taskId] = input.value;
+    });
+    form.querySelectorAll("textarea.open-answer").forEach(ta => {
+        const taskId = ta.name.replace("task_", "");
+        answers[taskId] = ta.value;
+    });
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "⏳ Grading…";
+
+    try {
+        const response = await fetch("/api/grade", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({category, slug, answers})
+        });
+        const data = await response.json();
+
+        if (data.error) {
+            alert("Grading error: " + data.error);
+            return;
+        }
+
+        renderResults(data);
+    } catch (err) {
+        alert("Network error. Please try again.");
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "🎯 Submit for Grading";
+    }
+}
+
+function renderResults(data) {
+    // Per-task feedback
+    data.tasks.forEach(task => {
+        const panel = document.getElementById("feedback-" + task.id);
+        if (!panel) return;
+
+        const scoreVal = panel.querySelector(".feedback-score-value");
+        const scoreLabel = panel.querySelector(".feedback-score-label");
+        const feedbackText = panel.querySelector(".feedback-text");
+        const idealBody = panel.querySelector(".ideal-answer-body");
+
+        const pct = Math.round((task.score / task.max_score) * 100);
+        scoreVal.textContent = task.score + "/" + task.max_score;
+        scoreLabel.textContent = task.correct ? "✅ Correct" : "❌ Needs work";
+        scoreVal.className = "feedback-score-value " + (task.correct ? "score-correct" : "score-wrong");
+
+        feedbackText.innerHTML = "<p>" + escapeHtml(task.feedback).replace(/\n/g, "<br>") + "</p>";
+        idealBody.innerHTML = "<pre>" + escapeHtml(task.ideal_answer) + "</pre>";
+
+        if (task.pending) {
+            panel.classList.add("feedback-pending");
+        }
+
+        panel.classList.remove("hidden");
+
+        // Disable inputs for this task
+        const taskEl = document.getElementById("task-" + task.id);
+        if (taskEl) {
+            taskEl.querySelectorAll("input, textarea").forEach(el => el.disabled = true);
+        }
+    });
+
+    // Overall results panel
+    const panel = document.getElementById("results-panel");
+    const grade = data.letter_grade;
+    const pct = data.percentage;
+
+    document.getElementById("results-grade").textContent = grade;
+    document.getElementById("results-pct").textContent = pct + "%";
+    document.getElementById("results-points").textContent =
+        "Score: " + data.score + " / " + data.max_score + " points";
+    document.getElementById("results-feedback").textContent = data.overall_feedback;
+
+    const gradeClasses = {A: "grade-a", B: "grade-b", C: "grade-c", D: "grade-d", F: "grade-f"};
+    const circle = panel.querySelector(".score-circle");
+    Object.values(gradeClasses).forEach(c => circle.classList.remove(c));
+    circle.classList.add(gradeClasses[grade] || "grade-f");
+
+    const headlines = {
+        A: "🎉 Excellent work!",
+        B: "👍 Great job!",
+        C: "📚 Good effort — keep reviewing!",
+        D: "💪 Keep practicing!",
+        F: "🔁 Review the lesson and try again"
+    };
+    document.getElementById("results-headline").textContent = headlines[grade] || "Results";
+
+    panel.classList.remove("hidden");
+    panel.scrollIntoView({behavior: "smooth", block: "start"});
+
+    document.getElementById("submit-btn").closest(".assignment-submit-row").classList.add("hidden");
+}
+
+function resetAssignment() {
+    location.reload();
+}
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+</script>
+{% endblock %}
