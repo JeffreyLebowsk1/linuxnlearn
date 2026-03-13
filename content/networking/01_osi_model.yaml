@@ -1,0 +1,95 @@
+title: "The OSI Model"
+order: 1
+summary: "The OSI (Open Systems Interconnection) model is a conceptual framework that describes how data communication occurs between two devices in a network."
+sections:
+  - heading: "What is the OSI Model?"
+    content: |
+      The OSI model divides network communication into **7 layers**, each responsible for a specific function. Think of it like mailing a letter — there are multiple steps involved in getting the message from sender to receiver.
+
+      The model was developed by ISO (International Organization for Standardization) in 1984 and remains the foundational framework for understanding networking.
+
+  - heading: "The 7 Layers"
+    content: |
+      | Layer | Name | Key Protocols/Examples |
+      |-------|------|------------------------|
+      | 7 | Application | HTTP, FTP, DNS, SMTP |
+      | 6 | Presentation | SSL/TLS, JPEG, ASCII |
+      | 5 | Session | NetBIOS, RPC |
+      | 4 | Transport | TCP, UDP |
+      | 3 | Network | IP, ICMP, OSPF |
+      | 2 | Data Link | Ethernet, Wi-Fi (802.11), ARP |
+      | 1 | Physical | Cables, Hubs, Repeaters |
+
+  - heading: "Layer 7 – Application"
+    content: |
+      The **Application layer** is the layer closest to the end user. It provides network services directly to applications.
+
+      - **HTTP/HTTPS** – Web browsing
+      - **FTP** – File transfers
+      - **DNS** – Domain name resolution
+      - **SMTP/IMAP/POP3** – Email
+
+      > Think of this layer as the interface between the user and the network.
+
+  - heading: "Layer 4 – Transport"
+    content: |
+      The **Transport layer** ensures reliable data delivery between two hosts.
+
+      **TCP (Transmission Control Protocol):**
+      - Connection-oriented (3-way handshake: SYN, SYN-ACK, ACK)
+      - Reliable, ordered delivery
+      - Used for HTTP, email, file transfers
+
+      **UDP (User Datagram Protocol):**
+      - Connectionless
+      - Faster, but no guarantee of delivery
+      - Used for streaming, DNS, VoIP
+
+  - heading: "Layer 3 – Network"
+    content: |
+      The **Network layer** handles logical addressing and routing of packets between networks.
+
+      - **IP addresses** (IPv4 and IPv6) operate at this layer
+      - **Routers** are the primary devices at Layer 3
+      - **ICMP** (used by `ping`) works here
+
+      ```
+      Source IP: 192.168.1.10
+      Destination IP: 8.8.8.8
+      → Router finds the best path to deliver the packet
+      ```
+
+  - heading: "Layer 2 – Data Link"
+    content: |
+      The **Data Link layer** transfers data between adjacent nodes and handles error detection.
+
+      - Uses **MAC addresses** (e.g., `00:1A:2B:3C:4D:5E`)
+      - **Switches** operate at this layer
+      - **Frames** are the PDU (Protocol Data Unit) at Layer 2
+      - Ethernet and Wi-Fi are Layer 2 protocols
+
+  - heading: "Memory Trick"
+    content: |
+      Remember the layers from top to bottom with:
+
+      > **"All People Seem To Need Data Processing"**
+      > Application → Presentation → Session → Transport → Network → Data Link → Physical
+
+      Or bottom to top:
+      > **"Please Do Not Throw Sausage Pizza Away"**
+
+quiz:
+  - question: "At which OSI layer does a router primarily operate?"
+    options: ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
+    answer: 2
+    explanation: "Routers operate at Layer 3 (Network layer) and make forwarding decisions based on IP addresses."
+
+  - question: "Which protocol operates at the Transport layer?"
+    options: ["IP", "HTTP", "TCP", "Ethernet"]
+    answer: 2
+    explanation: "TCP operates at Layer 4 (Transport). IP is Layer 3, HTTP is Layer 7, and Ethernet is Layer 2."
+
+  - question: "What is the PDU (Protocol Data Unit) at the Data Link layer?"
+    options: ["Packet", "Segment", "Frame", "Bit"]
+    answer: 2
+    explanation: "The PDU at Layer 2 (Data Link) is called a Frame. Packets are Layer 3, Segments are Layer 4, and Bits are Layer 1."

@@ -1,0 +1,81 @@
+title: "Subnetting"
+order: 3
+summary: "Subnetting is the process of dividing a network into smaller sub-networks. It's a critical skill for network engineers."
+sections:
+  - heading: "Why Subnet?"
+    content: |
+      Subnetting allows you to:
+      - **Improve security** by isolating network segments
+      - **Reduce broadcast traffic** (smaller broadcast domains)
+      - **Efficiently use IP address space**
+      - **Organize networks** by department, floor, or function
+
+  - heading: "The Magic of Powers of 2"
+    content: |
+      Subnetting relies on understanding powers of 2:
+
+      | Power | Value |
+      |---|---|
+      | 2^1 | 2 |
+      | 2^2 | 4 |
+      | 2^3 | 8 |
+      | 2^4 | 16 |
+      | 2^5 | 32 |
+      | 2^6 | 64 |
+      | 2^7 | 128 |
+      | 2^8 | 256 |
+
+      **Formula:** Usable hosts = 2^n - 2 (subtract network and broadcast addresses)
+
+  - heading: "Subnetting Example"
+    content: |
+      **Problem:** Subnet 192.168.10.0/24 into 4 equal subnets.
+
+      **Step 1:** We need at least 4 subnets → need 2 bits for subnetting (2^2 = 4)
+
+      **Step 2:** New prefix = /24 + 2 = **/26**
+
+      **Step 3:** New subnet mask = 255.255.255.192
+
+      **Step 4:** Block size = 256 - 192 = **64**
+
+      | Subnet | Network | Host Range | Broadcast |
+      |---|---|---|---|
+      | 1 | 192.168.10.0 | .1 – .62 | .63 |
+      | 2 | 192.168.10.64 | .65 – .126 | .127 |
+      | 3 | 192.168.10.128 | .129 – .190 | .191 |
+      | 4 | 192.168.10.192 | .193 – .254 | .255 |
+
+  - heading: "VLSM (Variable Length Subnet Masking)"
+    content: |
+      **VLSM** allows you to use different subnet sizes within the same network, saving IP addresses.
+
+      **Example:** You need subnets for:
+      - Sales (50 hosts) → /26 (62 hosts)
+      - HR (20 hosts) → /27 (30 hosts)
+      - IT (10 hosts) → /28 (14 hosts)
+      - Point-to-point link (2 hosts) → /30 (2 hosts)
+
+      This is far more efficient than giving every department a /24!
+
+  - heading: "Quick Subnet Reference"
+    content: |
+      | /CIDR | Mask | Subnets from /24 | Hosts/Subnet |
+      |---|---|---|---|
+      | /25 | .128 | 2 | 126 |
+      | /26 | .192 | 4 | 62 |
+      | /27 | .224 | 8 | 30 |
+      | /28 | .240 | 16 | 14 |
+      | /29 | .248 | 32 | 6 |
+      | /30 | .252 | 64 | 2 |
+
+quiz:
+  - question: "How many usable hosts are in a /28 subnet?"
+    options: ["14", "16", "30", "32"]
+    answer: 0
+    explanation: "A /28 has 2^4 = 16 addresses. Subtract 2 (network + broadcast) = 14 usable hosts."
+
+  - question: "You need to subnet 192.168.5.0/24 into 8 equal subnets. What is the new prefix length?"
+    options: ["/25", "/26", "/27", "/28"]
+    answer: 2
+    explanation: "To get 8 subnets, you need 3 bits (2^3=8). /24 + 3 = /27."

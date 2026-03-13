@@ -1,0 +1,77 @@
+title: "Cisco IOS Basics Assignment"
+category: "cisco"
+difficulty: "beginner"
+estimated_minutes: 25
+related_lesson: "01_ios_basics"
+instructions: |
+  Test your knowledge of Cisco IOS fundamentals. Write commands exactly as you would
+  type them on a real Cisco device. The AI grader understands IOS syntax variations.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "You are at the Router> prompt. Which command takes you to Privileged EXEC mode?"
+    options:
+      - "configure terminal"
+      - "enable"
+      - "privilege exec"
+      - "sudo"
+    answer: 1
+    explanation: "The 'enable' command moves you from User EXEC (Router>) to Privileged EXEC (Router#). From there, 'configure terminal' enters Global Config mode."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "Where is the running configuration stored on a Cisco device?"
+    options:
+      - "NVRAM (survives reboot)"
+      - "Flash memory"
+      - "RAM (lost on reboot)"
+      - "ROM"
+    answer: 2
+    explanation: "The running-config is stored in RAM, which is volatile — it is lost when the device reboots. Use 'copy running-config startup-config' to save it to NVRAM."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Write the complete sequence of Cisco IOS commands to perform the following on a router named R1:
+      1. Enter global configuration mode
+      2. Set the hostname to "BRANCH-R1"
+      3. Set an encrypted enable secret password of "Sup3rS3cure!"
+      4. Disable DNS lookup on mistyped commands
+      5. Save the configuration
+    rubric: |
+      Award 4 points per step (20 total):
+      1. configure terminal (or conf t)
+      2. hostname BRANCH-R1
+      3. enable secret Sup3rS3cure!
+      4. no ip domain-lookup (or no ip domain lookup)
+      5. copy running-config startup-config (or write memory / wr)
+      Minor syntax variations acceptable. Deduct if a step is missing or clearly wrong.
+    sample_answer: |
+      R1# configure terminal
+      R1(config)# hostname BRANCH-R1
+      BRANCH-R1(config)# enable secret Sup3rS3cure!
+      BRANCH-R1(config)# no ip domain-lookup
+      BRANCH-R1(config)# end
+      BRANCH-R1# copy running-config startup-config
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Explain the difference between 'enable password' and 'enable secret' on a Cisco device.
+      Which should you always use, and why?
+    rubric: |
+      A full-mark answer should include:
+      1. 'enable password' stores the password in plain text in the config (or weakly obfuscated with service password-encryption).
+      2. 'enable secret' uses MD5 hashing — much stronger.
+      3. 'enable secret' always takes precedence over 'enable password' if both are set.
+      4. Always use 'enable secret' because it is significantly more secure.
+    sample_answer: |
+      'enable password' stores the password as plain text in the running and startup configuration by default. Even with 'service password-encryption', it uses a weak reversible Vigenère cipher (Type 7) that is trivially crackable.
+      'enable secret' hashes the password with MD5 (Type 5), making it far harder to recover.
+      If both are configured, 'enable secret' always takes precedence.
+      Best practice: always use 'enable secret' and never rely on 'enable password'.

@@ -1,0 +1,131 @@
+title: "Python Basics"
+order: 1
+summary: "Python is a powerful, readable programming language widely used in networking automation, scripting, data analysis, and more."
+sections:
+  - heading: "Why Python for Networking?"
+    content: |
+      Python is the **go-to language for network automation** because:
+      - Simple, readable syntax
+      - Rich library ecosystem (Netmiko, Paramiko, NAPALM, Nornir)
+      - Rapid prototyping
+      - Cross-platform
+
+  - heading: "Variables and Data Types"
+    content: |
+      ```python
+      # Strings
+      hostname = "Router1"
+      ip_address = "192.168.1.1"
+
+      # Integers and Floats
+      vlan_id = 10
+      bandwidth = 1000.0
+
+      # Booleans
+      is_up = True
+      is_trunk = False
+
+      # Check type
+      print(type(hostname))  # <class 'str'>
+      print(type(vlan_id))   # <class 'int'>
+      ```
+
+  - heading: "Lists and Dictionaries"
+    content: |
+      ```python
+      # List - ordered collection
+      vlans = [10, 20, 30, 40]
+      interfaces = ["Gi0/0", "Gi0/1", "Fa0/0"]
+
+      # Access elements
+      print(vlans[0])    # 10
+      print(vlans[-1])   # 40 (last element)
+
+      # Dictionary - key/value pairs
+      device = {
+          "hostname": "R1",
+          "ip": "192.168.1.1",
+          "vendor": "Cisco",
+          "model": "ISR4321"
+      }
+
+      print(device["hostname"])  # R1
+      print(device.get("model", "Unknown"))  # ISR4321
+      ```
+
+  - heading: "Control Flow"
+    content: |
+      ```python
+      # If/elif/else
+      interface_status = "up"
+
+      if interface_status == "up":
+          print("Interface is operational")
+      elif interface_status == "down":
+          print("Interface is down — check cable!")
+      else:
+          print("Unknown status")
+
+      # For loops
+      vlans = [10, 20, 30]
+      for vlan in vlans:
+          print(f"Configuring VLAN {vlan}")
+
+      # While loop
+      retry = 0
+      while retry < 3:
+          print(f"Connection attempt {retry + 1}")
+          retry += 1
+      ```
+
+  - heading: "Functions"
+    content: |
+      ```python
+      def is_valid_ip(ip_string):
+          """Check if a string is a valid IPv4 address."""
+          parts = ip_string.split(".")
+          if len(parts) != 4:
+              return False
+          for part in parts:
+              try:
+                  if not 0 <= int(part) <= 255:
+                      return False
+              except ValueError:
+                  return False
+          return True
+
+      print(is_valid_ip("192.168.1.1"))  # True
+      print(is_valid_ip("256.1.1.1"))    # False
+      print(is_valid_ip("not.an.ip"))    # False
+      ```
+
+  - heading: "F-strings and String Formatting"
+    content: |
+      ```python
+      hostname = "SW1"
+      vlan = 10
+      ip = "192.168.10.1"
+
+      # f-string (Python 3.6+) — preferred
+      config = f"interface vlan {vlan}"
+      print(config)  # interface vlan 10
+
+      # Multi-line f-string
+      banner = f"""
+      Device: {hostname}
+      Management IP: {ip}
+      VLAN: {vlan}
+      """
+      print(banner)
+      ```
+
+quiz:
+  - question: "What data structure uses key-value pairs in Python?"
+    options: ["List", "Tuple", "Dictionary", "Set"]
+    answer: 2
+    explanation: "A dictionary (dict) stores data as key-value pairs, e.g., {'hostname': 'R1', 'ip': '192.168.1.1'}."
+
+  - question: "What will print(vlans[-1]) return if vlans = [10, 20, 30]?"
+    options: ["10", "20", "30", "Error"]
+    answer: 2
+    explanation: "Negative indexing in Python counts from the end. vlans[-1] returns the last element, which is 30."

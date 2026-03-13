@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.title }} — LinuxNLearn{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <span>{{ meta.title }}</span>
+    </div>
+
+    <div class="category-header category-{{ meta.color }}">
+        <div class="category-header-icon">{{ meta.icon }}</div>
+        <div>
+            <h1>{{ meta.title }}</h1>
+            <p>{{ meta.description }}</p>
+        </div>
+    </div>
+
+    {% if lessons %}
+    <div class="lessons-list">
+        {% for lesson in lessons %}
+        <a href="{{ url_for('lesson', category=category, slug=lesson.slug) }}" class="lesson-item">
+            <div class="lesson-number">{{ loop.index }}</div>
+            <div class="lesson-info">
+                <h3>{{ lesson.title }}</h3>
+                <p>{{ lesson.summary }}</p>
+            </div>
+            <div class="lesson-arrow">→</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>🚧 Lessons for this category are coming soon!</p>
+        <p>In the meantime, ask the <a href="{{ url_for('assistant') }}">AI Assistant</a> your questions.</p>
+    </div>
+    {% endif %}
+
+    <div class="category-ai-prompt">
+        <p>Have a question about {{ meta.title }}?</p>
+        <a href="{{ url_for('assistant') }}?context={{ category }}" class="btn btn-ai-small">🤖 Ask AI Assistant</a>
+    </div>
+</div>
+{% endblock %}
