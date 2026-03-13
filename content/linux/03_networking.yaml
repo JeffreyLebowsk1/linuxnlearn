@@ -1,0 +1,75 @@
+title: "Linux Networking Tools"
+description: "Use Linux command-line tools to configure, monitor, and troubleshoot network connections."
+sections:
+  - heading: "Viewing Network Configuration"
+    code: |
+      # Modern tool (iproute2)
+      ip addr show                # Show all interfaces and IPs
+      ip link show                # Show link status
+      ip route show               # Show routing table
+
+      # Legacy tools (still common)
+      ifconfig                    # Show/configure interfaces
+      route -n                    # Show routing table
+
+  - heading: "Configuring Interfaces"
+    code: |
+      # Bring an interface up/down
+      sudo ip link set eth0 up
+      sudo ip link set eth0 down
+
+      # Assign an IP address (temporary)
+      sudo ip addr add 192.168.1.50/24 dev eth0
+
+      # Add a default gateway (temporary)
+      sudo ip route add default via 192.168.1.1
+
+      # Persistent config: edit /etc/netplan/*.yaml (Ubuntu)
+      # or /etc/network/interfaces (Debian/older systems)
+
+  - heading: "Connectivity Testing"
+    code: |
+      ping 8.8.8.8               # Test basic connectivity
+      ping -c 4 google.com       # Send 4 packets only
+
+      traceroute google.com      # Trace the path to a host
+      tracepath google.com       # Similar, no root needed
+
+      mtr google.com             # Combines ping + traceroute (interactive)
+
+  - heading: "Port and Socket Inspection"
+    code: |
+      # Show listening ports and connections
+      ss -tulnp                  # Modern (replaces netstat)
+      netstat -tulnp             # Legacy
+
+      # Test if a TCP port is open
+      nc -zv 192.168.1.1 22      # Test SSH port
+      nc -zv google.com 443      # Test HTTPS
+
+      # Capture packets (requires root/tcpdump installed)
+      sudo tcpdump -i eth0 -n port 80
+
+  - heading: "DNS Tools"
+    code: |
+      nslookup google.com         # Simple DNS lookup
+      dig google.com              # Detailed DNS query
+      dig google.com MX           # Query MX (mail) records
+      dig @8.8.8.8 google.com     # Use specific DNS server
+      host google.com             # Another DNS lookup tool
+
+  - heading: "Firewall (iptables / ufw)"
+    code: |
+      # ufw — Uncomplicated Firewall (Ubuntu)
+      sudo ufw status
+      sudo ufw allow 22/tcp
+      sudo ufw allow 80/tcp
+      sudo ufw enable
+
+      # iptables (low-level)
+      sudo iptables -L -n -v      # List rules
+
+key_takeaways:
+  - "Use 'ip addr' and 'ip route' (iproute2) for modern interface and routing management."
+  - "ss -tulnp shows all listening sockets with process names."
+  - "ping, traceroute, and dig are your first tools for network troubleshooting."

@@ -1,0 +1,84 @@
+title: "Python Basics"
+description: "Learn Python fundamentals: syntax, variables, data types, and control flow."
+sections:
+  - heading: "Why Python?"
+    points:
+      - "Simple, readable syntax — easy to learn and write."
+      - "Versatile — used in scripting, web dev, data science, networking, automation."
+      - "Huge standard library and ecosystem (pip packages)."
+      - "Cross-platform — runs on Linux, macOS, and Windows."
+
+  - heading: "Variables and Data Types"
+    code: |
+      # Integers
+      age = 30
+
+      # Floats
+      pi = 3.14159
+
+      # Strings
+      name = "Alice"
+
+      # Booleans
+      is_admin = True
+
+      # NoneType
+      value = None
+
+      # Check type
+      print(type(age))    # <class 'int'>
+      print(type(name))   # <class 'str'>
+
+  - heading: "String Operations"
+    code: |
+      greeting = "Hello, World!"
+
+      # Length
+      print(len(greeting))       # 13
+
+      # Slicing
+      print(greeting[0:5])       # Hello
+
+      # f-strings (Python 3.6+)
+      user = "Bob"
+      print(f"Welcome, {user}!")  # Welcome, Bob!
+
+      # Methods
+      print(greeting.lower())    # hello, world!
+      print(greeting.replace("World", "Python"))
+
+  - heading: "Control Flow"
+    code: |
+      # if / elif / else
+      score = 85
+      if score >= 90:
+          grade = "A"
+      elif score >= 80:
+          grade = "B"
+      else:
+          grade = "C"
+      print(f"Grade: {grade}")   # Grade: B
+
+      # for loop
+      for i in range(5):
+          print(i)               # 0 1 2 3 4
+
+      # while loop
+      count = 0
+      while count < 3:
+          print(count)
+          count += 1
+
+  - heading: "Functions"
+    code: |
+      def greet(name, greeting="Hello"):
+          """Return a greeting string."""
+          return f"{greeting}, {name}!"
+
+      print(greet("Alice"))             # Hello, Alice!
+      print(greet("Bob", "Hi"))         # Hi, Bob!
+
+key_takeaways:
+  - "Python uses indentation (4 spaces) to define code blocks — no braces needed."
+  - "Variables are dynamically typed; use type() to check the type."
+  - "f-strings are the modern way to embed variables in strings."

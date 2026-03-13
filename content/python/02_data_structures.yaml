@@ -1,0 +1,78 @@
+title: "Python Data Structures"
+description: "Master lists, tuples, dictionaries, and sets — Python's core built-in data structures."
+sections:
+  - heading: "Lists"
+    text: "Ordered, mutable sequences. Can hold items of any type."
+    code: |
+      # Create
+      fruits = ["apple", "banana", "cherry"]
+
+      # Access (0-indexed)
+      print(fruits[0])       # apple
+      print(fruits[-1])      # cherry (last item)
+
+      # Modify
+      fruits.append("date")
+      fruits.insert(1, "avocado")
+      fruits.remove("banana")
+
+      # Iterate
+      for fruit in fruits:
+          print(fruit)
+
+      # List comprehension
+      squares = [x**2 for x in range(1, 6)]  # [1, 4, 9, 16, 25]
+
+  - heading: "Tuples"
+    text: "Ordered, immutable sequences. Use when data should not change."
+    code: |
+      coordinates = (40.7128, -74.0060)  # New York City
+      lat, lon = coordinates             # unpacking
+
+      # Tuples as dictionary keys (lists cannot be used as keys)
+      locations = {(40.7128, -74.0060): "NYC", (51.5074, -0.1278): "London"}
+
+  - heading: "Dictionaries"
+    text: "Key-value stores. Keys must be unique and immutable."
+    code: |
+      device = {
+          "hostname": "R1",
+          "ip":       "192.168.1.1",
+          "vendor":   "Cisco",
+          "active":   True,
+      }
+
+      # Access
+      print(device["hostname"])          # R1
+      print(device.get("model", "N/A"))  # N/A (safe default)
+
+      # Add / update
+      device["model"] = "ISR4321"
+
+      # Iterate
+      for key, value in device.items():
+          print(f"{key}: {value}")
+
+      # Dict comprehension
+      squares = {x: x**2 for x in range(1, 6)}
+
+  - heading: "Sets"
+    text: "Unordered collections of unique items. Great for membership testing."
+    code: |
+      vlans = {10, 20, 30, 10}   # duplicates removed
+      print(vlans)               # {10, 20, 30}
+
+      vlans.add(40)
+      vlans.discard(20)
+
+      # Set operations
+      a = {1, 2, 3, 4}
+      b = {3, 4, 5, 6}
+      print(a & b)   # intersection: {3, 4}
+      print(a | b)   # union:        {1, 2, 3, 4, 5, 6}
+      print(a - b)   # difference:   {1, 2}
+
+key_takeaways:
+  - "Lists are ordered and mutable; tuples are ordered and immutable."
+  - "Dictionaries provide fast key-based lookups."
+  - "Sets automatically remove duplicates and support efficient membership tests."
