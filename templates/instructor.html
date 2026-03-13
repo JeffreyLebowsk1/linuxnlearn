@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}AI Instructor — LinuxNLearn{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <span>AI Instructor</span>
+    </div>
+
+    <div class="assistant-header">
+        <h1>🎓 AI Instructor</h1>
+        <p>Your personal IT instructor. Start a structured lesson, ask questions, and get guided step by step through any topic.</p>
+    </div>
+
+    <div class="assistant-layout">
+        <div class="chat-sidebar">
+            <h3>Subject</h3>
+            <p>Choose a subject for focused instruction:</p>
+            <div class="context-buttons">
+                <button class="context-btn active" data-subject="">🌟 General IT</button>
+                {% for key, cat in categories.items() %}
+                <button class="context-btn" data-subject="{{ cat.title }}">{{ cat.icon }} {{ cat.title }}</button>
+                {% endfor %}
+            </div>
+
+            <div class="example-questions">
+                <h3>Get Started</h3>
+                <ul>
+                    <li><button class="example-q" data-q="I'm new to networking. Where should I start?">Start from the basics</button></li>
+                    <li><button class="example-q" data-q="Give me a structured lesson on subnetting.">Lesson on subnetting</button></li>
+                    <li><button class="example-q" data-q="Teach me how VLANs work on Cisco switches.">How VLANs work</button></li>
+                    <li><button class="example-q" data-q="Walk me through configuring OSPF step by step.">Configure OSPF</button></li>
+                    <li><button class="example-q" data-q="Quiz me on essential Linux commands.">Quiz: Linux commands</button></li>
+                    <li><button class="example-q" data-q="I want to learn Python for network automation. Create a learning plan for me.">Python automation plan</button></li>
+                </ul>
+            </div>
+
+            <button class="btn btn-secondary" id="new-session-btn" style="margin-top: 1rem; width: 100%;">
+                🔄 New Session
+            </button>
+        </div>
+
+        <div class="chat-main">
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-message assistant-message">
+                    <div class="message-avatar">🎓</div>
+                    <div class="message-content">
+                        <p>Hello! I'm your AI instructor for IT topics including networking, Cisco, Python, and Linux.</p>
+                        <p>I'll guide you through topics step by step, check your understanding along the way, and provide real examples you can try yourself.</p>
+                        <p><strong>How would you like to begin?</strong> You can:</p>
+                        <ul>
+                            <li>Ask me to start a lesson on a specific topic</li>
+                            <li>Tell me what you already know so I can build on it</li>
+                            <li>Request a quiz to test your existing knowledge</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-area">
+                <div class="context-indicator" id="context-indicator">
+                    Subject: <span id="current-subject-label">General IT</span>
+                </div>
+                <div class="chat-input-row">
+                    <textarea
+                        id="chat-input"
+                        placeholder="Ask your instructor a question or request a lesson..."
+                        rows="2"
+                    ></textarea>
+                    <button id="send-btn" class="btn btn-primary">Send</button>
+                </div>
+                <p class="chat-hint">Press Ctrl+Enter to send</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentSubject = "";
+let conversationHistory = [];
+
+document.querySelectorAll(".context-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+        document.querySelectorAll(".context-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentSubject = btn.dataset.subject;
+        document.getElementById("current-subject-label").textContent = currentSubject || "General IT";
+    });
+});
+
+document.querySelectorAll(".example-q").forEach(btn => {
+    btn.addEventListener("click", () => {
+        document.getElementById("chat-input").value = btn.dataset.q;
+        document.getElementById("chat-input").focus();
+    });
+});
+
+document.getElementById("chat-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.ctrlKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+});
+
+document.getElementById("send-btn").addEventListener("click", sendMessage);
+
+document.getElementById("new-session-btn").addEventListener("click", () => {
+    conversationHistory = [];
+    const container = document.getElementById("chat-messages");
+    container.innerHTML = `
+        <div class="chat-message assistant-message">
+            <div class="message-avatar">🎓</div>
+            <div class="message-content">
+                <p>Session reset. I'm ready to start a new lesson!</p>
+                <p><strong>What would you like to learn?</strong></p>
+            </div>
+        </div>`;
+});
+
+async function sendMessage() {
+    const input = document.getElementById("chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+
+    conversationHistory.push({"role": "user", "content": message});
+    appendMessage("user", message);
+    input.value = "";
+
+    const loadingId = appendLoadingMessage();
+    document.getElementById("send-btn").disabled = true;
+
+    try {
+        const response = await fetch("/api/instructor", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                messages: conversationHistory,
+                subject: currentSubject
+            })
+        });
+        const data = await response.json();
+        removeLoadingMessage(loadingId);
+        if (data.error) {
+            appendMessage("assistant", `⚠️ ${data.error}`, true);
+            conversationHistory.pop();
+        } else {
+            const reply = data.reply;
+            conversationHistory.push({"role": "assistant", "content": reply});
+            appendMessage("assistant", reply);
+        }
+    } catch (err) {
+        removeLoadingMessage(loadingId);
+        appendMessage("assistant", "⚠️ Network error. Please try again.", true);
+        conversationHistory.pop();
+    } finally {
+        document.getElementById("send-btn").disabled = false;
+    }
+}
+
+function appendMessage(role, text, isError = false) {
+    const container = document.getElementById("chat-messages");
+    const div = document.createElement("div");
+    div.className = `chat-message ${role}-message${isError ? " error-message" : ""}`;
+
+    const avatar = document.createElement("div");
+    avatar.className = "message-avatar";
+    avatar.textContent = role === "user" ? "👤" : "🎓";
+
+    const content = document.createElement("div");
+    content.className = "message-content";
+    content.innerHTML = formatMessage(text);
+
+    div.appendChild(avatar);
+    div.appendChild(content);
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function appendLoadingMessage() {
+    const id = "loading-" + Date.now();
+    const container = document.getElementById("chat-messages");
+    const div = document.createElement("div");
+    div.className = "chat-message assistant-message loading-message";
+    div.id = id;
+    div.innerHTML = `<div class="message-avatar">🎓</div><div class="message-content"><span class="typing-indicator"><span></span><span></span><span></span></span></div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return id;
+}
+
+function removeLoadingMessage(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+}
+
+function formatMessage(text) {
+    const blocks = [];
+
+    // Extract fenced code blocks first (preserve their escaped content)
+    text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_, lang, code) => {
+        const idx = blocks.length;
+        blocks.push(`<pre><code>${escapeHtml(code.trim())}</code></pre>`);
+        return `\x00BLOCK${idx}\x00`;
+    });
+
+    // Extract inline code
+    text = text.replace(/`([^`]+)`/g, (_, code) => {
+        const idx = blocks.length;
+        blocks.push(`<code class="inline-code">${escapeHtml(code)}</code>`);
+        return `\x00BLOCK${idx}\x00`;
+    });
+
+    // Escape remaining text so no raw HTML from AI or user reaches the DOM
+    text = escapeHtml(text);
+
+    // Apply safe inline transformations
+    text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+    // Re-insert extracted code blocks
+    text = text.replace(/\x00BLOCK(\d+)\x00/g, (_, i) => blocks[parseInt(i)]);
+
+    // Newlines to paragraphs
+    const paragraphs = text.split(/\n\n+/);
+    return paragraphs.map(p => {
+        p = p.trim();
+        if (!p) return "";
+        if (p.startsWith("<pre>") || p.startsWith("<code>")) return p;
+        return `<p>${p.replace(/\n/g, "<br>")}</p>`;
+    }).join("");
+}
+
+function escapeHtml(str) {
+    return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+</script>
+{% endblock %}

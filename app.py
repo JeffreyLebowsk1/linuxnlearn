@@ -5,6 +5,7 @@ import yaml
 from flask import Flask, render_template, request, jsonify
 import config
 import ai_providers
+import instructor_agent
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -235,6 +236,11 @@ def assistant():
     return render_template("assistant.html", categories=CATEGORIES)
 
 
+@app.route("/instructor")
+def instructor():
+    return render_template("instructor.html", categories=CATEGORIES)
+
+
 @app.route("/chat")
 def chat():
     """Full-page AI chat interface (used by chat.js frontend)."""
@@ -306,6 +312,73 @@ def chat_api():
 
     try:
         reply = ai_providers.ask(user_message, system_prompt=system_prompt, provider=provider)
+        return jsonify({"reply": reply})
+    except ai_providers.ProviderError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+
+@app.route("/api/instructor", methods=["POST"])
+def instructor_api():
+    """
+    Instructor agent endpoint supporting multi-turn conversations.
+
+    Expected JSON body:
+    {
+        "messages": [
+            {"role": "user", "content": "..."},
+            {"role": "assistant", "content": "..."},
+            {"role": "user", "content": "..."}
+        ],
+        "subject": "Linux",   // optional
+        "provider": "openai"  // optional
+    }
+
+    Returns:
+    {
+        "reply": "..."
+    }
+    """
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    messages = data.get("messages")
+    if not messages or not isinstance(messages, list):
+        return jsonify({"error": "Missing or invalid messages field"}), 400
+
+    for msg in messages:
+        if not isinstance(msg, dict) or "role" not in msg or "content" not in msg:
+            return jsonify({"error": "Each message must have 'role' and 'content' fields"}), 400
+        if msg["role"] not in ("user", "assistant"):
+            return jsonify({"error": "Message role must be 'user' or 'assistant'"}), 400
+        if not isinstance(msg["content"], str):
+            return jsonify({"error": "Message content must be a string"}), 400
+
+    if messages[-1]["role"] != "user":
+        return jsonify({"error": "Last message must be from the user"}), 400
+
+    last_content = messages[-1]["content"].strip()
+    if not last_content:
+        return jsonify({"error": "Last message content cannot be empty"}), 400
+
+    if not ai_providers.get_available_providers():
+        return jsonify(
+            {
+                "reply": (
+                    "No AI provider is configured. Please set OPENAI_API_KEY "
+                    "(or GEMINI_API_KEY / PERPLEXITY_API_KEY) in your .env file "
+                    "to enable the instructor agent."
+                )
+            }
+        ), 200
+
+    subject = data.get("subject", "")
+    provider = data.get("provider")
+    if provider is not None and provider not in ai_providers.PROVIDER_LABELS:
+        return jsonify({"error": f"Invalid provider. Choose from: {', '.join(ai_providers.PROVIDER_LABELS)}"}), 400
+
+    try:
+        reply = instructor_agent.ask(messages, subject=subject or None, provider=provider)
         return jsonify({"reply": reply})
     except ai_providers.ProviderError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
