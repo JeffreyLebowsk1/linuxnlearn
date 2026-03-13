@@ -1,0 +1,53 @@
+title: "Cisco IOS Basics"
+description: "Get started with Cisco IOS — the operating system that powers Cisco routers and switches."
+sections:
+  - heading: "What is Cisco IOS?"
+    text: >
+      Cisco IOS (Internetwork Operating System) is the software that runs on most Cisco
+      routers and switches. It provides a command-line interface (CLI) to configure,
+      monitor, and manage network devices.
+
+  - heading: "CLI Modes"
+    table:
+      headers: ["Mode", "Prompt", "Access Command", "Purpose"]
+      rows:
+        - ["User EXEC",       "Router>",         "—",             "Basic monitoring only"]
+        - ["Privileged EXEC", "Router#",         "enable",        "Full monitoring, save configs"]
+        - ["Global Config",   "Router(config)#", "configure terminal", "Make global changes"]
+        - ["Interface Config","Router(config-if)#","interface <id>","Configure a specific interface"]
+        - ["Line Config",     "Router(config-line)#","line vty 0 4","Configure console/VTY lines"]
+
+  - heading: "Essential Commands"
+    code: |
+      ! Enter privileged mode
+      Router> enable
+
+      ! Enter global configuration mode
+      Router# configure terminal
+
+      ! Set the hostname
+      Router(config)# hostname R1
+
+      ! Show running configuration
+      R1# show running-config
+
+      ! Show interfaces
+      R1# show ip interface brief
+
+      ! Save configuration to NVRAM
+      R1# copy running-config startup-config
+
+      ! Show version info
+      R1# show version
+
+  - heading: "Getting Help in IOS"
+    points:
+      - "Type ? at any point to see available commands."
+      - "Partial completion: type the first few letters and press Tab."
+      - "show ? lists all show commands."
+      - "Use up/down arrows to recall command history."
+
+key_takeaways:
+  - "IOS uses a hierarchical CLI with distinct modes (User, Privileged, Config)."
+  - "Always enter Privileged EXEC mode before making or viewing configurations."
+  - "Save with 'copy running-config startup-config' to persist changes after reboot."

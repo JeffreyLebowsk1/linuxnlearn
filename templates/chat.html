@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}AI Chat Assistant — LinuxNLearn{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div class="page-header-content">
+        <span class="category-icon-large">💬</span>
+        <div>
+            <h1>AI Learning Assistant</h1>
+            <p>Ask me anything about Linux, Networking, Cisco, or Python.</p>
+        </div>
+    </div>
+</div>
+
+<div class="chat-page-layout">
+    <div class="chat-container">
+        <div class="chat-context-bar">
+            <label for="context-select">Context:</label>
+            <select id="context-select">
+                <option value="">General IT Questions</option>
+                {% for key, cat in categories.items() %}
+                <option value="{{ cat.title }}">{{ cat.icon }} {{ cat.title }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div id="chat-messages" class="chat-messages">
+            <div class="chat-message assistant">
+                <div class="message-bubble">
+                    👋 Hi! I'm your AI learning assistant. Ask me anything about Linux, Networking, Cisco, or Python.
+                    I'm here to help you learn!
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-input-bar">
+            <input type="text" id="chat-input" placeholder="Type your question..." autocomplete="off" />
+            <button id="chat-send" class="btn btn-primary">Send</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    const CHAT_LESSON = "";
+</script>
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+{% endblock %}

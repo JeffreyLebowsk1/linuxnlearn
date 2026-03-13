@@ -1,0 +1,41 @@
+title: "TCP/IP Fundamentals"
+description: "Learn how the TCP/IP protocol suite powers the modern internet."
+sections:
+  - heading: "TCP/IP vs OSI"
+    text: >
+      While the OSI model has 7 layers, the TCP/IP model (also called the Internet model)
+      condenses them into 4 layers. TCP/IP is the actual protocol suite used on the internet.
+    table:
+      headers: ["TCP/IP Layer", "Corresponding OSI Layers", "Key Protocols"]
+      rows:
+        - ["Application",  "5, 6, 7", "HTTP, HTTPS, DNS, FTP, SMTP, SSH"]
+        - ["Transport",    "4",       "TCP, UDP"]
+        - ["Internet",     "3",       "IP (v4/v6), ICMP, ARP"]
+        - ["Network Access","1, 2",   "Ethernet, Wi-Fi"]
+
+  - heading: "TCP vs UDP"
+    text: "The two main transport protocols serve different needs:"
+    table:
+      headers: ["Feature", "TCP", "UDP"]
+      rows:
+        - ["Connection",   "Connection-oriented (3-way handshake)", "Connectionless"]
+        - ["Reliability",  "Guaranteed delivery, ordering",         "Best-effort, no guarantee"]
+        - ["Speed",        "Slower (overhead)",                     "Faster (minimal overhead)"]
+        - ["Use Cases",    "Web browsing, email, file transfers",   "DNS, video streaming, VoIP"]
+
+  - heading: "The TCP 3-Way Handshake"
+    points:
+      - "SYN — Client sends a synchronise (SYN) segment to the server."
+      - "SYN-ACK — Server acknowledges with SYN-ACK."
+      - "ACK — Client sends a final ACK to establish the connection."
+
+  - heading: "IP Addresses"
+    text: >
+      Every device on an IP network has an IP address. IPv4 addresses are 32-bit numbers
+      written as four octets (e.g., 192.168.1.1). IPv6 uses 128-bit addresses in hex
+      (e.g., 2001:db8::1).
+
+key_takeaways:
+  - "TCP/IP is a 4-layer model that maps to the 7-layer OSI model."
+  - "TCP provides reliable, ordered delivery; UDP trades reliability for speed."
+  - "The TCP 3-way handshake establishes a connection before data transfer."

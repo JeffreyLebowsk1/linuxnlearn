@@ -1,0 +1,36 @@
+title: "The OSI Model"
+description: "Understand the seven layers of the OSI reference model and how they enable network communication."
+sections:
+  - heading: "What is the OSI Model?"
+    text: >
+      The Open Systems Interconnection (OSI) model is a conceptual framework used to
+      describe how different network protocols interact. It divides network communication
+      into seven distinct layers, each with a specific role.
+
+  - heading: "The Seven Layers"
+    table:
+      headers: ["Layer", "Number", "Function", "Example Protocols"]
+      rows:
+        - ["Physical",     "1", "Transmits raw bits over a medium",            "Ethernet, USB, Wi-Fi (PHY)"]
+        - ["Data Link",    "2", "Frames data; handles MAC addressing & errors", "Ethernet, Wi-Fi (802.11)"]
+        - ["Network",      "3", "Logical addressing and routing",               "IP, ICMP, ARP"]
+        - ["Transport",    "4", "End-to-end delivery, flow control",            "TCP, UDP"]
+        - ["Session",      "5", "Establishes, manages, and terminates sessions","NetBIOS, RPC"]
+        - ["Presentation", "6", "Data translation, encryption, compression",    "TLS/SSL, JPEG, ASCII"]
+        - ["Application",  "7", "User-facing network services",                 "HTTP, FTP, DNS, SMTP"]
+
+  - heading: "Memory Tip"
+    text: >
+      Use the mnemonic "Please Do Not Throw Sausage Pizza Away" (Physical → Application)
+      or "All People Seem To Need Data Processing" (Application → Physical).
+
+  - heading: "Why Does It Matter?"
+    points:
+      - "Provides a common language for describing network functions."
+      - "Helps isolate and troubleshoot network problems layer by layer."
+      - "Guides protocol design—each layer serves only the one above/below it."
+
+key_takeaways:
+  - "The OSI model has 7 layers, from Physical (1) to Application (7)."
+  - "Each layer has a distinct role and communicates only with adjacent layers."
+  - "It's a reference model; real protocols often blend multiple layers."

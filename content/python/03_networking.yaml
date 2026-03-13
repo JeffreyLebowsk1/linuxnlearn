@@ -1,0 +1,74 @@
+title: "Networking with Python"
+description: "Use Python's socket library and third-party tools to build network-aware programs."
+sections:
+  - heading: "The socket Module"
+    text: >
+      Python's built-in socket module provides low-level networking primitives.
+      You can create TCP clients/servers, UDP sockets, and more.
+
+  - heading: "TCP Client Example"
+    code: |
+      import socket
+
+      HOST = "example.com"
+      PORT = 80
+
+      with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+          s.connect((HOST, PORT))
+          s.sendall(b"GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
+          data = s.recv(4096)
+
+      print("Received:", data[:200])
+
+  - heading: "Simple TCP Server"
+    code: |
+      import socket
+
+      HOST = "127.0.0.1"
+      PORT = 9000
+
+      with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+          server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+          server.bind((HOST, PORT))
+          server.listen(5)
+          print(f"Listening on {HOST}:{PORT}")
+          conn, addr = server.accept()
+          with conn:
+              print(f"Connected by {addr}")
+              while True:
+                  data = conn.recv(1024)
+                  if not data:
+                      break
+                  conn.sendall(data)   # echo back
+
+  - heading: "Port Scanner (Basic)"
+    code: |
+      import socket
+
+      def scan_port(host, port, timeout=0.5):
+          """Returns True if the port is open."""
+          with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+              s.settimeout(timeout)
+              return s.connect_ex((host, port)) == 0
+
+      target = "127.0.0.1"
+      for port in range(20, 26):
+          status = "OPEN" if scan_port(target, port) else "closed"
+          print(f"Port {port}: {status}")
+
+  - heading: "DNS Lookups"
+    code: |
+      import socket
+
+      # Forward lookup: hostname → IP
+      ip = socket.gethostbyname("www.google.com")
+      print(f"Google IP: {ip}")
+
+      # Reverse lookup: IP → hostname
+      host, _, _ = socket.gethostbyaddr("8.8.8.8")
+      print(f"8.8.8.8 → {host}")
+
+key_takeaways:
+  - "Python's socket module provides AF_INET (IPv4) and SOCK_STREAM (TCP) / SOCK_DGRAM (UDP)."
+  - "Use connect_ex() for non-exception-based connection testing (port scanning)."
+  - "Always use 'with' statements to ensure sockets are properly closed."

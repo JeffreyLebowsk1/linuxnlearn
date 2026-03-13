@@ -1,0 +1,60 @@
+title: "Linux File System"
+description: "Understand the Linux directory hierarchy and how the file system is organized."
+sections:
+  - heading: "The Filesystem Hierarchy Standard (FHS)"
+    text: >
+      Linux follows the Filesystem Hierarchy Standard (FHS). All files hang off a single
+      root directory (/). Key directories each serve a specific purpose.
+    table:
+      headers: ["Directory", "Purpose"]
+      rows:
+        - ["/",        "Root of the entire filesystem"]
+        - ["/bin",     "Essential user binaries (ls, cat, cp)"]
+        - ["/sbin",    "System binaries (ifconfig, reboot)"]
+        - ["/etc",     "System-wide configuration files"]
+        - ["/home",    "User home directories (/home/alice)"]
+        - ["/root",    "Home directory for the root user"]
+        - ["/var",     "Variable data: logs, mail, spool files"]
+        - ["/tmp",     "Temporary files (cleared on reboot)"]
+        - ["/usr",     "User utilities and applications"]
+        - ["/opt",     "Optional/third-party software"]
+        - ["/dev",     "Device files (disks, terminals, etc.)"]
+        - ["/proc",    "Virtual filesystem — kernel and process info"]
+        - ["/sys",     "Virtual filesystem — hardware/driver info"]
+        - ["/mnt",     "Temporary mount point"]
+        - ["/media",   "Removable media mount points (USB, CD)"]
+
+  - heading: "Mounting Filesystems"
+    code: |
+      # Show mounted filesystems
+      mount
+      df -h
+
+      # Mount a USB drive
+      sudo mount /dev/sdb1 /mnt/usb
+
+      # Unmount
+      sudo umount /mnt/usb
+
+      # Persistent mounts — edit /etc/fstab
+      cat /etc/fstab
+
+  - heading: "Inodes and Hard vs Soft Links"
+    points:
+      - "Every file has an inode — a data structure storing metadata (permissions, owner, timestamps, data pointers)."
+      - "Hard link: another directory entry pointing to the same inode. Deleting the original doesn't remove data."
+      - "Soft link (symlink): a pointer to another file path. Breaks if the target is deleted."
+    code: |
+      # Create a hard link
+      ln original.txt hardlink.txt
+
+      # Create a symbolic link
+      ln -s /etc/nginx/nginx.conf ~/nginx.conf
+
+      # Show inode numbers
+      ls -li
+
+key_takeaways:
+  - "/etc holds configuration; /var holds logs and variable data; /tmp is temporary."
+  - "Use df -h to check disk space and mount to see mounted filesystems."
+  - "Symbolic links are flexible; hard links share the same inode."

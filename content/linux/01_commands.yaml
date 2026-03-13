@@ -1,0 +1,56 @@
+title: "Essential Linux Commands"
+description: "Master the most commonly used Linux command-line tools for navigation, file management, and system administration."
+sections:
+  - heading: "Navigation"
+    code: |
+      pwd          # Print working directory
+      ls -la       # List files (long format, including hidden)
+      cd /etc      # Change to /etc directory
+      cd ..        # Go up one directory
+      cd ~         # Go to home directory
+
+  - heading: "File Operations"
+    code: |
+      touch file.txt              # Create an empty file
+      cp file.txt backup.txt      # Copy file
+      mv file.txt /tmp/file.txt   # Move/rename file
+      rm file.txt                 # Delete file
+      rm -rf mydir/               # Recursively delete directory (careful!)
+      mkdir -p /opt/myapp/logs    # Create directory tree
+
+  - heading: "Viewing File Contents"
+    code: |
+      cat /etc/hostname           # Print file contents
+      less /var/log/syslog        # Paginate through a file (q to quit)
+      head -n 20 file.txt         # Show first 20 lines
+      tail -n 50 /var/log/syslog  # Show last 50 lines
+      tail -f /var/log/syslog     # Follow a log file in real time
+
+  - heading: "Searching"
+    code: |
+      grep -r "error" /var/log/   # Search recursively for "error"
+      grep -i "warning" file.log  # Case-insensitive search
+      find / -name "*.conf" 2>/dev/null  # Find all .conf files
+      find /home -type f -mtime -1       # Files modified in last 24h
+
+  - heading: "Permissions"
+    code: |
+      ls -l file.txt              # View permissions
+      chmod 644 file.txt          # rw-r--r-- (owner rw, group r, others r)
+      chmod +x script.sh          # Make executable
+      chown alice:alice file.txt  # Change owner and group
+      sudo command                # Run as superuser
+
+  - heading: "Process Management"
+    code: |
+      ps aux                      # List all running processes
+      top                         # Interactive process viewer
+      kill 1234                   # Send SIGTERM to PID 1234
+      kill -9 1234                # Force-kill PID 1234
+      jobs                        # List background jobs
+      command &                   # Run command in background
+
+key_takeaways:
+  - "Use Tab completion and ↑/↓ arrow keys to work faster in the terminal."
+  - "Permissions: r=4, w=2, x=1. chmod 755 means rwxr-xr-x."
+  - "grep and find are essential for searching; combine them with pipes (|)."

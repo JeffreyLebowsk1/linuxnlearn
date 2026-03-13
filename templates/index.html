@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}LinuxNLearn — AI-Assisted IT Education{% endblock %}
+{% block content %}
+<section class="hero">
+    <h1>Learn IT with AI Assistance</h1>
+    <p class="hero-subtitle">
+        Explore Linux, Networking, Cisco, and Python through structured lessons
+        with an AI-powered assistant always ready to help.
+    </p>
+    <a href="{{ url_for('chat') }}" class="btn btn-primary">💬 Ask the AI Assistant</a>
+</section>
+
+<section class="categories-section">
+    <h2>Learning Categories</h2>
+    <div class="categories-grid">
+        {% for key, cat in categories.items() %}
+        <a href="{{ url_for('category', category=key) }}" class="category-card category-{{ cat.color }}">
+            <div class="category-icon">{{ cat.icon }}</div>
+            <h3>{{ cat.title }}</h3>
+            <p>{{ cat.description }}</p>
+            <span class="category-cta">Start Learning →</span>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

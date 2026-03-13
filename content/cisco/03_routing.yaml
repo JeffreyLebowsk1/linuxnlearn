@@ -1,0 +1,51 @@
+title: "Routing Fundamentals"
+description: "Learn how routers forward packets and configure static and dynamic routing on Cisco devices."
+sections:
+  - heading: "How Routing Works"
+    text: >
+      A router forwards packets between different networks based on its routing table.
+      When a packet arrives, the router looks up the destination IP address and forwards
+      the packet out the best matching interface.
+
+  - heading: "Types of Routes"
+    table:
+      headers: ["Type", "Description", "Admin Distance"]
+      rows:
+        - ["Directly Connected", "Networks attached to the router's own interfaces", "0"]
+        - ["Static",             "Manually configured routes",                       "1"]
+        - ["OSPF",               "Open Shortest Path First (link-state)",            "110"]
+        - ["EIGRP",              "Enhanced Interior Gateway Routing Protocol",        "90"]
+        - ["RIP",                "Routing Information Protocol (distance-vector)",    "120"]
+
+  - heading: "Configuring Static Routes"
+    code: |
+      ! Add a static route: to reach 10.0.2.0/24, use next-hop 10.0.1.1
+      Router(config)# ip route 10.0.2.0 255.255.255.0 10.0.1.1
+
+      ! Default route (route of last resort) — send unknown traffic to 203.0.113.1
+      Router(config)# ip route 0.0.0.0 0.0.0.0 203.0.113.1
+
+      ! Verify routing table
+      Router# show ip route
+
+  - heading: "Enabling OSPF (Basic)"
+    code: |
+      Router(config)# router ospf 1
+      Router(config-router)# network 192.168.1.0 0.0.0.255 area 0
+      Router(config-router)# network 10.0.0.0 0.0.0.255 area 0
+
+      ! Verify OSPF neighbors
+      Router# show ip ospf neighbor
+      Router# show ip route ospf
+
+  - heading: "Show Commands for Routing"
+    points:
+      - "show ip route — display the full routing table."
+      - "show ip interface brief — see interface status and IP addresses."
+      - "ping <ip> — test reachability."
+      - "traceroute <ip> — trace the path packets take."
+
+key_takeaways:
+  - "Routers use routing tables to forward packets to the correct network."
+  - "Static routes are manual; dynamic protocols (OSPF, EIGRP) learn routes automatically."
+  - "Administrative distance determines which route is preferred when multiple sources exist."

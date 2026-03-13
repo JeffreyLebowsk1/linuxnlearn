@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ cat_info.title }} — LinuxNLearn{% endblock %}
+{% block content %}
+<div class="page-header category-header-{{ cat_info.color }}">
+    <div class="page-header-content">
+        <span class="category-icon-large">{{ cat_info.icon }}</span>
+        <div>
+            <h1>{{ cat_info.title }}</h1>
+            <p>{{ cat_info.description }}</p>
+        </div>
+    </div>
+</div>
+
+<section class="lessons-section">
+    {% if lessons %}
+    <div class="lessons-grid">
+        {% for lesson in lessons %}
+        <a href="{{ url_for('lesson', category=category, slug=lesson.slug) }}" class="lesson-card">
+            <div class="lesson-order">Lesson {{ loop.index }}</div>
+            <h3>{{ lesson.title }}</h3>
+            <p>{{ lesson.description }}</p>
+            <span class="lesson-cta">Read Lesson →</span>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No lessons available yet. Check back soon!</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

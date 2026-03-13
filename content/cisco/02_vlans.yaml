@@ -1,0 +1,50 @@
+title: "VLANs (Virtual LANs)"
+description: "Understand VLANs and how to configure them on Cisco switches."
+sections:
+  - heading: "What is a VLAN?"
+    text: >
+      A VLAN (Virtual LAN) logically segments a physical network into separate broadcast
+      domains. Devices in different VLANs cannot communicate directly without a Layer 3
+      device (router or Layer 3 switch), even if they share the same physical switch.
+
+  - heading: "Why Use VLANs?"
+    points:
+      - "Security — isolate sensitive departments (Finance, HR)."
+      - "Performance — reduce broadcast traffic in large networks."
+      - "Flexibility — move users between segments without rewiring."
+      - "Management — simplify network administration."
+
+  - heading: "Access vs Trunk Ports"
+    table:
+      headers: ["Port Type", "Description",                       "Typical Use"]
+      rows:
+        - ["Access", "Carries traffic for ONE VLAN; frames are untagged", "End devices (PCs, printers)"]
+        - ["Trunk",  "Carries traffic for MULTIPLE VLANs; frames are tagged (802.1Q)", "Switch-to-switch, switch-to-router links"]
+
+  - heading: "Configuring VLANs on a Cisco Switch"
+    code: |
+      ! Create VLAN 10 and name it
+      Switch(config)# vlan 10
+      Switch(config-vlan)# name SALES
+      Switch(config-vlan)# exit
+
+      ! Assign an access port to VLAN 10
+      Switch(config)# interface FastEthernet0/1
+      Switch(config-if)# switchport mode access
+      Switch(config-if)# switchport access vlan 10
+      Switch(config-if)# exit
+
+      ! Configure a trunk port
+      Switch(config)# interface GigabitEthernet0/1
+      Switch(config-if)# switchport mode trunk
+      Switch(config-if)# switchport trunk allowed vlan 10,20,30
+      Switch(config-if)# exit
+
+      ! Verify VLANs
+      Switch# show vlan brief
+      Switch# show interfaces trunk
+
+key_takeaways:
+  - "VLANs create logical broadcast domains on a physical switch."
+  - "Access ports carry one VLAN; trunk ports carry multiple VLANs using 802.1Q tags."
+  - "Inter-VLAN routing requires a router or Layer 3 switch."

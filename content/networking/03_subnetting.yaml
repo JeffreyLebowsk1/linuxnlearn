@@ -1,0 +1,39 @@
+title: "Subnetting"
+description: "Master subnetting to efficiently allocate IP address space and segment networks."
+sections:
+  - heading: "What is Subnetting?"
+    text: >
+      Subnetting divides a larger network into smaller, logical sub-networks (subnets).
+      This improves security, reduces broadcast traffic, and makes better use of IP space.
+
+  - heading: "Subnet Masks"
+    text: >
+      A subnet mask tells devices which part of an IP address is the network portion
+      and which is the host portion. Written in dotted-decimal or CIDR notation.
+    table:
+      headers: ["CIDR", "Subnet Mask",     "Usable Hosts", "Common Use"]
+      rows:
+        - ["/24", "255.255.255.0",   "254",    "Typical LAN segment"]
+        - ["/25", "255.255.255.128", "126",    "Split a /24 in two"]
+        - ["/26", "255.255.255.192", "62",     "Smaller department"]
+        - ["/30", "255.255.255.252", "2",      "Point-to-point link"]
+        - ["/32", "255.255.255.255", "0 (1 host)", "Single host / loopback"]
+
+  - heading: "Calculating a Subnet"
+    text: "Example: Given the network 192.168.10.0/26, find the details."
+    points:
+      - "Subnet mask: 255.255.255.192"
+      - "Block size: 256 - 192 = 64 addresses per subnet"
+      - "Subnets of 192.168.10.0/26: .0, .64, .128, .192"
+      - "For 192.168.10.0/26 → Network: 192.168.10.0, Broadcast: 192.168.10.63"
+      - "Usable hosts: 192.168.10.1 – 192.168.10.62 (62 hosts)"
+
+  - heading: "Quick Tip: Powers of 2"
+    text: >
+      Host bits = 32 - prefix length. Hosts = 2^(host bits) - 2.
+      For /26: 32-26=6 bits → 2^6 - 2 = 62 usable hosts.
+
+key_takeaways:
+  - "Subnetting splits a network into smaller segments using a subnet mask."
+  - "CIDR notation (e.g., /24) shows how many bits belong to the network."
+  - "Usable hosts = 2^(host bits) - 2 (subtract network and broadcast addresses)."
