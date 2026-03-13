@@ -1,0 +1,142 @@
+title: "Network Automation with Python"
+order: 2
+summary: "Python makes it possible to automate repetitive network tasks — from configuring devices to gathering data. Learn the key libraries and patterns."
+sections:
+  - heading: "Why Automate Networks?"
+    content: |
+      Manual network configuration is:
+      - **Error-prone** (fat-finger mistakes)
+      - **Slow** (configuring 100 switches one-by-one)
+      - **Hard to audit** (did you make the change on all devices?)
+
+      Automation gives you:
+      - **Consistency** – Same config, every time
+      - **Speed** – Configure thousands of devices in minutes
+      - **Documentation** – Code is self-documenting
+      - **Version control** – Track changes with Git
+
+  - heading: "Netmiko – SSH to Network Devices"
+    content: |
+      **Netmiko** simplifies SSH connections to network devices. Install with: `pip install netmiko`
+
+      ```python
+      from netmiko import ConnectHandler
+
+      cisco_device = {
+          "device_type": "cisco_ios",
+          "host": "192.168.1.1",
+          "username": "admin",
+          "password": "cisco123",
+          "secret": "enable_pass",  # Enable password
+      }
+
+      # Connect and run commands
+      with ConnectHandler(**cisco_device) as net_connect:
+          output = net_connect.send_command("show ip interface brief")
+          print(output)
+      ```
+
+  - heading: "Sending Configuration Commands"
+    content: |
+      ```python
+      from netmiko import ConnectHandler
+
+      device = {
+          "device_type": "cisco_ios",
+          "host": "192.168.1.1",
+          "username": "admin",
+          "password": "cisco123",
+      }
+
+      config_commands = [
+          "interface loopback 0",
+          "ip address 1.1.1.1 255.255.255.255",
+          "description Management Loopback",
+          "no shutdown",
+      ]
+
+      with ConnectHandler(**device) as conn:
+          conn.enable()
+          output = conn.send_config_set(config_commands)
+          conn.save_config()  # writes memory
+          print(output)
+      ```
+
+  - heading: "Working with Multiple Devices"
+    content: |
+      ```python
+      from netmiko import ConnectHandler
+
+      devices = [
+          {"device_type": "cisco_ios", "host": "10.0.0.1", "username": "admin", "password": "pass"},
+          {"device_type": "cisco_ios", "host": "10.0.0.2", "username": "admin", "password": "pass"},
+          {"device_type": "cisco_ios", "host": "10.0.0.3", "username": "admin", "password": "pass"},
+      ]
+
+      for device in devices:
+          with ConnectHandler(**device) as conn:
+              hostname = conn.send_command("show run | include hostname")
+              version = conn.send_command("show version | include Version")
+              print(f"{device['host']}: {hostname.strip()} | {version.strip()}")
+      ```
+
+  - heading: "Parsing Output with TextFSM"
+    content: |
+      Raw command output is hard to work with. **TextFSM** (included in Netmiko) parses output into structured data.
+
+      ```python
+      from netmiko import ConnectHandler
+
+      device = {
+          "device_type": "cisco_ios",
+          "host": "192.168.1.1",
+          "username": "admin",
+          "password": "cisco123",
+      }
+
+      with ConnectHandler(**device) as conn:
+          # use_textfsm=True returns list of dicts instead of raw text
+          output = conn.send_command(
+              "show ip interface brief",
+              use_textfsm=True
+          )
+          for interface in output:
+              print(f"{interface['intf']:20} {interface['ipaddr']:18} {interface['status']}")
+      ```
+
+  - heading: "Using the ipaddress Module"
+    content: |
+      Python's built-in `ipaddress` module is great for IP address manipulation:
+
+      ```python
+      import ipaddress
+
+      # Work with individual IPs
+      ip = ipaddress.ip_address("192.168.1.100")
+      print(ip.version)  # 4
+
+      # Work with networks
+      network = ipaddress.ip_network("192.168.1.0/24")
+      print(network.num_addresses)      # 256
+      print(network.network_address)    # 192.168.1.0
+      print(network.broadcast_address)  # 192.168.1.255
+
+      # Check if IP is in network
+      host = ipaddress.ip_address("192.168.1.50")
+      print(host in network)  # True
+
+      # List all hosts
+      for host in list(network.hosts())[:5]:
+          print(host)
+      ```
+
+quiz:
+  - question: "Which Python library is commonly used for SSH connections to Cisco devices?"
+    options: ["paramiko", "netmiko", "pysnmp", "ncclient"]
+    answer: 1
+    explanation: "Netmiko is built on top of Paramiko and provides a simplified interface for connecting to many network device types including Cisco IOS."
+
+  - question: "What Python module can check if an IP address belongs to a subnet?"
+    options: ["socket", "struct", "ipaddress", "os.network"]
+    answer: 2
+    explanation: "The built-in 'ipaddress' module provides ip_address() and ip_network() classes with membership testing using the 'in' operator."

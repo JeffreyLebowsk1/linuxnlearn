@@ -1,0 +1,119 @@
+title: "Linux Networking Commands"
+order: 2
+summary: "Linux includes powerful built-in tools for network configuration, troubleshooting, and monitoring. These are essential for any network engineer."
+sections:
+  - heading: "Network Interface Configuration"
+    content: |
+      ```bash
+      # Modern tools (iproute2)
+      ip addr show                          # Show all interfaces and IPs
+      ip addr show eth0                     # Show specific interface
+      ip link show                          # Show link state
+      ip link set eth0 up                   # Bring interface up
+      ip link set eth0 down                 # Bring interface down
+      ip addr add 192.168.1.100/24 dev eth0 # Add IP address
+      ip route show                         # Show routing table
+      ip route add default via 192.168.1.1  # Add default gateway
+
+      # Legacy tools (still common)
+      ifconfig                              # Show interfaces
+      ifconfig eth0 192.168.1.100 netmask 255.255.255.0
+      ```
+
+  - heading: "Connectivity Testing"
+    content: |
+      ```bash
+      # ICMP ping
+      ping 8.8.8.8                          # Ping continuously
+      ping -c 4 192.168.1.1                 # Ping 4 times
+      ping -i 0.2 -c 100 10.0.0.1           # Fast ping with count
+
+      # Traceroute
+      traceroute 8.8.8.8                    # Trace path (UDP)
+      traceroute -T 8.8.8.8                 # TCP traceroute (bypass firewalls)
+      mtr 8.8.8.8                           # Combined ping + traceroute (real-time)
+
+      # DNS lookups
+      nslookup google.com                   # Basic DNS query
+      dig google.com                        # Detailed DNS query
+      dig google.com MX                     # Query MX records
+      dig @8.8.8.8 google.com               # Query specific DNS server
+      host google.com                       # Simple DNS lookup
+      ```
+
+  - heading: "Port and Connection Scanning"
+    content: |
+      ```bash
+      # netstat (legacy)
+      netstat -tuln                         # Show listening ports (TCP/UDP)
+      netstat -an | grep ESTABLISHED        # Active connections
+
+      # ss (modern replacement for netstat)
+      ss -tuln                              # Listening ports
+      ss -tnp                               # TCP connections with process names
+      ss -s                                 # Socket statistics summary
+
+      # Check if a port is open
+      nc -zv 192.168.1.1 22                 # Test SSH port
+      nc -zv 192.168.1.1 80                 # Test HTTP port
+      telnet 192.168.1.1 80                 # Old-school port test
+      ```
+
+  - heading: "SSH – Remote Access"
+    content: |
+      ```bash
+      # Basic SSH
+      ssh user@192.168.1.1                  # Connect to remote host
+      ssh -p 2222 user@host.com             # Non-standard port
+      ssh -i ~/.ssh/id_rsa user@host        # Use specific key
+
+      # SSH key management
+      ssh-keygen -t ed25519                 # Generate ED25519 key pair (recommended)
+      ssh-copy-id user@192.168.1.1          # Copy public key to remote host
+
+      # SSH tunneling
+      ssh -L 8080:192.168.1.100:80 user@jumphost    # Local port forward
+      ssh -R 9090:localhost:3000 user@server         # Remote port forward
+      ssh -D 1080 user@proxy                         # SOCKS proxy
+
+      # SCP – Secure copy
+      scp file.txt user@remote:/tmp/               # Copy to remote
+      scp user@remote:/etc/hosts ./               # Copy from remote
+      scp -r ./configs user@remote:/opt/backup/   # Copy directory
+      ```
+
+  - heading: "Network Troubleshooting Workflow"
+    content: |
+      When a connection isn't working, follow this systematic approach:
+
+      ```bash
+      # 1. Check local interface
+      ip addr show eth0
+
+      # 2. Check local gateway reachability
+      ping -c 2 $(ip route | grep default | awk '{print $3}')
+
+      # 3. Check DNS resolution
+      dig google.com +short
+
+      # 4. Check internet connectivity
+      ping -c 2 8.8.8.8
+
+      # 5. Trace the path
+      traceroute 8.8.8.8
+
+      # 6. Check local firewall
+      iptables -L -n
+      ufw status
+      ```
+
+quiz:
+  - question: "Which modern command replaces 'ifconfig' for showing network interfaces on Linux?"
+    options: ["networkctl", "ip addr show", "netstat -i", "route -n"]
+    answer: 1
+    explanation: "'ip addr show' is part of the iproute2 package and is the modern replacement for ifconfig."
+
+  - question: "Which command would you use to show all listening TCP/UDP ports on a Linux system?"
+    options: ["netstat -an", "ss -tuln", "iptables -L", "route -n"]
+    answer: 1
+    explanation: "'ss -tuln' shows all listening (-l) TCP (-t) and UDP (-u) sockets with port numbers (-n)."
