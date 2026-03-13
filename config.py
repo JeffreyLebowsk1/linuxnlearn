@@ -1,10 +1,11 @@
 import os
+import secrets
 from dotenv import load_dotenv
 
 load_dotenv()
 
 # ── Flask ────────────────────────────────────────────────────────────────────
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
 DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
 PORT = int(os.environ.get("PORT", "5000"))
 

@@ -26,8 +26,8 @@ sections:
           "device_type": "cisco_ios",
           "host": "192.168.1.1",
           "username": "admin",
-          "password": "cisco123",
-          "secret": "enable_pass",  # Enable password
+          "password": "YOUR_PASSWORD",
+          "secret": "YOUR_ENABLE_PASSWORD",  # Enable password
       }
 
       # Connect and run commands
@@ -45,7 +45,7 @@ sections:
           "device_type": "cisco_ios",
           "host": "192.168.1.1",
           "username": "admin",
-          "password": "cisco123",
+          "password": "YOUR_PASSWORD",
       }
 
       config_commands = [
@@ -68,9 +68,9 @@ sections:
       from netmiko import ConnectHandler
 
       devices = [
-          {"device_type": "cisco_ios", "host": "10.0.0.1", "username": "admin", "password": "pass"},
-          {"device_type": "cisco_ios", "host": "10.0.0.2", "username": "admin", "password": "pass"},
-          {"device_type": "cisco_ios", "host": "10.0.0.3", "username": "admin", "password": "pass"},
+          {"device_type": "cisco_ios", "host": "10.0.0.1", "username": "admin", "password": "YOUR_PASSWORD"},
+          {"device_type": "cisco_ios", "host": "10.0.0.2", "username": "admin", "password": "YOUR_PASSWORD"},
+          {"device_type": "cisco_ios", "host": "10.0.0.3", "username": "admin", "password": "YOUR_PASSWORD"},
       ]
 
       for device in devices:
@@ -91,7 +91,7 @@ sections:
           "device_type": "cisco_ios",
           "host": "192.168.1.1",
           "username": "admin",
-          "password": "cisco123",
+          "password": "YOUR_PASSWORD",
       }
 
       with ConnectHandler(**device) as conn:
