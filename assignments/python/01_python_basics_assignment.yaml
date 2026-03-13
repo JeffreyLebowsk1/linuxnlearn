@@ -1,0 +1,80 @@
+title: "Python Basics Assignment"
+category: "python"
+difficulty: "beginner"
+estimated_minutes: 25
+related_lesson: "01_python_basics"
+instructions: |
+  Test your Python fundamentals. For code questions, write valid Python 3 code.
+  The AI grader will check your logic, syntax, and style.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "What will the following code print?\n\ndevices = ['R1', 'SW1', 'FW1']\nprint(devices[-1])"
+    options:
+      - "R1"
+      - "SW1"
+      - "FW1"
+      - "IndexError"
+    answer: 2
+    explanation: "Negative indexing in Python counts from the end of the list. devices[-1] returns the last element, 'FW1'."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "Which data structure is best for storing a device's hostname, IP address, and vendor as key-value pairs?"
+    options:
+      - "List"
+      - "Tuple"
+      - "Dictionary"
+      - "Set"
+    answer: 2
+    explanation: "A dictionary stores named key-value pairs, e.g., {'hostname': 'R1', 'ip': '10.0.0.1', 'vendor': 'Cisco'}. It is the natural choice for structured device information."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Write a Python function called `summarize_device` that accepts a dictionary with
+      keys 'hostname', 'ip', and 'vendor', and returns a formatted string like:
+        "Device: R1 | IP: 10.0.0.1 | Vendor: Cisco"
+
+      Then call the function with an example device and print the result.
+    rubric: |
+      Award up to 20 points:
+      - Function defined with correct name and parameter (5 pts)
+      - Accesses dictionary keys correctly (5 pts)
+      - Returns (not just prints) the formatted string matching the expected format (5 pts)
+      - Function is called and result is printed (5 pts)
+      Syntax errors that would prevent execution should result in significant point deductions.
+    sample_answer: |
+      def summarize_device(device):
+          return f"Device: {device['hostname']} | IP: {device['ip']} | Vendor: {device['vendor']}"
+
+      my_device = {"hostname": "R1", "ip": "10.0.0.1", "vendor": "Cisco"}
+      print(summarize_device(my_device))
+      # Output: Device: R1 | IP: 10.0.0.1 | Vendor: Cisco
+
+  - id: 4
+    type: "practical"
+    points: 20
+    question: |
+      Write a Python script that:
+      1. Creates a list of VLAN IDs: [10, 20, 30, 40, 50]
+      2. Loops through the list and prints a Cisco IOS command to create each VLAN, e.g.:
+           vlan 10
+           vlan 20
+           ...
+      3. After the loop, prints "!" to indicate end of config block.
+    rubric: |
+      Award up to 20 points:
+      - List defined correctly (5 pts)
+      - For loop iterates over the list (5 pts)
+      - Prints the correct IOS-style command for each VLAN using f-string or format (7 pts)
+      - Prints "!" after the loop (3 pts)
+    sample_answer: |
+      vlans = [10, 20, 30, 40, 50]
+      for vlan_id in vlans:
+          print(f"vlan {vlan_id}")
+      print("!")

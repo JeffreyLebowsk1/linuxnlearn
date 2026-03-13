@@ -1,0 +1,76 @@
+title: "VLAN Configuration Assignment"
+category: "cisco"
+difficulty: "intermediate"
+estimated_minutes: 30
+related_lesson: "02_vlans"
+instructions: |
+  Apply your VLAN knowledge to realistic Cisco switch configuration scenarios.
+  Write IOS commands exactly as you would enter them on a real Catalyst switch.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "Which 802.1Q concept allows one VLAN's traffic to cross a trunk port without a VLAN tag?"
+    options:
+      - "Access VLAN"
+      - "Native VLAN"
+      - "Voice VLAN"
+      - "Management VLAN"
+    answer: 1
+    explanation: "The Native VLAN is the one VLAN whose frames cross a trunk port untagged. By default this is VLAN 1, but best practice is to change it to an unused VLAN."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "A host in VLAN 10 needs to communicate with a host in VLAN 20. What is required?"
+    options:
+      - "A trunk port connecting the two switches"
+      - "A Layer 3 device (router or L3 switch) for inter-VLAN routing"
+      - "Spanning Tree Protocol"
+      - "Nothing — VLANs can communicate natively"
+    answer: 1
+    explanation: "VLANs are separate broadcast domains. A Layer 3 device (router or Layer 3 switch) is required to route traffic between them."
+
+  - id: 3
+    type: "practical"
+    points: 30
+    question: |
+      Configure a Cisco Catalyst switch (SW1) with the following requirements:
+      1. Create VLAN 10 named "Sales" and VLAN 20 named "Engineering"
+      2. Assign interface Fa0/1 as an access port in VLAN 10
+      3. Assign interface Fa0/2 as an access port in VLAN 20
+      4. Configure Gi0/1 as a trunk port, allowing only VLANs 10 and 20, with native VLAN 99
+      5. Verify VLANs exist using a show command
+
+      Write the full IOS command sequence from privileged EXEC mode.
+    rubric: |
+      6 points per step (30 total):
+      1. vlan 10 + name Sales; vlan 20 + name Engineering
+      2. interface fa0/1 + switchport mode access + switchport access vlan 10
+      3. interface fa0/2 + switchport mode access + switchport access vlan 20
+      4. interface gi0/1 + switchport mode trunk + switchport trunk native vlan 99 + switchport trunk allowed vlan 10,20
+      5. show vlan brief (or show vlan, show interfaces trunk)
+      Accept reasonable IOS syntax variations.
+    sample_answer: |
+      SW1# configure terminal
+      SW1(config)# vlan 10
+      SW1(config-vlan)# name Sales
+      SW1(config-vlan)# exit
+      SW1(config)# vlan 20
+      SW1(config-vlan)# name Engineering
+      SW1(config-vlan)# exit
+      SW1(config)# interface fastethernet 0/1
+      SW1(config-if)# switchport mode access
+      SW1(config-if)# switchport access vlan 10
+      SW1(config-if)# exit
+      SW1(config)# interface fastethernet 0/2
+      SW1(config-if)# switchport mode access
+      SW1(config-if)# switchport access vlan 20
+      SW1(config-if)# exit
+      SW1(config)# interface gigabitethernet 0/1
+      SW1(config-if)# switchport mode trunk
+      SW1(config-if)# switchport trunk native vlan 99
+      SW1(config-if)# switchport trunk allowed vlan 10,20
+      SW1(config-if)# end
+      SW1# show vlan brief

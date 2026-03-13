@@ -1,0 +1,75 @@
+title: "OSI Model Assignment"
+category: "networking"
+difficulty: "beginner"
+estimated_minutes: 20
+related_lesson: "01_osi_model"
+instructions: |
+  Demonstrate your understanding of the OSI model by completing the tasks below.
+  Multiple-choice questions are graded instantly. Written answers are graded by AI
+  and include detailed feedback explaining what you got right and what to improve.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "A web browser sends an HTTP GET request. At which OSI layer does the HTTP protocol primarily operate?"
+    options:
+      - "Layer 1 – Physical"
+      - "Layer 4 – Transport"
+      - "Layer 3 – Network"
+      - "Layer 7 – Application"
+    answer: 3
+    explanation: "HTTP is an Application layer (Layer 7) protocol. It is the layer closest to the end user and provides network services directly to applications such as web browsers."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "Which device primarily operates at Layer 2 of the OSI model?"
+    options:
+      - "Router"
+      - "Hub"
+      - "Switch"
+      - "Repeater"
+    answer: 2
+    explanation: "Switches operate at Layer 2 (Data Link) and make forwarding decisions based on MAC addresses. Routers operate at Layer 3, and hubs/repeaters operate at Layer 1."
+
+  - id: 3
+    type: "short_answer"
+    points: 20
+    question: "In your own words, explain the difference between Layer 3 (Network) and Layer 4 (Transport) of the OSI model. Give at least one example protocol for each layer."
+    rubric: |
+      Award full marks if the answer:
+      1. Explains that Layer 3 handles logical IP addressing and routing packets between networks.
+      2. Explains that Layer 4 handles end-to-end delivery between applications, including segmentation and reliability (TCP) or speed (UDP).
+      3. Names at least one Layer 3 protocol (IP, ICMP, OSPF, EIGRP, etc.).
+      4. Names at least one Layer 4 protocol (TCP, UDP).
+      Deduct points for missing any of the four criteria above.
+    sample_answer: |
+      Layer 3 (Network) is responsible for logical addressing using IP addresses and routing packets between different networks. Devices such as routers operate here. Example protocols: IP, ICMP.
+      Layer 4 (Transport) is responsible for end-to-end communication between applications on different hosts. It handles segmentation, flow control, and reliability. TCP provides reliable, ordered delivery while UDP is faster but connectionless. Example protocols: TCP, UDP.
+
+  - id: 4
+    type: "practical"
+    points: 20
+    question: |
+      You are troubleshooting a workstation that cannot reach a website.
+      Walk through the OSI model from Layer 1 to Layer 7, and for each layer name ONE specific
+      troubleshooting action you would take (e.g., a command to run, a thing to check, or a test to perform).
+    rubric: |
+      Award up to 20 points. The answer should cover all 7 layers with a sensible troubleshooting step for each:
+      - Layer 1 Physical: check cable, NIC LED, or run `ethtool eth0`
+      - Layer 2 Data Link: check ARP table (`arp -a`), MAC address, switch port LEDs
+      - Layer 3 Network: check IP config (`ip addr`), ping gateway, check routing table
+      - Layer 4 Transport: test port with `nc -zv`, check firewall rules
+      - Layer 5 Session: check established sessions (`ss -tn`)
+      - Layer 6 Presentation: check SSL/TLS certificate, encoding issues
+      - Layer 7 Application: check application logs, try `curl -v`, check DNS (`dig`)
+      Award ~3 points per layer. Partial credit for reasonable answers.
+    sample_answer: |
+      Layer 1 – Physical: Check that the network cable is plugged in and the NIC LED is lit. Run `ethtool eth0` to verify link speed.
+      Layer 2 – Data Link: Check the ARP table with `arp -a` to ensure the gateway MAC is resolved. Verify the switch port is up.
+      Layer 3 – Network: Run `ip addr show` to confirm an IP is assigned. Ping the default gateway (`ping 192.168.1.1`). Check routing with `ip route`.
+      Layer 4 – Transport: Use `nc -zv 8.8.8.8 80` to test TCP connectivity. Check local firewall rules with `iptables -L`.
+      Layer 5 – Session: Run `ss -tn` to see if TCP sessions are established.
+      Layer 6 – Presentation: Use `openssl s_client -connect website.com:443` to check the TLS certificate.
+      Layer 7 – Application: Run `curl -v https://website.com` and check for HTTP errors. Use `dig website.com` to verify DNS resolution.
