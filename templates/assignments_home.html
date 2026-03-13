@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Assignments — LinuxNLearn{% endblock %}
+
+{% block content %}
+<section class="hero hero-small">
+    <div class="hero-content">
+        <h1>📝 Assignments</h1>
+        <p class="hero-subtitle">
+            Practice what you've learned with graded assignments. Multiple-choice questions
+            are graded instantly; written and practical answers are graded by AI with
+            detailed explanations.
+        </p>
+    </div>
+</section>
+
+<section class="categories-section">
+    <div class="section-container">
+        <div class="categories-grid">
+            {% for key, cat in categories.items() %}
+            <a href="{{ url_for('assignments', category=key) }}" class="category-card category-{{ cat.color }}">
+                <div class="category-icon">{{ cat.icon }}</div>
+                <h3>{{ cat.title }}</h3>
+                <div class="category-meta">
+                    <span class="lesson-count">{{ cat.assignment_count }} assignment{{ 's' if cat.assignment_count != 1 else '' }}</span>
+                    <span class="arrow">→</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}{{ lesson.title }} — {{ meta.title }} — LinuxNLearn{% endblock %}
+
+{% block content %}
+<div class="page-container lesson-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <a href="{{ url_for('category', category=category) }}">{{ meta.title }}</a>
+        <span>›</span>
+        <span>{{ lesson.title }}</span>
+    </div>
+
+    <div class="lesson-header">
+        <span class="lesson-badge category-{{ meta.color }}">{{ meta.icon }} {{ meta.title }}</span>
+        <h1>{{ lesson.title }}</h1>
+        <p class="lesson-summary">{{ lesson.summary }}</p>
+    </div>
+
+    <div class="lesson-body">
+        {% for section in lesson.sections %}
+        <div class="lesson-section">
+            <h2>{{ section.heading }}</h2>
+            <div class="section-content">{{ section.content | markdown_to_html }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if lesson.quiz %}
+    <div class="quiz-section">
+        <h2>🧠 Knowledge Check</h2>
+        <p>Test your understanding of this lesson.</p>
+        <div class="quiz-questions" id="quiz">
+            {% for q in lesson.quiz %}
+            <div class="quiz-question" data-correct="{{ q.answer }}">
+                <p class="question-text">{{ loop.index }}. {{ q.question }}</p>
+                <div class="quiz-options">
+                    {% for option in q.options %}
+                    <button class="quiz-option" data-index="{{ loop.index0 }}">{{ option }}</button>
+                    {% endfor %}
+                </div>
+                <div class="quiz-feedback hidden">
+                    <p class="explanation">{{ q.explanation }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="lesson-ai-prompt">
+        <div class="ai-prompt-content">
+            <span>🤖</span>
+            <div>
+                <strong>Have a question about this lesson?</strong>
+                <p>Ask the AI assistant for more details, examples, or clarifications.</p>
+            </div>
+            <a href="{{ url_for('assistant') }}?context={{ category }}" class="btn btn-ai-small">Ask AI</a>
+        </div>
+    </div>
+
+    <div class="lesson-nav">
+        <div class="lesson-nav-prev">
+            {% if prev_lesson %}
+            <a href="{{ url_for('lesson', category=category, slug=prev_lesson.slug) }}" class="btn btn-nav">
+                ← {{ prev_lesson.title }}
+            </a>
+            {% endif %}
+        </div>
+        <a href="{{ url_for('category', category=category) }}" class="btn btn-outline">
+            📚 All {{ meta.title }} Lessons
+        </a>
+        <div class="lesson-nav-next">
+            {% if next_lesson %}
+            <a href="{{ url_for('lesson', category=category, slug=next_lesson.slug) }}" class="btn btn-nav">
+                {{ next_lesson.title }} →
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% endblock %}

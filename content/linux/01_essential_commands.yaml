@@ -1,0 +1,95 @@
+title: "Essential Linux Commands"
+order: 1
+summary: "Master the most important Linux commands for navigation, file management, and system administration."
+sections:
+  - heading: "Navigation Commands"
+    content: |
+      ```bash
+      pwd               # Print working directory
+      ls                # List directory contents
+      ls -la            # Long listing with hidden files
+      cd /etc           # Change directory
+      cd ..             # Go up one level
+      cd ~              # Go to home directory
+      cd -              # Go to previous directory
+      ```
+
+  - heading: "File and Directory Operations"
+    content: |
+      ```bash
+      mkdir -p /opt/myapp/config    # Create directories (including parents)
+      touch file.txt                 # Create empty file
+      cp file.txt backup.txt         # Copy file
+      cp -r dir1/ dir2/              # Copy directory recursively
+      mv old.txt new.txt             # Move/rename file
+      rm file.txt                    # Remove file
+      rm -rf directory/              # Remove directory recursively ⚠️
+      ```
+
+  - heading: "Viewing File Contents"
+    content: |
+      ```bash
+      cat /etc/hosts                 # Print entire file
+      head -20 /var/log/syslog       # First 20 lines
+      tail -f /var/log/syslog        # Follow log in real-time
+      less /etc/passwd               # Page through a file
+      grep "error" /var/log/syslog   # Search for pattern
+      grep -r "192.168" /etc/        # Recursive search
+      ```
+
+  - heading: "File Permissions"
+    content: |
+      ```bash
+      ls -l file.txt
+      # -rw-r--r-- 1 user group 1234 Jan 1 12:00 file.txt
+      # Type | User | Group | Others
+
+      chmod 755 script.sh            # rwxr-xr-x
+      chmod +x script.sh             # Add execute permission
+      chmod 600 private.key          # rw------- (SSH keys)
+      chown user:group file.txt      # Change owner
+      ```
+
+      | Number | Permission |
+      |---|---|
+      | 7 | rwx (read+write+execute) |
+      | 6 | rw- (read+write) |
+      | 5 | r-x (read+execute) |
+      | 4 | r-- (read only) |
+      | 0 | --- (no permission) |
+
+  - heading: "Finding Files"
+    content: |
+      ```bash
+      find / -name "*.conf" 2>/dev/null     # Find all .conf files
+      find /etc -type f -name "ssh*"         # Find SSH config files
+      find /var/log -mtime -7                # Files modified in last 7 days
+      which python3                          # Find executable location
+      whereis nginx                          # Find binary, source, manual
+      locate filename                        # Quick search (needs updatedb)
+      ```
+
+  - heading: "Process Management"
+    content: |
+      ```bash
+      ps aux                         # All running processes
+      ps aux | grep nginx            # Find specific process
+      top                            # Interactive process monitor
+      htop                           # Better interactive monitor (if installed)
+      kill 1234                      # Kill process by PID
+      kill -9 1234                   # Force kill
+      killall nginx                  # Kill by name
+      nohup command &                # Run in background, survive logout
+      jobs                           # List background jobs
+      ```
+
+quiz:
+  - question: "Which command shows real-time updates to a log file?"
+    options: ["cat -f", "tail -f", "head -f", "less +F"]
+    answer: 1
+    explanation: "'tail -f' follows a file and shows new content as it is appended, perfect for monitoring logs."
+
+  - question: "What permissions does chmod 755 set?"
+    options: ["rwxrwxrwx", "rwxr-xr-x", "rw-r--r--", "rwx------"]
+    answer: 1
+    explanation: "755 = 7(rwx) for owner, 5(r-x) for group, 5(r-x) for others = rwxr-xr-x."

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ meta.title }} Assignments — LinuxNLearn{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <a href="{{ url_for('assignments_home') }}">Assignments</a>
+        <span>›</span>
+        <span>{{ meta.title }}</span>
+    </div>
+
+    <div class="category-header category-{{ meta.color }}">
+        <div class="category-header-icon">{{ meta.icon }}</div>
+        <div>
+            <h1>{{ meta.title }} Assignments</h1>
+            <p>{{ meta.description }}</p>
+        </div>
+    </div>
+
+    {% if assignments %}
+    <div class="lessons-list">
+        {% for item in assignments %}
+        <a href="{{ url_for('assignment', category=category, slug=item.slug) }}" class="lesson-item">
+            <div class="lesson-number">{{ loop.index }}</div>
+            <div class="lesson-info">
+                <h3>{{ item.title }}</h3>
+                <p>{{ item.instructions | truncate(120) }}</p>
+                <div class="assignment-meta-tags">
+                    <span class="tag tag-difficulty tag-{{ item.difficulty }}">{{ item.difficulty | title }}</span>
+                    <span class="tag">⏱ ~{{ item.estimated_minutes }} min</span>
+                    <span class="tag">{{ item.tasks | length }} task{{ 's' if item.tasks | length != 1 else '' }}</span>
+                </div>
+            </div>
+            <div class="lesson-arrow">→</div>
+        </a>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>🚧 Assignments for this category are coming soon!</p>
+        <p>In the meantime, review the <a href="{{ url_for('category', category=category) }}">{{ meta.title }} lessons</a>.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

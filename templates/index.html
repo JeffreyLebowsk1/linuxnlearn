@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}LinuxNLearn — AI-Assisted IT Education{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <div class="hero-content">
+        <h1>Learn IT with AI Assistance</h1>
+        <p class="hero-subtitle">
+            Master networking, Cisco, Python, and Linux with structured lessons and an
+            AI tutor that answers your questions in real time.
+        </p>
+        <div class="hero-actions">
+            <a href="{{ url_for('category', category='networking') }}" class="btn btn-primary">Start Learning</a>
+            <a href="{{ url_for('assistant') }}" class="btn btn-secondary">🤖 Ask AI Assistant</a>
+        </div>
+    </div>
+</section>
+
+<section class="categories-section">
+    <div class="section-container">
+        <h2 class="section-title">Learning Tracks</h2>
+        <div class="categories-grid">
+            {% for key, cat in categories.items() %}
+            <a href="{{ url_for('category', category=key) }}" class="category-card category-{{ cat.color }}">
+                <div class="category-icon">{{ cat.icon }}</div>
+                <h3>{{ cat.title }}</h3>
+                <p>{{ cat.description }}</p>
+                <div class="category-meta">
+                    <span class="lesson-count">{{ cat.lesson_count }} lesson{{ 's' if cat.lesson_count != 1 else '' }}</span>
+                    <span class="arrow">→</span>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<section class="features-section">
+    <div class="section-container">
+        <h2 class="section-title">Why LinuxNLearn?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>AI-Powered Learning</h3>
+                <p>Get instant answers from an AI tutor that understands networking, Cisco IOS, Python, and Linux in depth.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">📚</div>
+                <h3>Structured Content</h3>
+                <p>Lessons progress from fundamentals to advanced topics, with quizzes to reinforce your understanding.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔧</div>
+                <h3>Practical Focus</h3>
+                <p>Every lesson includes real commands, real configs, and real-world examples you can use on the job.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🚀</div>
+                <h3>Ever-Expanding</h3>
+                <p>New lessons and topics are added continuously. YAML-based content makes it easy to add anything.</p>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}

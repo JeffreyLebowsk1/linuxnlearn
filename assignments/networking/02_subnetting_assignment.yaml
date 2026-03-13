@@ -1,0 +1,94 @@
+title: "Subnetting Assignment"
+category: "networking"
+difficulty: "intermediate"
+estimated_minutes: 30
+related_lesson: "03_subnetting"
+instructions: |
+  Complete the subnetting calculations below. Show your working where required.
+  Practical tasks are AI-graded — explain your reasoning clearly.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "How many usable host addresses are in the subnet 192.168.5.0/27?"
+    options:
+      - "14"
+      - "30"
+      - "32"
+      - "62"
+    answer: 1
+    explanation: "A /27 gives 2^5 = 32 total addresses. Subtract the network and broadcast addresses: 32 - 2 = 30 usable hosts."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "You subnet 10.0.0.0/24 with a /26 mask. What is the broadcast address of the SECOND subnet?"
+    options:
+      - "10.0.0.63"
+      - "10.0.0.127"
+      - "10.0.0.128"
+      - "10.0.0.191"
+    answer: 1
+    explanation: "A /26 has a block size of 64. Subnet 1: 10.0.0.0–63 (broadcast .63). Subnet 2: 10.0.0.64–127 (broadcast .127)."
+
+  - id: 3
+    type: "short_answer"
+    points: 20
+    question: |
+      A company has been assigned the network 172.16.10.0/24. They need to create 6 subnets,
+      each supporting at least 25 hosts. What subnet mask should be used?
+      List the first three subnet ranges (network address, host range, broadcast).
+    rubric: |
+      1. Correct mask: /27 (255.255.255.224) — supports 30 hosts per subnet, gives 8 subnets. Award 8 pts.
+      2. Correct first three subnets listed with accurate network, host range, and broadcast:
+         - 172.16.10.0/27  hosts .1–.30  broadcast .31
+         - 172.16.10.32/27 hosts .33–.62 broadcast .63
+         - 172.16.10.64/27 hosts .65–.94 broadcast .95
+         Award 4 pts per correct subnet (12 pts total).
+    sample_answer: |
+      For 6 subnets with 25+ hosts each:
+      - Need at least 5 host bits (2^5 - 2 = 30 ≥ 25 hosts) → /27 mask (255.255.255.224)
+      - /27 gives 8 subnets from a /24 — meets the requirement of 6.
+
+      Subnet 1: Network 172.16.10.0  | Hosts 172.16.10.1 – 172.16.10.30  | Broadcast 172.16.10.31
+      Subnet 2: Network 172.16.10.32 | Hosts 172.16.10.33 – 172.16.10.62 | Broadcast 172.16.10.63
+      Subnet 3: Network 172.16.10.64 | Hosts 172.16.10.65 – 172.16.10.94 | Broadcast 172.16.10.95
+
+  - id: 4
+    type: "practical"
+    points: 20
+    question: |
+      You are designing a network for a small office. The requirements are:
+      - Sales department: 50 hosts
+      - IT department: 20 hosts
+      - Management VLAN: 5 hosts
+      - Two router-to-router links (2 hosts each)
+
+      Using VLSM from the 192.168.100.0/24 block, assign the most efficient subnets for
+      each requirement. List the subnet, mask, and usable host range for each.
+    rubric: |
+      Award up to 20 points. Evaluate on:
+      1. Using VLSM correctly — largest subnet assigned first (5 pts).
+      2. Sales: /26 (62 hosts) — e.g. 192.168.100.0/26 (4 pts).
+      3. IT: /27 (30 hosts) — e.g. 192.168.100.64/27 (4 pts).
+      4. Management: /29 (6 hosts) — e.g. 192.168.100.96/29 (4 pts).
+      5. Two P2P links: /30 (2 hosts each) — e.g. .104/30 and .108/30 (3 pts).
+      Exact addresses may vary but subnets must not overlap.
+    sample_answer: |
+      Allocate largest first to avoid wasting space:
+
+      Sales (50 hosts) → /26 (62 hosts): 192.168.100.0/26
+        Hosts: 192.168.100.1 – 192.168.100.62  Broadcast: .63
+
+      IT (20 hosts) → /27 (30 hosts): 192.168.100.64/27
+        Hosts: 192.168.100.65 – 192.168.100.94  Broadcast: .95
+
+      Management (5 hosts) → /29 (6 hosts): 192.168.100.96/29
+        Hosts: 192.168.100.97 – 192.168.100.102  Broadcast: .103
+
+      P2P Link 1 → /30 (2 hosts): 192.168.100.104/30
+        Hosts: 192.168.100.105 – 192.168.100.106  Broadcast: .107
+
+      P2P Link 2 → /30 (2 hosts): 192.168.100.108/30
+        Hosts: 192.168.100.109 – 192.168.100.110  Broadcast: .111

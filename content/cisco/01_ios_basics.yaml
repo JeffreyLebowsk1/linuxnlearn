@@ -1,0 +1,92 @@
+title: "Cisco IOS Basics"
+order: 1
+summary: "Cisco IOS (Internetwork Operating System) is the software that runs on Cisco routers and switches. Learning IOS is the foundation of Cisco networking."
+sections:
+  - heading: "Connecting to a Cisco Device"
+    content: |
+      You can access a Cisco device through:
+      - **Console port** – Direct physical connection using a rollover/console cable
+      - **Telnet** – Unencrypted remote access (not recommended)
+      - **SSH** – Encrypted remote access (preferred)
+
+      When you first connect, you'll see a prompt like:
+      ```
+      Router>
+      ```
+
+  - heading: "IOS Modes"
+    content: |
+      Cisco IOS has several privilege modes:
+
+      | Mode | Prompt | Access | Purpose |
+      |---|---|---|---|
+      | User EXEC | `Router>` | Default | Basic monitoring |
+      | Privileged EXEC | `Router#` | `enable` | Full monitoring, exec commands |
+      | Global Config | `Router(config)#` | `configure terminal` | Device-wide changes |
+      | Interface Config | `Router(config-if)#` | `interface <type><#>` | Per-interface settings |
+      | Line Config | `Router(config-line)#` | `line console 0` | Console/VTY settings |
+
+  - heading: "Essential Navigation Commands"
+    content: |
+      ```
+      Router> enable                    ! Enter privileged EXEC mode
+      Router# configure terminal        ! Enter global config mode
+      Router(config)# exit              ! Go back one level
+      Router(config)# end               ! Return to privileged EXEC
+      Router# disable                   ! Return to user EXEC
+      ```
+
+      **Keyboard shortcuts:**
+      - `Ctrl+C` – Interrupt/abort
+      - `Ctrl+Z` – Return to privileged EXEC
+      - `Tab` – Auto-complete a command
+      - `?` – Show available commands
+
+  - heading: "Show Commands (Your Best Friend)"
+    content: |
+      ```
+      Router# show version              ! IOS version, uptime, hardware
+      Router# show running-config       ! Current active configuration
+      Router# show startup-config       ! Saved configuration in NVRAM
+      Router# show interfaces           ! All interfaces status
+      Router# show ip interface brief   ! Quick interface summary
+      Router# show ip route             ! Routing table
+      Router# show cdp neighbors        ! Discover connected Cisco devices
+      Router# show arp                  ! ARP table
+      ```
+
+      > **Tip:** `show ip interface brief` is one of the most-used commands for troubleshooting.
+
+  - heading: "Basic Configuration"
+    content: |
+      ```
+      Router(config)# hostname R1                      ! Set device name
+      R1(config)# enable secret cisco123               ! Set privileged password
+      R1(config)# service password-encryption          ! Encrypt passwords
+      R1(config)# banner motd # Authorized Access Only! #  ! Login banner
+      R1(config)# no ip domain-lookup                  ! Disable DNS lookup on typos
+      ```
+
+  - heading: "Saving Your Configuration"
+    content: |
+      Changes in IOS are applied immediately but are **not saved** unless you explicitly save:
+
+      ```
+      R1# copy running-config startup-config   ! Save config (long form)
+      R1# write memory                         ! Save config (short form)
+      R1# write erase                          ! ⚠️ Erase saved config (careful!)
+      ```
+
+      - **Running config** – stored in RAM (lost on reboot)
+      - **Startup config** – stored in NVRAM (survives reboot)
+
+quiz:
+  - question: "What prompt indicates you are in Global Configuration mode?"
+    options: ["Router>", "Router#", "Router(config)#", "Router(config-if)#"]
+    answer: 2
+    explanation: "Router(config)# is the Global Configuration mode prompt, accessed with 'configure terminal'."
+
+  - question: "Which command saves the running configuration to survive a reboot?"
+    options: ["save config", "copy running-config startup-config", "write running", "save startup"]
+    answer: 1
+    explanation: "'copy running-config startup-config' copies the active config from RAM to NVRAM, where it persists after reboot."

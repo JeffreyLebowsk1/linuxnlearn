@@ -1,0 +1,85 @@
+title: "Static and Dynamic Routing"
+order: 3
+summary: "Routing is how packets find their way from source to destination across networks. Learn static routes and dynamic routing protocols."
+sections:
+  - heading: "What is Routing?"
+    content: |
+      A **router** forwards packets between networks based on its **routing table**. The routing table contains entries that map destination networks to outgoing interfaces or next-hop addresses.
+
+      Sources of routing table entries:
+      1. **Directly connected networks** – Auto-added when interfaces are configured
+      2. **Static routes** – Manually configured
+      3. **Dynamic routing** – Learned from other routers automatically
+
+  - heading: "Reading the Routing Table"
+    content: |
+      ```
+      R1# show ip route
+
+      Codes: C - connected, S - static, R - RIP, O - OSPF, D - EIGRP...
+
+      C    192.168.1.0/24 is directly connected, GigabitEthernet0/0
+      S    10.0.0.0/8 [1/0] via 192.168.1.1
+      O    172.16.0.0/16 [110/2] via 192.168.1.1
+      ```
+
+      Format: `[Administrative Distance/Metric]`
+
+  - heading: "Static Routes"
+    content: |
+      ```
+      ! Basic static route
+      R1(config)# ip route 10.0.0.0 255.0.0.0 192.168.1.254
+
+      ! Default route (gateway of last resort)
+      R1(config)# ip route 0.0.0.0 0.0.0.0 203.0.113.1
+
+      ! Verify
+      R1# show ip route static
+      ```
+
+      **Administrative Distance for static routes = 1** (very trusted)
+
+  - heading: "OSPF (Open Shortest Path First)"
+    content: |
+      **OSPF** is a link-state routing protocol widely used in enterprise networks.
+
+      ```
+      ! Enable OSPF
+      R1(config)# router ospf 1
+      R1(config-router)# router-id 1.1.1.1
+
+      ! Advertise networks (wildcard mask is inverse of subnet mask)
+      R1(config-router)# network 192.168.1.0 0.0.0.255 area 0
+      R1(config-router)# network 10.0.0.0 0.255.255.255 area 0
+
+      ! Verify
+      R1# show ip ospf neighbor
+      R1# show ip ospf database
+      ```
+
+      OSPF **Administrative Distance = 110**
+
+  - heading: "Administrative Distance Reference"
+    content: |
+      | Route Source | AD |
+      |---|---|
+      | Connected | 0 |
+      | Static | 1 |
+      | EIGRP (internal) | 90 |
+      | OSPF | 110 |
+      | RIP | 120 |
+      | Unknown | 255 (unreachable) |
+
+      Lower AD = more trusted. When two protocols advertise the same network, the one with lower AD wins.
+
+quiz:
+  - question: "What does 'AD' stand for and what does a lower value mean?"
+    options: ["Application Delivery - lower is better", "Administrative Distance - lower is more trusted", "Automatic Discovery - lower is faster", "Area Designation - lower is more specific"]
+    answer: 1
+    explanation: "Administrative Distance (AD) indicates the trustworthiness of a routing source. Lower AD = more trusted route."
+
+  - question: "What is the AD for OSPF?"
+    options: ["1", "90", "110", "120"]
+    answer: 2
+    explanation: "OSPF has an Administrative Distance of 110."
