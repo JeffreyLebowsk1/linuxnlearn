@@ -1,11 +1,10 @@
-import json
 import os
 
 import markdown as md
-import openai
 import yaml
 from flask import Flask, render_template, request, jsonify
 import config
+import ai_providers
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -236,21 +235,20 @@ def assistant():
     return render_template("assistant.html", categories=CATEGORIES)
 
 
+@app.route("/chat")
+def chat():
+    """Full-page AI chat interface (used by chat.js frontend)."""
+    return render_template("chat.html", categories=CATEGORIES)
+
+
 @app.route("/api/ask", methods=["POST"])
 def ask():
     """AI assistant endpoint."""
-    if not config.OPENAI_API_KEY:
-        return (
-            jsonify(
-                {
-                    "error": "OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file."
-                }
-            ),
-            503,
-        )
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
 
-    data = request.get_json()
-    if not data or "message" not in data:
+    if "message" not in data:
         return jsonify({"error": "Missing message field"}), 400
 
     user_message = data["message"].strip()
@@ -258,40 +256,59 @@ def ask():
         return jsonify({"error": "Message cannot be empty"}), 400
 
     context = data.get("context", "general")
+    provider = data.get("provider")
 
-    system_prompt = (
-        "You are an expert IT educator specializing in networking, Cisco technologies, "
-        "Python programming, and Linux administration. Your goal is to teach clearly and "
-        "progressively, using examples and analogies to make complex concepts accessible. "
-        "When explaining networking concepts, relate them to real-world scenarios. "
-        "When explaining Cisco IOS commands, always show the syntax and give practical examples. "
-        "When teaching Python, provide runnable code snippets. "
-        "When explaining Linux, include actual commands the user can try. "
-        "Keep responses concise but thorough, and always encourage further exploration."
-    )
+    system_prompt = ai_providers.EDUCATION_SYSTEM_PROMPT
     if context and context != "general":
         subject = CATEGORIES.get(context, {}).get("title", context)
         system_prompt += f" The current learning context is: {subject}."
 
     try:
-        client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            max_tokens=1024,
-            temperature=0.7,
-        )
-        answer = response.choices[0].message.content
+        answer = ai_providers.ask(user_message, system_prompt=system_prompt, provider=provider)
         return jsonify({"answer": answer})
-    except openai.AuthenticationError:
-        return jsonify({"error": "Invalid OpenAI API key. Please check your configuration."}), 401
-    except openai.RateLimitError:
-        return jsonify({"error": "Rate limit exceeded. Please try again in a moment."}), 429
-    except openai.OpenAIError as e:
-        return jsonify({"error": f"AI service error: {str(e)}"}), 500
+    except ai_providers.ProviderError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
+
+
+@app.route("/api/chat", methods=["POST"])
+def chat_api():
+    """Chat API endpoint used by the chat.js frontend."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    if "message" not in data:
+        return jsonify({"error": "Missing message field"}), 400
+
+    user_message = data["message"].strip()
+    if not user_message:
+        return jsonify({"error": "Message cannot be empty"}), 400
+
+    # Graceful fallback when no AI provider is configured
+    if not ai_providers.get_available_providers():
+        return jsonify(
+            {
+                "reply": (
+                    "No AI provider is configured. Please set OPENAI_API_KEY "
+                    "(or GEMINI_API_KEY / PERPLEXITY_API_KEY) in your .env file "
+                    "to enable AI responses."
+                )
+            }
+        ), 200
+
+    category = data.get("category", "")
+    provider = data.get("provider")
+
+    system_prompt = ai_providers.EDUCATION_SYSTEM_PROMPT
+    if category:
+        subject = CATEGORIES.get(category.lower(), {}).get("title", category)
+        system_prompt += f" The current learning context is: {subject}."
+
+    try:
+        reply = ai_providers.ask(user_message, system_prompt=system_prompt, provider=provider)
+        return jsonify({"reply": reply})
+    except ai_providers.ProviderError as exc:
+        return jsonify({"error": str(exc)}), exc.status_code
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +392,7 @@ def grade():
 
     # AI-grade all open-ended tasks (requires API key)
     if open_tasks_to_grade:
-        if not config.OPENAI_API_KEY:
+        if not ai_providers.get_available_providers():
             # Graceful degradation: return pending results without AI score
             for task, user_answer, max_pts in open_tasks_to_grade:
                 graded_tasks.append(
@@ -391,14 +408,14 @@ def grade():
                     }
                 )
         else:
-            try:
-                client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
-                for task, user_answer, max_pts in open_tasks_to_grade:
-                    result = _grade_open_ended_ai(client, task, user_answer, max_pts, category)
+            subject = CATEGORIES.get(category, {}).get("title", category)
+            for task, user_answer, max_pts in open_tasks_to_grade:
+                try:
+                    result = ai_providers.grade_open_ended(task, user_answer, max_pts, subject)
                     total_score += result["score"]
                     graded_tasks.append(result)
-            except openai.OpenAIError as e:
-                return jsonify({"error": f"AI grading error: {str(e)}"}), 500
+                except ai_providers.ProviderError as exc:
+                    return jsonify({"error": str(exc)}), exc.status_code
 
     # Sort graded tasks by original task id order
     id_order = {str(t["id"]): i for i, t in enumerate(tasks)}
@@ -446,63 +463,6 @@ def _grade_multiple_choice(task, user_answer, max_pts):
             else "❌ Incorrect. " + task.get("explanation", "")
         ),
         "ideal_answer": correct_text,
-    }
-
-
-def _grade_open_ended_ai(client, task, user_answer, max_pts, category):
-    """Ask the AI to grade an open-ended or practical task."""
-    subject = CATEGORIES.get(category, {}).get("title", category)
-    question = task.get("question", "")
-    rubric = task.get("rubric", "")
-    sample_answer = task.get("sample_answer", "")
-
-    if not user_answer:
-        return {
-            "id": task["id"],
-            "type": task.get("type"),
-            "score": 0,
-            "max_score": max_pts,
-            "correct": False,
-            "feedback": "No answer provided.",
-            "ideal_answer": sample_answer or "See rubric.",
-        }
-
-    prompt = (
-        f"You are grading a student assignment on {subject}.\n\n"
-        f"Question ({max_pts} points):\n{question}\n\n"
-        f"Grading rubric:\n{rubric}\n\n"
-        f"Student's answer:\n{user_answer}\n\n"
-        f"Evaluate the answer strictly according to the rubric. "
-        f"Respond with a JSON object using exactly these keys:\n"
-        f'{{"score": <integer 0 to {max_pts}>, '
-        f'"correct": <true if score >= {round(max_pts * 0.7)}>, '
-        f'"feedback": "<specific, constructive feedback on what was right and what was missing>", '
-        f'"ideal_answer": "<a concise model answer>"}}'
-    )
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        max_tokens=512,
-        temperature=0.3,
-    )
-
-    raw = response.choices[0].message.content
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = {}
-
-    score = max(0, min(max_pts, int(data.get("score", 0))))
-    return {
-        "id": task["id"],
-        "type": task.get("type"),
-        "score": score,
-        "max_score": max_pts,
-        "correct": bool(data.get("correct", score >= round(max_pts * 0.7))),
-        "feedback": data.get("feedback", "No feedback available."),
-        "ideal_answer": data.get("ideal_answer", sample_answer or "See rubric."),
     }
 
 
