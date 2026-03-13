@@ -128,3 +128,142 @@ def test_api_chat_empty_message(client):
 def test_api_chat_no_json_body(client):
     response = client.post("/api/chat", data="not json", content_type="text/plain")
     assert response.status_code in (400, 415)
+
+
+# ── Instructor page ────────────────────────────────────────────────────────────
+
+def test_instructor_page_ok(client):
+    response = client.get("/instructor")
+    assert response.status_code == 200
+
+
+def test_instructor_page_contains_chat_input(client):
+    response = client.get("/instructor")
+    assert b"chat-input" in response.data
+
+
+def test_instructor_page_contains_heading(client):
+    response = client.get("/instructor")
+    assert b"Instructor" in response.data
+
+
+# ── API /api/instructor ────────────────────────────────────────────────────────
+
+def test_api_instructor_no_api_key_returns_fallback(client, monkeypatch):
+    """Without an API key, the endpoint returns a helpful fallback message."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    response = client.post(
+        "/api/instructor",
+        json={"messages": [{"role": "user", "content": "Teach me about Linux"}]},
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    data = response.get_json()
+    assert "reply" in data
+    assert "OPENAI_API_KEY" in data["reply"]
+
+
+def test_api_instructor_missing_messages(client):
+    response = client.post("/api/instructor", json={}, content_type="application/json")
+    assert response.status_code == 400
+
+
+def test_api_instructor_empty_messages_list(client):
+    response = client.post(
+        "/api/instructor",
+        json={"messages": []},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+def test_api_instructor_invalid_role(client):
+    response = client.post(
+        "/api/instructor",
+        json={"messages": [{"role": "system", "content": "Hello"}]},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+def test_api_instructor_last_message_not_user(client):
+    response = client.post(
+        "/api/instructor",
+        json={"messages": [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+        ]},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+def test_api_instructor_empty_last_message(client):
+    response = client.post(
+        "/api/instructor",
+        json={"messages": [{"role": "user", "content": "   "}]},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+def test_api_instructor_no_json_body(client):
+    response = client.post("/api/instructor", data="not json", content_type="text/plain")
+    assert response.status_code in (400, 415)
+
+
+def test_api_instructor_missing_content_field(client):
+    response = client.post(
+        "/api/instructor",
+        json={"messages": [{"role": "user"}]},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+# ── instructor_agent unit tests ────────────────────────────────────────────────
+
+def test_instructor_ask_raises_on_empty_messages():
+    import instructor_agent
+    import pytest
+    with pytest.raises(ValueError):
+        instructor_agent.ask([])
+
+
+def test_instructor_ask_with_subject(monkeypatch):
+    import instructor_agent
+    import ai_providers
+
+    captured = {}
+
+    def mock_ask_with_history(messages, system_prompt=None, provider=None):
+        captured["system_prompt"] = system_prompt
+        captured["messages"] = messages
+        return "Mock reply"
+
+    monkeypatch.setattr(ai_providers, "ask_with_history", mock_ask_with_history)
+
+    result = instructor_agent.ask(
+        [{"role": "user", "content": "Hello"}],
+        subject="Linux",
+    )
+    assert result == "Mock reply"
+    assert "Linux" in captured["system_prompt"]
+    assert captured["messages"] == [{"role": "user", "content": "Hello"}]
+
+
+def test_instructor_ask_without_subject(monkeypatch):
+    import instructor_agent
+    import ai_providers
+
+    captured = {}
+
+    def mock_ask_with_history(messages, system_prompt=None, provider=None):
+        captured["system_prompt"] = system_prompt
+        return "Mock reply"
+
+    monkeypatch.setattr(ai_providers, "ask_with_history", mock_ask_with_history)
+
+    instructor_agent.ask([{"role": "user", "content": "Hello"}])
+    assert "studying" not in captured["system_prompt"]
+    assert "instructor" in captured["system_prompt"].lower()

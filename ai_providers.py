@@ -103,6 +103,36 @@ def ask(message, system_prompt=None, provider=None):
     return _ask_openai(message, system_prompt)
 
 
+def ask_with_history(messages, system_prompt=None, provider=None):
+    """
+    Send a multi-turn conversation to the selected AI provider.
+
+    Parameters
+    ----------
+    messages : list[dict]
+        Conversation history: [{"role": "user"|"assistant", "content": "..."}].
+        The last entry must have role "user".
+    system_prompt : str | None  – defaults to EDUCATION_SYSTEM_PROMPT
+    provider : str | None       – "openai" | "gemini" | "perplexity" | None
+
+    Returns
+    -------
+    str  – the model's reply text
+
+    Raises
+    ------
+    ProviderError
+    """
+    if system_prompt is None:
+        system_prompt = EDUCATION_SYSTEM_PROMPT
+    provider = resolve_provider(provider)
+    if provider == "gemini":
+        return _ask_gemini_with_history(messages, system_prompt)
+    if provider == "perplexity":
+        return _ask_perplexity_with_history(messages, system_prompt)
+    return _ask_openai_with_history(messages, system_prompt)
+
+
 def grade_open_ended(task, user_answer, max_pts, subject, provider=None):
     """
     Grade an open-ended assignment task with AI.
@@ -140,6 +170,30 @@ def _ask_openai(message, system_prompt):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": message},
             ],
+            max_tokens=1024,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+    except openai.AuthenticationError:
+        raise ProviderError("Invalid OpenAI API key.", 401)
+    except openai.RateLimitError:
+        raise ProviderError("OpenAI rate limit exceeded. Try again in a moment.", 429)
+    except openai.OpenAIError as exc:
+        raise ProviderError(f"OpenAI error: {exc}", 500)
+
+
+def _ask_openai_with_history(messages, system_prompt):
+    import openai
+
+    if not config.OPENAI_API_KEY:
+        raise ProviderError(
+            "OpenAI API key not configured. Set OPENAI_API_KEY in your .env file.", 503
+        )
+    try:
+        client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+        response = client.chat.completions.create(
+            model=_OPENAI_CHAT_MODEL,
+            messages=_prepend_system(messages, system_prompt),
             max_tokens=1024,
             temperature=0.7,
         )
@@ -198,6 +252,38 @@ def _ask_gemini(message, system_prompt):
         )
         response = model.generate_content(
             message,
+            generation_config=genai.GenerationConfig(
+                max_output_tokens=1024,
+                temperature=0.7,
+            ),
+        )
+        return response.text
+    except Exception as exc:
+        _raise_gemini_error(exc)
+
+
+def _ask_gemini_with_history(messages, system_prompt):
+    import google.generativeai as genai
+
+    if not config.GEMINI_API_KEY:
+        raise ProviderError(
+            "Gemini API key not configured. Set GEMINI_API_KEY in your .env file.", 503
+        )
+    try:
+        genai.configure(api_key=config.GEMINI_API_KEY)
+        model = genai.GenerativeModel(
+            model_name=_GEMINI_MODEL,
+            system_instruction=system_prompt,
+        )
+        # Convert prior messages to Gemini's history format (all but last)
+        history = []
+        for msg in messages[:-1]:
+            role = "model" if msg["role"] == "assistant" else "user"
+            history.append({"role": role, "parts": [msg["content"]]})
+        last_message = messages[-1]["content"]
+        chat = model.start_chat(history=history)
+        response = chat.send_message(
+            last_message,
             generation_config=genai.GenerationConfig(
                 max_output_tokens=1024,
                 temperature=0.7,
@@ -277,6 +363,33 @@ def _ask_perplexity(message, system_prompt):
         raise ProviderError(f"Perplexity error: {exc}", 500)
 
 
+def _ask_perplexity_with_history(messages, system_prompt):
+    import openai
+
+    if not config.PERPLEXITY_API_KEY:
+        raise ProviderError(
+            "Perplexity API key not configured. Set PERPLEXITY_API_KEY in your .env file.", 503
+        )
+    try:
+        client = openai.OpenAI(
+            api_key=config.PERPLEXITY_API_KEY,
+            base_url=_PERPLEXITY_BASE_URL,
+        )
+        response = client.chat.completions.create(
+            model=_PERPLEXITY_CHAT_MODEL,
+            messages=_prepend_system(messages, system_prompt),
+            max_tokens=1024,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content
+    except openai.AuthenticationError:
+        raise ProviderError("Invalid Perplexity API key.", 401)
+    except openai.RateLimitError:
+        raise ProviderError("Perplexity rate limit exceeded. Try again in a moment.", 429)
+    except openai.OpenAIError as exc:
+        raise ProviderError(f"Perplexity error: {exc}", 500)
+
+
 def _grade_perplexity(task, user_answer, max_pts, subject):
     """Perplexity does not support JSON response mode; we parse JSON from the reply."""
     import openai
@@ -310,6 +423,11 @@ def _grade_perplexity(task, user_answer, max_pts, subject):
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
+def _prepend_system(messages, system_prompt):
+    """Return a new messages list with the system prompt prepended."""
+    return [{"role": "system", "content": system_prompt}] + messages
+
 
 def _grading_prompt(task, user_answer, max_pts, subject):
     question = task.get("question", "")
