@@ -19,6 +19,7 @@
                 <a href="{{ url_for('category', category='python') }}">Python</a>
                 <a href="{{ url_for('category', category='linux') }}">Linux</a>
                 <a href="{{ url_for('assignments_home') }}" class="btn-assignments">📝 Assignments</a>
+                <a href="{{ url_for('chat') }}" class="btn-ai">💬 AI Chat</a>
                 <a href="{{ url_for('assistant') }}" class="btn-ai">🤖 AI Assistant</a>
             </div>
         </div>
@@ -35,7 +36,7 @@
         </div>
     </footer>
 
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
