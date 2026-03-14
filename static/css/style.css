@@ -815,3 +815,144 @@ textarea.open-answer:disabled { background: var(--gray-100); color: var(--gray-6
   .nav-links { gap: 0; }
   .nav-links a { padding: .3rem .45rem; font-size: .82rem; }
 }
+
+/* ---- Default dark theme ---- */
+:root {
+  --gray-50: #090c12;
+  --gray-100: #11161f;
+  --gray-200: #1f2937;
+  --gray-400: #94a3b8;
+  --gray-600: #cbd5e1;
+  --gray-800: #e5e7eb;
+  --gray-900: #04070d;
+  --blue-l: #11243f;
+  --teal-l: #0f2c2a;
+  --green-l: #0f2d1d;
+  --orange-l: #3a210f;
+}
+
+body {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(37, 99, 235, 0.14), transparent 35%),
+    radial-gradient(circle at 90% 10%, rgba(13, 148, 136, 0.12), transparent 32%),
+    #090c12;
+  color: #e5e7eb;
+}
+
+a { color: #60a5fa; }
+
+.hero {
+  background: linear-gradient(145deg, #020617 0%, #0c1a2d 45%, #0f3b52 100%);
+}
+
+.features-section,
+.category-header,
+.lesson-item,
+.quiz-section,
+.feature-card,
+.category-card,
+.assignment-task,
+.results-panel,
+.chat-messages,
+.chat-input-area,
+.chat-settings-bar,
+.grading-guidance-panel,
+.mastery-level-item,
+.context-btn,
+textarea.open-answer {
+  background: #11161f;
+  border-color: #253044;
+  color: #e5e7eb;
+}
+
+.section-content blockquote {
+  background: #0f2239;
+  color: #dbeafe;
+  border-left-color: #3b82f6;
+}
+
+.section-content td,
+.task-feedback,
+.lesson-nav,
+.assignment-instructions {
+  border-color: #253044;
+}
+
+.section-content th {
+  background: #0b1220;
+  color: #e5e7eb;
+}
+
+.section-content tr:nth-child(even) td {
+  background: #0d1420;
+}
+
+.section-content code:not(pre code) {
+  background: #1c2435;
+  color: #93c5fd;
+  border-color: #334155;
+}
+
+.lesson-summary,
+.lesson-info p,
+.category-header p,
+.assistant-header p,
+.results-overall-feedback,
+.feedback-text,
+.task-number,
+.mastery-level-range,
+.chat-settings-grid label,
+.submit-hint,
+.not-found-content p {
+  color: #cbd5e1;
+}
+
+.btn-secondary,
+.btn-nav,
+.btn-outline {
+  background: #111827;
+  border-color: #334155;
+  color: #e5e7eb;
+}
+
+.btn-outline:hover,
+.btn-nav:hover,
+.btn-secondary:hover {
+  background: #1f2937;
+}
+
+.quiz-option,
+.mc-option,
+#chat-input,
+.chat-settings-grid select,
+.chat-settings-grid input[type="text"] {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e5e7eb;
+}
+
+.quiz-feedback,
+.message-content {
+  background: #1a2436;
+  color: #e5e7eb;
+}
+
+.user-message .message-content {
+  background: #1d4ed8;
+}
+
+.message-avatar {
+  background: #243244;
+}
+
+.empty-state,
+.context-indicator,
+.footer {
+  color: #94a3b8;
+}
+
+.lesson-ai-prompt,
+.category-ai-prompt {
+  background: #18112e;
+  border-color: #37216b;
+}

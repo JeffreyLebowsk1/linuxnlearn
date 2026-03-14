@@ -191,6 +191,243 @@ def load_lesson(category, slug):
     return None
 
 
+def build_fast_track_sections(category, lesson_title):
+    """Generate extra advanced sections to lengthen lessons and increase pace."""
+    common_sections = [
+        {
+            "heading": "Fast-Track Sprint (45 Minutes)",
+            "content": f"""
+Move quickly through **{lesson_title}** with this timed sprint:
+
+1. **10 min**: Re-state the core concept in your own words and list 3 practical use-cases.
+2. **15 min**: Build or run a minimal working demo that proves the concept end-to-end.
+3. **10 min**: Add one failure test and one performance check.
+4. **10 min**: Write a short technical debrief with tradeoffs and next improvements.
+
+Pace rule:
+- If you are blocked for more than 5 minutes, reduce scope and keep moving.
+- Ship a working baseline first, then optimize.
+""",
+        },
+        {
+            "heading": "Challenge Ladder (Bronze to Gold)",
+            "content": """
+Use this challenge progression to deepen mastery quickly:
+
+- **Bronze**: Reproduce baseline behavior from the lesson exactly.
+- **Silver**: Add observability (logs, metrics, or validation checks).
+- **Gold**: Improve speed, reliability, or clarity with a measurable result.
+
+Score yourself after each rung:
+- Correctness (0-5)
+- Speed of delivery (0-5)
+- Debugging quality (0-5)
+- Communication quality (0-5)
+
+Target: at least **15/20** before advancing.
+""",
+        },
+    ]
+
+    category_sections = {
+        "linux": [
+            {
+                "heading": "Linux Deep Ops Drill",
+                "content": """
+Run this accelerated admin drill on a practice VM:
+
+```bash
+# 1) Create sandbox
+mkdir -p ~/lab/{logs,data,bin} && cd ~/lab
+
+# 2) Generate files and inspect metadata
+for i in {1..5}; do echo "entry-$i" >> logs/app.log; done
+ls -lah logs && stat logs/app.log
+
+# 3) Search and filter quickly
+grep -n "entry" logs/app.log | wc -l
+find ~/lab -type f -name "*.log"
+
+# 4) Permission hardening
+chmod 640 logs/app.log
+sudo chown "$USER":"$USER" logs/app.log
+```
+
+Deliverable:
+- A short report listing commands used, why they were chosen, and one safer alternative.
+""",
+            },
+            {
+                "heading": "Incident Response Mini-Scenario",
+                "content": """
+Scenario: a service fails at startup after a config change.
+
+Response sequence:
+1. Verify process and port state.
+2. Inspect latest logs and isolate first meaningful error.
+3. Roll back the minimal change.
+4. Validate service health and create a prevention checklist.
+
+Focus on decision speed: you should produce a first diagnosis in under 8 minutes.
+""",
+            },
+        ],
+        "networking": [
+            {
+                "heading": "Packet Reasoning Lab",
+                "content": """
+Use fast packet-level reasoning for each concept in this lesson:
+
+1. Identify source/destination addresses.
+2. Identify encapsulation at each layer.
+3. Predict next hop behavior.
+4. Explain where the packet could fail and how to prove it.
+
+Template:
+```text
+Flow:
+Host A -> Switch -> Router -> ISP -> Service
+
+Checks:
+- L2: MAC table / VLAN membership
+- L3: route lookup / gateway correctness
+- L4: port reachability
+```
+
+Deliverable:
+- One complete packet walk with a verified failure point and fix.
+""",
+            },
+            {
+                "heading": "Time-Boxed Subnet and Routing Set",
+                "content": """
+Complete 5 rapid problems in 20 minutes:
+
+- 2 subnetting tasks with host-range validation
+- 2 route selection tasks (longest-prefix match)
+- 1 troubleshooting task with overlapping routes
+
+Rule: show both the answer and the calculation path.
+""",
+            },
+        ],
+        "cisco": [
+            {
+                "heading": "Cisco CLI Speed Lab",
+                "content": """
+Practice high-frequency IOS workflow patterns:
+
+```text
+enable
+configure terminal
+interface g0/1
+description Uplink-to-Core
+switchport mode trunk
+switchport trunk allowed vlan 10,20,30
+end
+write memory
+show run interface g0/1
+show interfaces trunk
+```
+
+Target outcomes:
+- Correct syntax without tab-complete dependency
+- Verification commands after every major change
+- Rollback command prepared before risky edits
+""",
+            },
+            {
+                "heading": "Change Window Simulation",
+                "content": """
+Simulate a 30-minute production change window:
+
+1. Pre-check (baseline state capture)
+2. Change application (small, reversible steps)
+3. Validation (control-plane + data-plane)
+4. Backout trigger criteria
+5. Post-change summary
+
+This builds real-world speed with safe execution discipline.
+""",
+            },
+        ],
+        "python": [
+            {
+                "heading": "Python Performance and Reliability Pass",
+                "content": """
+Take a lesson script from working to production-grade:
+
+1. Add type hints for core functions.
+2. Add input validation and explicit exceptions.
+3. Add structured logging for key transitions.
+4. Add 3 focused tests: happy path, edge case, failure case.
+
+Example scaffold:
+```python
+def parse_record(line: str) -> dict:
+    if not line.strip():
+        raise ValueError("empty line")
+    # parse and validate fields
+    return {"ok": True}
+```
+
+Measure improvement by reduced debug time and clearer failure messages.
+""",
+            },
+            {
+                "heading": "Automation Sprint",
+                "content": """
+Build a tiny automation utility in under 40 minutes:
+
+- Input: file or API response
+- Transform: parse, filter, normalize
+- Output: human-readable report and machine-readable JSON
+
+Stretch goal:
+- Add retry logic and timeout handling for external calls.
+""",
+            },
+        ],
+        "jetson": [
+            {
+                "heading": "Edge Optimization Sprint",
+                "content": """
+Push the lesson artifact toward real deployment constraints:
+
+1. Measure baseline latency and memory.
+2. Reduce overhead (model warmup, pre-allocation, batch tuning).
+3. Re-measure and document delta.
+
+Benchmark template:
+```text
+Metric        Baseline   Optimized   Delta
+Latency p95   120 ms     84 ms       -30%
+RAM usage     2.1 GB     1.7 GB      -19%
+```
+
+Aim for one measurable improvement, not theoretical tuning.
+""",
+            },
+            {
+                "heading": "Deployment Readiness Checklist",
+                "content": """
+Before shipping on Jetson, confirm:
+
+- Deterministic startup path
+- Health endpoints and watchdog behavior
+- Graceful degradation when GPU is unavailable
+- Resource limits and thermal behavior under sustained load
+- Reproducible setup instructions
+
+Deliver a one-page readiness note with risks and mitigations.
+""",
+            },
+        ],
+    }
+
+    return common_sections + category_sections.get(category, [])
+
+
 # ---------------------------------------------------------------------------
 # Content helpers – assignments
 # ---------------------------------------------------------------------------
@@ -257,6 +494,10 @@ def lesson(category, slug):
     data = load_lesson(category, slug)
     if not data:
         return render_template("404.html"), 404
+
+    extra_sections = build_fast_track_sections(category, data.get("title", "Lesson"))
+    data["sections"] = data.get("sections", []) + extra_sections
+
     # Pre-render section markdown to HTML to avoid template/filter variance.
     sections = data.get("sections", [])
     for section in sections:
