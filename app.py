@@ -1,8 +1,9 @@
 import os
+import json
 
 import markdown as md
 import yaml
-from flask import Flask, render_template, request, jsonify, url_for
+from flask import Flask, render_template, request, jsonify, url_for, Response, stream_with_context
 from markupsafe import Markup
 import config
 import ai_providers
@@ -48,6 +49,12 @@ CATEGORIES = {
         "icon": "🐧",
         "description": "Master Linux commands, file system management, shell scripting, and system administration.",
         "color": "orange",
+    },
+    "jetson": {
+        "title": "Jetson AI",
+        "icon": "🤖",
+        "description": "Build practical edge AI workflows on NVIDIA Jetson Orin Nano 8GB: setup, media generation, and computer vision.",
+        "color": "purple",
     },
 }
 
@@ -294,6 +301,8 @@ def ask():
         return jsonify({"answer": answer})
     except ai_providers.ProviderError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Unexpected server error: {exc}"}), 500
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -324,6 +333,7 @@ def chat_api():
 
     category = data.get("category", "")
     provider = data.get("provider")
+    settings = data.get("settings")
 
     system_prompt = ai_providers.EDUCATION_SYSTEM_PROMPT
     if category:
@@ -331,10 +341,75 @@ def chat_api():
         system_prompt += f" The current learning context is: {subject}."
 
     try:
-        reply = ai_providers.ask(user_message, system_prompt=system_prompt, provider=provider)
-        return jsonify({"reply": reply})
+        payload = ai_providers.ask_chat(
+            user_message,
+            system_prompt=system_prompt,
+            provider=provider,
+            chat_options=settings,
+        )
+        return jsonify(payload)
     except ai_providers.ProviderError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Unexpected server error: {exc}"}), 500
+
+
+def _sse(event, data):
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@app.route("/api/chat/stream", methods=["POST"])
+def chat_stream_api():
+    """Streaming chat endpoint (SSE over POST)."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    if "message" not in data:
+        return jsonify({"error": "Missing message field"}), 400
+
+    user_message = data["message"].strip()
+    if not user_message:
+        return jsonify({"error": "Message cannot be empty"}), 400
+
+    category = data.get("category", "")
+    provider = data.get("provider")
+    settings = data.get("settings")
+
+    system_prompt = ai_providers.EDUCATION_SYSTEM_PROMPT
+    if category:
+        subject = CATEGORIES.get(category.lower(), {}).get("title", category)
+        system_prompt += f" The current learning context is: {subject}."
+
+    def generate():
+        try:
+            if not ai_providers.get_available_providers():
+                fallback = (
+                    "No AI provider is configured. Please set PERPLEXITY_API_KEY "
+                    "(or OPENAI_API_KEY / GEMINI_API_KEY) in your .env file "
+                    "to enable AI responses."
+                )
+                yield _sse("delta", {"text": fallback})
+                yield _sse("done", {"reply": fallback, "provider": "none"})
+                return
+
+            for event in ai_providers.stream_chat(
+                user_message,
+                system_prompt=system_prompt,
+                provider=provider,
+                chat_options=settings,
+            ):
+                yield _sse(event.get("event", "delta"), event.get("data", {}))
+        except ai_providers.ProviderError as exc:
+            yield _sse("error", {"message": str(exc), "status": exc.status_code})
+        except Exception as exc:  # noqa: BLE001
+            yield _sse("error", {"message": f"Unexpected server error: {exc}", "status": 500})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.route("/api/instructor", methods=["POST"])
@@ -402,6 +477,8 @@ def instructor_api():
         return jsonify({"reply": reply})
     except ai_providers.ProviderError as exc:
         return jsonify({"error": str(exc)}), exc.status_code
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": f"Unexpected server error: {exc}"}), 500
 
 
 # ---------------------------------------------------------------------------

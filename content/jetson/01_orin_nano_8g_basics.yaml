@@ -1,0 +1,136 @@
+title: "Jetson Orin Nano 8GB Foundations: Build App 1"
+order: 1
+summary: "Set up Jetson Orin Nano 8GB and ship your first app: an Edge Health Sentinel dashboard that reports system and GPU readiness."
+sections:
+  - heading: "Learning Objectives"
+    content: |
+      By the end of this lesson, you should be able to:
+      - Validate a Jetson software stack for AI development
+      - Capture telemetry and health metrics from the device
+      - Build and run a local API + dashboard service
+      - Package your first Jetson-ready app
+
+  - heading: "Prerequisites"
+    content: |
+      Before starting:
+      - Comfortable with basic Linux shell commands
+      - Jetson Orin Nano 8GB board booted to Ubuntu/JetPack
+      - Internet access for package installs and updates
+
+  - heading: "90-Minute Lesson Plan"
+    content: |
+      Suggested schedule:
+
+      - **0-15 min**: Jetson workflow and project architecture
+      - **15-35 min**: JetPack and CUDA/PyTorch verification
+      - **35-55 min**: Telemetry capture (`tegrastats`) and parsing
+      - **55-80 min**: Build the Edge Health Sentinel API/dashboard
+      - **80-90 min**: Demo and packaging checklist
+
+  - heading: "Project Outcome: Edge Health Sentinel"
+    content: |
+      By the end of Lesson 1, you will ship **App 1: Edge Health Sentinel**.
+
+      App features:
+      - `/api/health` endpoint returning CPU, memory, and GPU readiness
+      - `/api/metrics` endpoint exposing sampled telemetry
+      - Simple web page showing green/yellow/red status
+
+      This app becomes the diagnostics panel reused by Apps 2 and 3.
+
+  - heading: "Milestone 1: Board Bring-Up Checklist"
+    content: |
+      Before writing AI code, verify your platform:
+
+      1. Update your firmware and JetPack image.
+      2. Use a quality power supply recommended for your kit.
+      3. Ensure proper cooling (active cooling strongly recommended).
+      4. Confirm SSD or SD card speed is sufficient for model loading.
+
+      Basic checks:
+      ```bash
+      uname -a
+      cat /etc/nv_tegra_release
+      lsb_release -a
+      ```
+
+  - heading: "Milestone 2: Install and Verify JetPack Components"
+    content: |
+      JetPack includes key acceleration components:
+      - CUDA
+      - cuDNN
+      - TensorRT
+      - Multimedia APIs
+
+      Verify toolchain:
+      ```bash
+      nvcc --version
+      python3 -c "import torch; print('torch', torch.__version__)"
+      python3 -c "import torchvision; print('torchvision', torchvision.__version__)"
+      ```
+
+  - heading: "Milestone 3: Monitor Power, Thermals, and Utilization"
+    content: |
+      Use NVIDIA telemetry while testing:
+
+      ```bash
+      sudo tegrastats
+      ```
+
+      Focus on:
+      - GPU load
+      - CPU load
+      - Memory use
+      - Temperature and throttling behavior
+
+      For repeatable benchmarks, avoid thermal throttling and run consistent test inputs.
+
+  - heading: "Milestone 4: Performance Modes and Stability"
+    content: |
+      Jetson supports configurable power and clock profiles.
+
+      Common operational best practices:
+      - Choose a power mode that matches your deployment target.
+      - Warm up models before measuring latency.
+      - Use batch size 1 for most real-time edge inference pipelines.
+      - Keep dependencies pinned in a requirements file.
+
+      Example runtime check script:
+      ```python
+      import torch
+      print('CUDA available:', torch.cuda.is_available())
+      if torch.cuda.is_available():
+          print('Device:', torch.cuda.get_device_name(0))
+
+  - heading: "Hands-On Lab: Build App 1 (Edge Health Sentinel)"
+    content: |
+      Build sequence:
+
+      1. Create a small Flask app with `/api/health` and `/api/metrics`.
+      2. Add startup checks for `torch.cuda.is_available()`.
+      3. Parse `tegrastats` output every 2 seconds.
+      4. Build a one-page dashboard to display current status.
+
+      Lab success criteria:
+      - API returns valid JSON for both endpoints
+      - Dashboard updates without page refresh
+      - Health endpoint detects CUDA availability correctly
+
+  - heading: "Homework"
+    content: |
+      Homework task (ship App 1):
+      - Add a `README.md` with setup and run commands.
+      - Record a 30-second telemetry log and explain one optimization.
+      - Create a release note describing App 1 features and known limits.
+      ```
+
+quiz:
+  - question: "Which command is commonly used on Jetson to observe live CPU/GPU/thermal metrics?"
+    options: ["nvidia-smi", "tegrastats", "top -g", "jetsonmon"]
+    answer: 1
+    explanation: "tegrastats is the standard telemetry utility on Jetson platforms."
+
+  - question: "What is the primary advantage of using Jetson Orin Nano for AI projects?"
+    options: ["Unlimited cloud storage", "Edge GPU acceleration", "No Linux knowledge needed", "Built-in monitor support only"]
+    answer: 1
+    explanation: "Jetson's value is local edge inference with CUDA/TensorRT acceleration."

@@ -546,6 +546,25 @@ textarea.open-answer:disabled { background: var(--gray-100); color: var(--gray-6
 .user-message .message-content code.inline-code { background: rgba(255,255,255,.2); }
 .error-message .message-content { background: #fee2e2; color: #b91c1c; }
 
+.ai-meta {
+  margin-top: .6rem;
+  padding-top: .45rem;
+  border-top: 1px solid rgba(0,0,0,.08);
+  font-size: .82rem;
+}
+.ai-meta-block + .ai-meta-block { margin-top: .45rem; }
+.ai-meta-title { font-weight: 700; color: var(--gray-600); margin-bottom: .2rem; }
+.ai-meta-list { margin: 0 0 0 .9rem; padding: 0; }
+.ai-meta-list li { margin-bottom: .15rem; }
+.ai-meta-list a { color: var(--blue); text-decoration: underline; }
+.user-message .ai-meta {
+  border-top-color: rgba(255,255,255,.3);
+}
+.user-message .ai-meta-title,
+.user-message .ai-meta-list a {
+  color: #dbeafe;
+}
+
 /* Typing indicator */
 .typing-indicator { display: flex; gap: .3rem; align-items: center; padding: .2rem 0; }
 .typing-indicator span { width: 7px; height: 7px; background: var(--gray-400); border-radius: 50%; animation: bounce .9s infinite; }
@@ -566,6 +585,47 @@ textarea.open-answer:disabled { background: var(--gray-100); color: var(--gray-6
 #chat-input { flex: 1; padding: .6rem .9rem; border: 1px solid var(--gray-200); border-radius: var(--radius); font-size: .95rem; resize: none; }
 #chat-input:focus { outline: none; border-color: var(--blue); }
 .chat-hint { font-size: .78rem; color: var(--gray-400); margin-top: .35rem; }
+
+.chat-settings-bar {
+  margin: .6rem 0;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: .55rem .75rem;
+}
+.chat-settings-bar summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+.chat-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: .6rem;
+  margin-top: .6rem;
+}
+.chat-settings-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  font-size: .82rem;
+  color: var(--gray-600);
+}
+.chat-settings-grid select,
+.chat-settings-grid input[type="text"] {
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: .45rem .55rem;
+  font-size: .88rem;
+}
+.chat-settings-grid .full-width {
+  grid-column: 1 / -1;
+}
+.checkbox-label {
+  flex-direction: row !important;
+  align-items: center;
+  gap: .45rem !important;
+}
 
 /* ---- Empty state ---- */
 .empty-state { text-align: center; padding: 3rem 1rem; color: var(--gray-400); }

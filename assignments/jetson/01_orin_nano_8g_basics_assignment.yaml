@@ -1,0 +1,82 @@
+title: "Jetson Orin Nano 8GB Setup Assignment"
+category: "jetson"
+difficulty: "beginner"
+estimated_minutes: 30
+related_lesson: "01_orin_nano_8g_basics"
+instructions: |
+  This assignment validates your understanding of Jetson Orin Nano 8GB bring-up,
+  software readiness checks, and performance telemetry.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "Which utility is most commonly used on Jetson to monitor live GPU/CPU/thermal metrics?"
+    options:
+      - "nvidia-smi"
+      - "tegrastats"
+      - "iotop"
+      - "perfmon"
+    answer: 1
+    explanation: "tegrastats is the standard telemetry tool on Jetson systems."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "Which Python check confirms CUDA support is available to PyTorch?"
+    options:
+      - "torch.cuda.detect()"
+      - "torch.gpu.ready()"
+      - "torch.cuda.is_available()"
+      - "torch.cuda.version()"
+    answer: 2
+    explanation: "torch.cuda.is_available() returns True when CUDA is available to the runtime."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Write a short Python script that:
+      1. Imports torch
+      2. Prints whether CUDA is available
+      3. If available, prints the CUDA device name
+      4. Runs a small tensor operation on CUDA and prints the result shape
+    rubric: |
+      Award up to 20 points:
+      - Correct imports and script structure (5 pts)
+      - Correct CUDA availability check (5 pts)
+      - Correct retrieval of device name when CUDA is available (5 pts)
+      - Demonstrates tensor operation on CUDA and prints meaningful output (5 pts)
+    sample_answer: |
+      import torch
+
+      print("CUDA available:", torch.cuda.is_available())
+      if torch.cuda.is_available():
+          print("Device:", torch.cuda.get_device_name(0))
+          x = torch.randn(2, 3, device="cuda")
+          y = torch.randn(2, 3, device="cuda")
+          z = x + y
+          print("Result shape:", z.shape)
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      You see periodic latency spikes during inference. Explain three likely causes
+      specific to Jetson edge systems and one mitigation strategy for each.
+    rubric: |
+      Full-credit answers should include at least three realistic causes such as:
+      - Thermal throttling
+      - Memory pressure/swapping
+      - CPU contention from background services
+      - Inconsistent power mode/clock profile
+      And provide one concrete mitigation for each cause.
+    sample_answer: |
+      1) Thermal throttling: device gets hot and clocks drop.
+         Mitigation: improve cooling and monitor with tegrastats.
+
+      2) Memory pressure: model + buffers exceed comfortable RAM headroom.
+         Mitigation: reduce resolution/batch size and reuse buffers.
+
+      3) CPU contention: capture, preprocessing, and inference compete for cores.
+         Mitigation: split workloads across threads/processes and reduce background tasks.

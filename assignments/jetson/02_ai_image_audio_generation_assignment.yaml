@@ -1,0 +1,87 @@
+title: "Jetson Image and Audio Generation Assignment"
+category: "jetson"
+difficulty: "intermediate"
+estimated_minutes: 35
+related_lesson: "02_ai_image_audio_generation"
+instructions: |
+  Evaluate your understanding of running memory-aware generation workloads on
+  Jetson Orin Nano 8GB.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "What is usually the safest first optimization for generation on Jetson Orin Nano 8GB?"
+    options:
+      - "Increase image size to 2048x2048"
+      - "Use FP16 and moderate resolution"
+      - "Disable queueing"
+      - "Run as many concurrent jobs as possible"
+    answer: 1
+    explanation: "FP16 plus moderate resolution typically improves memory and latency behavior on 8GB devices."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "Why is a request queue helpful for edge generation services?"
+    options:
+      - "It eliminates model loading time entirely"
+      - "It guarantees zero latency"
+      - "It controls concurrency and prevents overload"
+      - "It removes the need for logs"
+    answer: 2
+    explanation: "Queues cap concurrent work and reduce out-of-memory and instability risks."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Write pseudocode or Python-like code for a generation endpoint that:
+      1. Accepts a prompt
+      2. Adds the request to a queue
+      3. Processes one request at a time
+      4. Returns output path and elapsed time
+    rubric: |
+      Award up to 20 points:
+      - Clear endpoint/request structure (5 pts)
+      - Queue-based flow control shown (5 pts)
+      - Single-worker or concurrency limit logic included (5 pts)
+      - Response includes output artifact and timing metadata (5 pts)
+    sample_answer: |
+      from queue import Queue
+      import time
+
+      jobs = Queue()
+
+      def submit(prompt):
+          job_id = str(time.time())
+          jobs.put((job_id, prompt))
+          return {"job_id": job_id, "status": "queued"}
+
+      def worker_loop():
+          while True:
+              job_id, prompt = jobs.get()
+              t0 = time.time()
+              # output_path = generate(prompt)
+              output_path = f"outputs/{job_id}.png"
+              elapsed = time.time() - t0
+              print({"job_id": job_id, "output": output_path, "elapsed": elapsed})
+              jobs.task_done()
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Compare image generation and audio generation on Jetson in terms of
+      memory usage, latency behavior, and deployment considerations.
+    rubric: |
+      Full-credit response should compare all three dimensions:
+      - Memory footprint tendencies
+      - Latency profile and real-time constraints
+      - Service architecture/deployment patterns
+      Provide practical recommendations for each workload.
+    sample_answer: |
+      Image generation often has larger burst memory demand and heavier denoising loops.
+      Audio generation/TTS can be lower memory per request but can become expensive for long clips.
+      For deployment, image workloads benefit from strict resolution limits and serialized processing,
+      while audio services often benefit from chunking/streaming outputs and short-request policies.

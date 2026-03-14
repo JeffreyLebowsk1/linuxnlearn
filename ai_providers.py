@@ -5,7 +5,7 @@ Supported providers
 -------------------
   openai      – OpenAI GPT-4o-mini (chat.completions)
   gemini      – Google Gemini 2.0 Flash (google-generativeai)
-  perplexity  – Perplexity Sonar (OpenAI-compatible endpoint)
+    perplexity  – Perplexity Sonar (official perplexityai SDK)
 
 The active provider is chosen by:
   1. The ``provider`` argument passed to ask() / grade_open_ended()
@@ -14,6 +14,7 @@ The active provider is chosen by:
 """
 
 import json
+from typing import Generator
 
 import config
 
@@ -47,14 +48,32 @@ class ProviderError(Exception):
         self.status_code = status_code
 
 
+def _is_configured_key(value):
+    """Return True only for likely real API keys, not example placeholders."""
+    if not value:
+        return False
+    cleaned = str(value).strip()
+    if not cleaned:
+        return False
+    lower = cleaned.lower()
+    placeholder_markers = (
+        "your_",
+        "replace_me",
+        "changeme",
+        "example",
+        "placeholder",
+    )
+    return not any(marker in lower for marker in placeholder_markers)
+
+
 def get_available_providers():
     """Return a list of provider names whose API keys are configured."""
     available = []
-    if config.OPENAI_API_KEY:
+    if _is_configured_key(config.OPENAI_API_KEY):
         available.append("openai")
-    if config.GEMINI_API_KEY:
+    if _is_configured_key(config.GEMINI_API_KEY):
         available.append("gemini")
-    if config.PERPLEXITY_API_KEY:
+    if _is_configured_key(config.PERPLEXITY_API_KEY):
         available.append("perplexity")
     return available
 
@@ -101,6 +120,57 @@ def ask(message, system_prompt=None, provider=None):
     if provider == "perplexity":
         return _ask_perplexity(message, system_prompt)
     return _ask_openai(message, system_prompt)
+
+
+def ask_chat(message, system_prompt=None, provider=None, chat_options=None):
+    """
+    Send a chat message and return enriched response data for UI rendering.
+
+    Returns a dict with at least:
+      reply: str
+      provider: str
+    Optionally for Perplexity:
+      citations: list[str]
+      search_results: list[dict]
+      usage: dict
+      model: str
+    """
+    if system_prompt is None:
+        system_prompt = EDUCATION_SYSTEM_PROMPT
+
+    resolved_provider = resolve_provider(provider)
+    if resolved_provider == "perplexity":
+        return _ask_perplexity_chat(message, system_prompt, chat_options=chat_options)
+
+    return {
+        "reply": ask(message, system_prompt=system_prompt, provider=resolved_provider),
+        "provider": resolved_provider,
+    }
+
+
+def stream_chat(message, system_prompt=None, provider=None, chat_options=None) -> Generator[dict, None, None]:
+    """
+    Stream chat events for UI.
+
+    Yields event dicts with keys:
+      event: "delta" | "done"
+      data: event payload dict
+    """
+    if system_prompt is None:
+        system_prompt = EDUCATION_SYSTEM_PROMPT
+
+    resolved_provider = resolve_provider(provider)
+    if resolved_provider == "perplexity":
+        yield from _stream_perplexity_chat(message, system_prompt, chat_options=chat_options)
+        return
+
+    payload = {
+        "reply": ask(message, system_prompt=system_prompt, provider=resolved_provider),
+        "provider": resolved_provider,
+    }
+    if payload["reply"]:
+        yield {"event": "delta", "data": {"text": payload["reply"]}}
+    yield {"event": "done", "data": payload}
 
 
 def ask_with_history(messages, system_prompt=None, provider=None):
@@ -158,7 +228,7 @@ _OPENAI_CHAT_MODEL = "gpt-4o-mini"
 def _ask_openai(message, system_prompt):
     import openai
 
-    if not config.OPENAI_API_KEY:
+    if not _is_configured_key(config.OPENAI_API_KEY):
         raise ProviderError(
             "OpenAI API key not configured. Set OPENAI_API_KEY in your .env file.", 503
         )
@@ -178,6 +248,11 @@ def _ask_openai(message, system_prompt):
         raise ProviderError("Invalid OpenAI API key.", 401)
     except openai.RateLimitError:
         raise ProviderError("OpenAI rate limit exceeded. Try again in a moment.", 429)
+    except TypeError as exc:
+        raise ProviderError(
+            f"OpenAI client compatibility error: {exc}. Try updating dependencies.",
+            500,
+        )
     except openai.OpenAIError as exc:
         raise ProviderError(f"OpenAI error: {exc}", 500)
 
@@ -185,7 +260,7 @@ def _ask_openai(message, system_prompt):
 def _ask_openai_with_history(messages, system_prompt):
     import openai
 
-    if not config.OPENAI_API_KEY:
+    if not _is_configured_key(config.OPENAI_API_KEY):
         raise ProviderError(
             "OpenAI API key not configured. Set OPENAI_API_KEY in your .env file.", 503
         )
@@ -202,6 +277,11 @@ def _ask_openai_with_history(messages, system_prompt):
         raise ProviderError("Invalid OpenAI API key.", 401)
     except openai.RateLimitError:
         raise ProviderError("OpenAI rate limit exceeded. Try again in a moment.", 429)
+    except TypeError as exc:
+        raise ProviderError(
+            f"OpenAI client compatibility error: {exc}. Try updating dependencies.",
+            500,
+        )
     except openai.OpenAIError as exc:
         raise ProviderError(f"OpenAI error: {exc}", 500)
 
@@ -209,7 +289,7 @@ def _ask_openai_with_history(messages, system_prompt):
 def _grade_openai(task, user_answer, max_pts, subject):
     import openai
 
-    if not config.OPENAI_API_KEY:
+    if not _is_configured_key(config.OPENAI_API_KEY):
         raise ProviderError("OpenAI API key not configured.", 503)
     prompt = _grading_prompt(task, user_answer, max_pts, subject)
     try:
@@ -226,6 +306,11 @@ def _grade_openai(task, user_answer, max_pts, subject):
         raise ProviderError("Invalid OpenAI API key.", 401)
     except openai.RateLimitError:
         raise ProviderError("OpenAI rate limit exceeded.", 429)
+    except TypeError as exc:
+        raise ProviderError(
+            f"OpenAI client compatibility error: {exc}. Try updating dependencies.",
+            500,
+        )
     except openai.OpenAIError as exc:
         raise ProviderError(f"OpenAI grading error: {exc}", 500)
 
@@ -234,13 +319,13 @@ def _grade_openai(task, user_answer, max_pts, subject):
 # Google Gemini
 # ---------------------------------------------------------------------------
 
-_GEMINI_MODEL = "gemini-2.0-flash"
+_GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def _ask_gemini(message, system_prompt):
     import google.generativeai as genai
 
-    if not config.GEMINI_API_KEY:
+    if not _is_configured_key(config.GEMINI_API_KEY):
         raise ProviderError(
             "Gemini API key not configured. Set GEMINI_API_KEY in your .env file.", 503
         )
@@ -265,7 +350,7 @@ def _ask_gemini(message, system_prompt):
 def _ask_gemini_with_history(messages, system_prompt):
     import google.generativeai as genai
 
-    if not config.GEMINI_API_KEY:
+    if not _is_configured_key(config.GEMINI_API_KEY):
         raise ProviderError(
             "Gemini API key not configured. Set GEMINI_API_KEY in your .env file.", 503
         )
@@ -297,7 +382,7 @@ def _ask_gemini_with_history(messages, system_prompt):
 def _grade_gemini(task, user_answer, max_pts, subject):
     import google.generativeai as genai
 
-    if not config.GEMINI_API_KEY:
+    if not _is_configured_key(config.GEMINI_API_KEY):
         raise ProviderError("Gemini API key not configured.", 503)
     prompt = _grading_prompt(task, user_answer, max_pts, subject)
     try:
@@ -326,25 +411,25 @@ def _raise_gemini_error(exc):
 
 
 # ---------------------------------------------------------------------------
-# Perplexity  (OpenAI-compatible REST API)
+# Perplexity (official SDK)
 # ---------------------------------------------------------------------------
 
-_PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 _PERPLEXITY_CHAT_MODEL = "sonar"
 
 
-def _ask_perplexity(message, system_prompt):
-    import openai
+def _new_perplexity_client():
+    from perplexity import Perplexity
 
-    if not config.PERPLEXITY_API_KEY:
+    return Perplexity(api_key=config.PERPLEXITY_API_KEY)
+
+
+def _ask_perplexity(message, system_prompt):
+    if not _is_configured_key(config.PERPLEXITY_API_KEY):
         raise ProviderError(
             "Perplexity API key not configured. Set PERPLEXITY_API_KEY in your .env file.", 503
         )
     try:
-        client = openai.OpenAI(
-            api_key=config.PERPLEXITY_API_KEY,
-            base_url=_PERPLEXITY_BASE_URL,
-        )
+        client = _new_perplexity_client()
         response = client.chat.completions.create(
             model=_PERPLEXITY_CHAT_MODEL,
             messages=[
@@ -354,70 +439,145 @@ def _ask_perplexity(message, system_prompt):
             max_tokens=1024,
             temperature=0.7,
         )
-        return response.choices[0].message.content
-    except openai.AuthenticationError:
-        raise ProviderError("Invalid Perplexity API key.", 401)
-    except openai.RateLimitError:
-        raise ProviderError("Perplexity rate limit exceeded. Try again in a moment.", 429)
-    except openai.OpenAIError as exc:
-        raise ProviderError(f"Perplexity error: {exc}", 500)
+        return _extract_choice_content(response)
+    except Exception as exc:
+        _raise_perplexity_error(exc)
 
 
-def _ask_perplexity_with_history(messages, system_prompt):
-    import openai
-
-    if not config.PERPLEXITY_API_KEY:
+def _ask_perplexity_chat(message, system_prompt, chat_options=None):
+    """Return Perplexity response enriched with metadata useful for the chat UI."""
+    if not _is_configured_key(config.PERPLEXITY_API_KEY):
         raise ProviderError(
             "Perplexity API key not configured. Set PERPLEXITY_API_KEY in your .env file.", 503
         )
     try:
-        client = openai.OpenAI(
-            api_key=config.PERPLEXITY_API_KEY,
-            base_url=_PERPLEXITY_BASE_URL,
+        client = _new_perplexity_client()
+        request_payload = {
+            "model": _PERPLEXITY_CHAT_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.7,
+        }
+        request_payload.update(_build_perplexity_chat_options(chat_options))
+        response = client.chat.completions.create(**request_payload)
+
+        payload = {
+            "reply": _extract_choice_content(response),
+            "provider": "perplexity",
+            "model": getattr(response, "model", _PERPLEXITY_CHAT_MODEL),
+        }
+
+        citations = getattr(response, "citations", None)
+        if citations:
+            payload["citations"] = list(citations)
+
+        search_results = getattr(response, "search_results", None)
+        if search_results:
+            payload["search_results"] = [_to_plain(item) for item in search_results]
+
+        usage = getattr(response, "usage", None)
+        if usage:
+            payload["usage"] = _to_plain(usage)
+
+        return payload
+    except Exception as exc:
+        _raise_perplexity_error(exc)
+
+
+def _stream_perplexity_chat(message, system_prompt, chat_options=None):
+    """Yield streamed Perplexity deltas and a final done payload."""
+    if not _is_configured_key(config.PERPLEXITY_API_KEY):
+        raise ProviderError(
+            "Perplexity API key not configured. Set PERPLEXITY_API_KEY in your .env file.", 503
         )
+
+    try:
+        client = _new_perplexity_client()
+        request_payload = {
+            "model": _PERPLEXITY_CHAT_MODEL,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": message},
+            ],
+            "max_tokens": 1024,
+            "temperature": 0.7,
+            "stream": True,
+        }
+        request_payload.update(_build_perplexity_chat_options(chat_options))
+        stream = client.chat.completions.create(**request_payload)
+
+        text_parts = []
+        final_payload = {
+            "provider": "perplexity",
+            "model": _PERPLEXITY_CHAT_MODEL,
+        }
+
+        for chunk in stream:
+            # Track metadata if present on stream chunks.
+            if getattr(chunk, "model", None):
+                final_payload["model"] = chunk.model
+            if getattr(chunk, "citations", None):
+                final_payload["citations"] = list(chunk.citations)
+            if getattr(chunk, "search_results", None):
+                final_payload["search_results"] = [_to_plain(x) for x in chunk.search_results]
+            if getattr(chunk, "usage", None):
+                final_payload["usage"] = _to_plain(chunk.usage)
+
+            choices = getattr(chunk, "choices", []) or []
+            if not choices:
+                continue
+
+            content = _extract_choice_content(chunk)
+            if content:
+                text_parts.append(content)
+                yield {"event": "delta", "data": {"text": content}}
+
+        final_payload["reply"] = "".join(text_parts)
+        yield {"event": "done", "data": final_payload}
+    except Exception as exc:
+        _raise_perplexity_error(exc)
+
+
+def _ask_perplexity_with_history(messages, system_prompt):
+    if not _is_configured_key(config.PERPLEXITY_API_KEY):
+        raise ProviderError(
+            "Perplexity API key not configured. Set PERPLEXITY_API_KEY in your .env file.", 503
+        )
+    try:
+        client = _new_perplexity_client()
         response = client.chat.completions.create(
             model=_PERPLEXITY_CHAT_MODEL,
             messages=_prepend_system(messages, system_prompt),
             max_tokens=1024,
             temperature=0.7,
         )
-        return response.choices[0].message.content
-    except openai.AuthenticationError:
-        raise ProviderError("Invalid Perplexity API key.", 401)
-    except openai.RateLimitError:
-        raise ProviderError("Perplexity rate limit exceeded. Try again in a moment.", 429)
-    except openai.OpenAIError as exc:
-        raise ProviderError(f"Perplexity error: {exc}", 500)
+        return _extract_choice_content(response)
+    except Exception as exc:
+        _raise_perplexity_error(exc)
 
 
 def _grade_perplexity(task, user_answer, max_pts, subject):
     """Perplexity does not support JSON response mode; we parse JSON from the reply."""
-    import openai
-
-    if not config.PERPLEXITY_API_KEY:
+    if not _is_configured_key(config.PERPLEXITY_API_KEY):
         raise ProviderError("Perplexity API key not configured.", 503)
     prompt = (
         _grading_prompt(task, user_answer, max_pts, subject)
         + "\n\nIMPORTANT: Respond with only a valid JSON object. No markdown fences, no extra text."
     )
     try:
-        client = openai.OpenAI(
-            api_key=config.PERPLEXITY_API_KEY,
-            base_url=_PERPLEXITY_BASE_URL,
-        )
+        client = _new_perplexity_client()
         response = client.chat.completions.create(
             model=_PERPLEXITY_CHAT_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=512,
             temperature=0.3,
         )
-        return _parse_grade(response.choices[0].message.content, task, max_pts)
-    except openai.AuthenticationError:
-        raise ProviderError("Invalid Perplexity API key.", 401)
-    except openai.RateLimitError:
-        raise ProviderError("Perplexity rate limit exceeded.", 429)
-    except openai.OpenAIError as exc:
-        raise ProviderError(f"Perplexity grading error: {exc}", 500)
+        return _parse_grade(_extract_choice_content(response), task, max_pts)
+    except Exception as exc:
+        _raise_perplexity_error(exc)
 
 
 # ---------------------------------------------------------------------------
@@ -427,6 +587,105 @@ def _grade_perplexity(task, user_answer, max_pts, subject):
 def _prepend_system(messages, system_prompt):
     """Return a new messages list with the system prompt prepended."""
     return [{"role": "system", "content": system_prompt}] + messages
+
+
+def _extract_choice_content(response_obj):
+    """Extract text content from OpenAI-style choice message/delta structures."""
+    choices = getattr(response_obj, "choices", []) or []
+    if not choices:
+        return ""
+
+    first_choice = choices[0]
+    message = getattr(first_choice, "message", None)
+    if message:
+        content = getattr(message, "content", None)
+        if content:
+            return content
+
+    delta = getattr(first_choice, "delta", None)
+    if delta:
+        content = getattr(delta, "content", None)
+        if content:
+            return content
+
+    return ""
+
+
+def _raise_perplexity_error(exc):
+    """Normalize perplexity SDK exceptions to ProviderError for API responses."""
+    if isinstance(exc, ModuleNotFoundError) and getattr(exc, "name", "") == "perplexity":
+        raise ProviderError("Perplexity SDK not installed. Install dependencies from requirements.txt.", 500)
+
+    import perplexity
+
+    if isinstance(exc, perplexity.AuthenticationError):
+        raise ProviderError("Invalid Perplexity API key.", 401)
+    if isinstance(exc, perplexity.RateLimitError):
+        raise ProviderError("Perplexity rate limit exceeded. Try again in a moment.", 429)
+    if isinstance(exc, perplexity.APIStatusError):
+        status_code = getattr(exc, "status_code", 500) or 500
+        if status_code == 401:
+            raise ProviderError("Invalid Perplexity API key.", 401)
+        if status_code == 429:
+            raise ProviderError("Perplexity rate limit exceeded. Try again in a moment.", 429)
+        raise ProviderError(f"Perplexity API error: {exc}", int(status_code))
+    if isinstance(exc, perplexity.APIConnectionError):
+        raise ProviderError("Perplexity connection error. Please try again.", 502)
+    if isinstance(exc, TypeError):
+        raise ProviderError(
+            f"Perplexity client compatibility error: {exc}. Try updating dependencies.",
+            500,
+        )
+    raise ProviderError(f"Perplexity error: {exc}", 500)
+
+
+def _to_plain(value):
+    """Convert SDK model objects to plain Python dict/list types for JSON responses."""
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {k: _to_plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_plain(v) for v in value]
+    if hasattr(value, "model_dump"):
+        return _to_plain(value.model_dump())
+    if hasattr(value, "__dict__"):
+        return _to_plain(vars(value))
+    return str(value)
+
+
+def _build_perplexity_chat_options(chat_options):
+    """Whitelist and normalize optional Perplexity chat/search settings from UI."""
+    if not isinstance(chat_options, dict):
+        return {}
+
+    options = {}
+
+    search_mode = chat_options.get("search_mode")
+    if search_mode in {"web", "academic", "sec"}:
+        options["search_mode"] = search_mode
+
+    recency = chat_options.get("search_recency_filter")
+    if recency in {"hour", "day", "week", "month", "year"}:
+        options["search_recency_filter"] = recency
+
+    domain_filter = chat_options.get("search_domain_filter")
+    if isinstance(domain_filter, list):
+        clean_domains = [str(d).strip() for d in domain_filter if str(d).strip()]
+        if clean_domains:
+            options["search_domain_filter"] = clean_domains
+
+    safe_search = chat_options.get("safe_search")
+    if isinstance(safe_search, bool):
+        options["safe_search"] = safe_search
+
+    return_related = chat_options.get("return_related_questions")
+    if isinstance(return_related, bool):
+        options["return_related_questions"] = return_related
+
+    return options
 
 
 def _grading_prompt(task, user_answer, max_pts, subject):

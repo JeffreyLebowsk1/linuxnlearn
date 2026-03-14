@@ -21,5 +21,6 @@ PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY", "")
 AI_PROVIDER = os.environ.get("AI_PROVIDER", "perplexity").lower()
 
 # ── ngrok ────────────────────────────────────────────────────────────────────
-NGROK_AUTH_TOKEN = os.environ.get("NGROK_AUTH_TOKEN", "")
+# Support either NGROK_AUTH_TOKEN or NGROK_API_KEY naming.
+NGROK_AUTH_TOKEN = os.environ.get("NGROK_AUTH_TOKEN") or os.environ.get("NGROK_API_KEY", "")
 NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN", "")   # optional static domain

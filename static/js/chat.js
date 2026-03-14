@@ -2,6 +2,8 @@
 // Handles the AI chat widget (sidebar) and the full chat page.
 
 (function () {
+    const SETTINGS_STORAGE_KEY = "linuxnlearn.chat.settings.v1";
+
     const messagesEl = document.getElementById("chat-messages");
     const inputEl    = document.getElementById("chat-input");
     const sendBtn    = document.getElementById("chat-send");
@@ -20,6 +22,65 @@
         return (typeof CHAT_LESSON !== "undefined") ? CHAT_LESSON : "";
     }
 
+    function getChatSettings() {
+        const searchModeEl = document.getElementById("search-mode-select");
+        const recencyEl = document.getElementById("search-recency-select");
+        const domainsEl = document.getElementById("search-domains-input");
+        const safeSearchEl = document.getElementById("safe-search-toggle");
+
+        const settings = {};
+
+        if (searchModeEl && searchModeEl.value) {
+            settings.search_mode = searchModeEl.value;
+        }
+        if (recencyEl && recencyEl.value) {
+            settings.search_recency_filter = recencyEl.value;
+        }
+        if (domainsEl && domainsEl.value.trim()) {
+            settings.search_domain_filter = domainsEl.value
+                .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean);
+        }
+        if (safeSearchEl) {
+            settings.safe_search = Boolean(safeSearchEl.checked);
+        }
+
+        return settings;
+    }
+
+    function saveChatSettings() {
+        try {
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(getChatSettings()));
+        } catch (e) {
+            // Ignore storage errors (private mode, quota, etc.)
+        }
+    }
+
+    function restoreChatSettings() {
+        try {
+            const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+            if (!raw) return;
+            const settings = JSON.parse(raw);
+
+            const searchModeEl = document.getElementById("search-mode-select");
+            const recencyEl = document.getElementById("search-recency-select");
+            const domainsEl = document.getElementById("search-domains-input");
+            const safeSearchEl = document.getElementById("safe-search-toggle");
+
+            if (searchModeEl && settings.search_mode) searchModeEl.value = settings.search_mode;
+            if (recencyEl && settings.search_recency_filter) recencyEl.value = settings.search_recency_filter;
+            if (domainsEl && Array.isArray(settings.search_domain_filter)) {
+                domainsEl.value = settings.search_domain_filter.join(", ");
+            }
+            if (safeSearchEl && typeof settings.safe_search === "boolean") {
+                safeSearchEl.checked = settings.safe_search;
+            }
+        } catch (e) {
+            // Ignore parse/storage errors.
+        }
+    }
+
     function appendMessage(role, text, isLoading) {
         const wrapper = document.createElement("div");
         wrapper.className = "chat-message " + role;
@@ -36,8 +97,45 @@
         return bubble;
     }
 
-    function setAssistantBubbleText(bubble, text) {
-        bubble.innerHTML = formatAssistantMessage(text);
+    function setAssistantBubbleText(bubble, text, meta) {
+        bubble.innerHTML = formatAssistantMessage(text) + renderAssistantMeta(meta);
+    }
+
+    function renderAssistantMeta(meta) {
+        if (!meta) return "";
+
+        const blocks = [];
+
+        if (Array.isArray(meta.citations) && meta.citations.length) {
+            const items = meta.citations
+                .filter(Boolean)
+                .map((url, idx) => {
+                    const safeUrl = escapeHtml(String(url));
+                    return `<li><a href="${safeUrl}" target="_blank" rel="noopener noreferrer">Source ${idx + 1}</a></li>`;
+                })
+                .join("");
+            if (items) {
+                blocks.push(`<div class="ai-meta-block"><div class="ai-meta-title">Sources</div><ul class="ai-meta-list">${items}</ul></div>`);
+            }
+        }
+
+        if (Array.isArray(meta.search_results) && meta.search_results.length) {
+            const items = meta.search_results
+                .slice(0, 5)
+                .map((result) => {
+                    const title = escapeHtml(String(result.title || result.url || "Search result"));
+                    const url = escapeHtml(String(result.url || ""));
+                    if (!url) return "";
+                    return `<li><a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a></li>`;
+                })
+                .filter(Boolean)
+                .join("");
+            if (items) {
+                blocks.push(`<div class="ai-meta-block"><div class="ai-meta-title">Search Results</div><ul class="ai-meta-list">${items}</ul></div>`);
+            }
+        }
+
+        return blocks.length ? `<div class="ai-meta">${blocks.join("")}</div>` : "";
     }
 
     function formatAssistantMessage(text) {
@@ -130,22 +228,59 @@
 
         appendMessage("user", text);
         const loadingBubble = appendMessage("assistant", "Thinking…", true);
+        let accumulated = "";
 
         try {
-            const response = await fetch("/api/chat", {
+            const response = await fetch("/api/chat/stream", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     message: text,
                     category: getCategory(),
                     lesson: getLesson(),
+                    settings: getChatSettings(),
                 }),
             });
-            const data = await response.json();
-            if (data.error) {
-                loadingBubble.textContent = "⚠️ " + data.error;
-            } else {
-                setAssistantBubbleText(loadingBubble, data.reply || "No response.");
+
+            if (!response.ok || !response.body) {
+                const fallbackText = await response.text();
+                loadingBubble.textContent = `⚠️ ${fallbackText || `Request failed (${response.status})`}`;
+                return;
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let buffer = "";
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const events = buffer.split("\n\n");
+                buffer = events.pop() || "";
+
+                for (const rawEvent of events) {
+                    const parsed = parseSSEEvent(rawEvent);
+                    if (!parsed) continue;
+
+                    if (parsed.event === "delta") {
+                        const piece = parsed.data && parsed.data.text ? String(parsed.data.text) : "";
+                        if (piece) {
+                            accumulated += piece;
+                            setAssistantBubbleText(loadingBubble, accumulated);
+                        }
+                    } else if (parsed.event === "done") {
+                        const finalReply = parsed.data && parsed.data.reply ? String(parsed.data.reply) : accumulated;
+                        setAssistantBubbleText(loadingBubble, finalReply || "No response.", {
+                            citations: parsed.data ? parsed.data.citations : undefined,
+                            search_results: parsed.data ? parsed.data.search_results : undefined,
+                        });
+                    } else if (parsed.event === "error") {
+                        const message = parsed.data && parsed.data.message ? String(parsed.data.message) : "Unknown error";
+                        loadingBubble.textContent = "⚠️ " + message;
+                    }
+                }
             }
         } catch (err) {
             loadingBubble.textContent = "⚠️ Network error. Please try again.";
@@ -166,5 +301,39 @@
         contextSelect.addEventListener("change", function () {
             // Category context is read dynamically in getCategory()
         });
+    }
+
+    const settingsControls = [
+        document.getElementById("search-mode-select"),
+        document.getElementById("search-recency-select"),
+        document.getElementById("search-domains-input"),
+        document.getElementById("safe-search-toggle"),
+    ].filter(Boolean);
+    settingsControls.forEach((el) => {
+        el.addEventListener("change", saveChatSettings);
+        el.addEventListener("input", saveChatSettings);
+    });
+
+    restoreChatSettings();
+
+    function parseSSEEvent(raw) {
+        const lines = raw.split("\n");
+        let event = "message";
+        let data = "";
+
+        for (const line of lines) {
+            if (line.startsWith("event:")) {
+                event = line.slice(6).trim();
+            } else if (line.startsWith("data:")) {
+                data += line.slice(5).trim();
+            }
+        }
+
+        if (!data) return null;
+        try {
+            return { event, data: JSON.parse(data) };
+        } catch (e) {
+            return { event, data: { text: data } };
+        }
     }
 })();

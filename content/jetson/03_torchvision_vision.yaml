@@ -1,0 +1,129 @@
+title: "AI Vision with TorchVision: Build App 3 Capstone"
+order: 3
+summary: "Build App 3 (capstone): Vision Narrator, a real-time camera app with object detection, spoken alerts, and event snapshots."
+sections:
+  - heading: "Learning Objectives"
+    content: |
+      By the end of this lesson, you should be able to:
+      - Build a frame-to-tensor inference pipeline on Jetson
+      - Run real-time TorchVision inference with actionable outputs
+      - Integrate detection events with audio narration
+      - Ship a complete capstone app with runbook and demo
+
+  - heading: "Prerequisites"
+    content: |
+      Recommended before this lesson:
+      - Lessons 1 and 2 completed
+      - Working camera input on Jetson
+      - Basic PyTorch understanding (`model.eval()`, tensors, device placement)
+
+  - heading: "90-Minute Lesson Plan"
+    content: |
+      Suggested schedule:
+
+      - **0-15 min**: Capstone architecture and event model
+      - **15-35 min**: Build preprocessing + normalization pipeline
+      - **35-60 min**: Real-time detection loop implementation
+      - **60-80 min**: Spoken alerts + snapshot persistence
+      - **80-90 min**: Final demo and ship checklist
+
+  - heading: "Project Outcome: Vision Narrator Capstone"
+    content: |
+      By the end of Lesson 3, you will ship **App 3: Vision Narrator**.
+
+      App features:
+      - Live camera inference loop
+      - Detection overlay and confidence labels
+      - Spoken summary for key events
+      - Snapshot and event log storage
+
+      App uniqueness requirement:
+      - Add one domain-specific mode, such as "lab safety monitor" or "smart inventory watcher".
+
+  - heading: "Milestone 1: Camera Input to Tensor Pipeline"
+    content: |
+      Vision pipelines generally follow:
+      1. Capture frame (USB/CSI camera)
+      2. Convert color format
+      3. Apply TorchVision transforms
+      4. Run model inference on CUDA
+      5. Render or publish results
+
+      Example preprocessing pattern:
+      ```python
+      import torch
+      from torchvision import transforms
+
+      preprocess = transforms.Compose([
+          transforms.Resize((224, 224)),
+          transforms.ToTensor(),
+          transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+      ])
+
+      # input_tensor = preprocess(pil_image).unsqueeze(0).to('cuda')
+      ```
+
+  - heading: "Milestone 2: Efficient Inference Loop"
+    content: |
+      Use inference-only context for speed:
+
+      ```python
+      model.eval()
+      with torch.inference_mode():
+          output = model(input_tensor)
+      ```
+
+      Additional best practices:
+      - Keep model and tensors on the same device
+      - Reuse buffers when possible
+      - Log FPS and latency percentiles
+
+  - heading: "Milestone 3: Object Detection and Postprocessing"
+    content: |
+      For detection tasks:
+      - Use confidence thresholds
+      - Apply non-max suppression (if required by model output)
+      - Track object IDs only if needed (adds compute)
+
+      Edge principle: prefer the simplest pipeline that meets accuracy requirements.
+
+  - heading: "Milestone 4: From Prototype to Edge Service"
+    content: |
+      Productionizing vision on Jetson:
+      - Separate capture thread and inference thread
+      - Add health checks and watchdog restarts
+      - Persist key metrics (FPS, dropped frames, memory)
+
+      This improves reliability for long-running edge deployments.
+
+  - heading: "Hands-On Lab: Build App 3 (Vision Narrator)"
+    content: |
+      Lab task:
+      - Capture frames from a camera source.
+      - Apply TorchVision transforms and run detection inference.
+      - Overlay labels and confidence on each frame.
+      - Trigger an audio narration for selected events.
+      - Save snapshots and event metadata to disk.
+
+      Success criteria:
+      - Stable loop for at least 5 minutes.
+      - FPS and latency are logged every 5 seconds.
+      - At least 3 events produce spoken alerts and stored snapshots.
+
+  - heading: "Homework"
+    content: |
+      Homework task (ship App 3 capstone):
+      - Add a settings file for thresholds and tracked classes.
+      - Record a 2-minute demo video and include architecture notes.
+      - Publish a capstone README with setup, run, and troubleshooting.
+
+quiz:
+  - question: "Which Torch API is recommended for inference-only execution?"
+    options: ["torch.train_mode()", "torch.inference_mode()", "torch.autograd.enable()", "torch.compile_only()"]
+    answer: 1
+    explanation: "torch.inference_mode() disables autograd overhead and is ideal for deployment inference loops."
+
+  - question: "What is the usual first stage before model inference in a vision app?"
+    options: ["Model quantization", "Frame capture and preprocessing", "Database migration", "API key generation"]
+    answer: 1
+    explanation: "Capture + preprocessing is the front of nearly all real-time vision pipelines."

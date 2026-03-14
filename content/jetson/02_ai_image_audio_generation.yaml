@@ -1,0 +1,128 @@
+title: "AI Image + Audio Generation: Build App 2"
+order: 2
+summary: "Build App 2: Prompt Studio, a local multimodal app that generates an image and narrated audio from a single prompt."
+sections:
+  - heading: "Learning Objectives"
+    content: |
+      By the end of this lesson, you should be able to:
+      - Build and serve a local multimodal generation API
+      - Apply memory-safe optimization tactics for generation tasks
+      - Queue generation jobs to keep Jetson stable
+      - Produce a polished App 2 demo artifact
+
+  - heading: "Prerequisites"
+    content: |
+      You should already have:
+      - Completed Jetson setup and CUDA checks from Lesson 1
+      - Basic Python environment management skills
+      - Familiarity with model inference terminology (latency, batch, precision)
+
+  - heading: "90-Minute Lesson Plan"
+    content: |
+      Suggested schedule:
+
+      - **0-15 min**: App 2 architecture and data flow
+      - **15-40 min**: Image generation endpoint and optimization pass
+      - **40-65 min**: Audio/TTS endpoint and output management
+      - **65-80 min**: Request queue and reliability controls
+      - **80-90 min**: End-to-end demo and recap
+
+  - heading: "Project Outcome: Prompt Studio"
+    content: |
+      By the end of Lesson 2, you will ship **App 2: Prompt Studio**.
+
+      App features:
+      - `/api/generate/image` endpoint for image generation
+      - `/api/generate/audio` endpoint for narration/TTS
+      - `/api/jobs` queue visibility endpoint
+      - Gallery page showing generated artifacts
+
+      App 2 should include a unique style preset (for example: "retro-futuristic robotics").
+
+  - heading: "Milestone 1: Image Generation Pipeline Strategy"
+    content: |
+      A typical local image generation flow:
+
+      1. Prompt parsing
+      2. Latent initialization
+      3. Denoising loop
+      4. Decode and save image
+
+      Jetson optimization tips:
+      - Use FP16 where supported
+      - Reduce resolution during prototyping
+      - Cache tokenizer and model components
+      - Reuse pipeline objects instead of reloading every request
+
+      Example pseudocode:
+      ```python
+      # Pseudocode
+      # pipe = load_pipeline(dtype='float16', device='cuda')
+      # image = pipe(prompt, num_inference_steps=20, width=512, height=512)
+      # image.save('out.png')
+      ```
+
+  - heading: "Milestone 2: Audio Generation and TTS"
+    content: |
+      Audio workflows include:
+      - Text-to-speech for robotics UI
+      - Prompt-conditioned short sound generation
+      - Voice response generation in offline assistants
+
+      Important constraints:
+      - Keep sampling rates and clip lengths conservative during early tests
+      - Stream chunks instead of processing very long audio in one pass
+      - Monitor latency and memory before scaling
+
+  - heading: "Milestone 3: Batching, Queues, and Service Design"
+    content: |
+      For production-like behavior on edge devices:
+      - Use a request queue
+      - Limit concurrent generations
+      - Time out long jobs safely
+      - Return progress updates when generation is slow
+
+      This protects the device from overload and keeps the UX predictable.
+
+  - heading: "Milestone 4: Export and Deployment Patterns"
+    content: |
+      Common deployment patterns:
+      - Python service with FastAPI or Flask
+      - Preloaded model worker process
+      - Optional TensorRT-optimized inference for supported model segments
+
+      Build reproducibility checklist:
+      - Pin model revision
+      - Pin Python package versions
+      - Store benchmark logs with device mode/temperature metadata
+
+  - heading: "Hands-On Lab: Build App 2 (Prompt Studio)"
+    content: |
+      Lab task:
+      - Implement image and audio generation endpoints from one prompt.
+      - Route requests through a queue with max concurrency set to 1.
+      - Store outputs under timestamped project folders.
+      - Render results in a local web gallery.
+
+      Success criteria:
+      - Service remains responsive under 3 quick consecutive requests.
+      - No out-of-memory crash occurs during test run.
+      - A single prompt creates both image and audio outputs.
+
+  - heading: "Homework"
+    content: |
+      Homework task (ship App 2):
+      - Add one custom style preset and one voice profile.
+      - Produce 3 example prompt packs with outputs.
+      - Write a benchmark summary for latency and memory.
+
+quiz:
+  - question: "What is a recommended first optimization for image generation on Jetson?"
+    options: ["Always use 4K resolution", "Switch to FP16 and lower resolution", "Disable GPU", "Increase batch size to 64"]
+    answer: 1
+    explanation: "FP16 plus moderate resolution is usually the safest early optimization on 8GB devices."
+
+  - question: "Why use a request queue for edge generation services?"
+    options: ["To make code longer", "To avoid overload and control concurrency", "Because Linux requires it", "To disable caching"]
+    answer: 1
+    explanation: "Queues help stabilize latency and prevent memory spikes from too many simultaneous jobs."

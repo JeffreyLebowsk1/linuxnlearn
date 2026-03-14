@@ -1,0 +1,80 @@
+title: "Jetson TorchVision Vision Assignment"
+category: "jetson"
+difficulty: "intermediate"
+estimated_minutes: 35
+related_lesson: "03_torchvision_vision"
+instructions: |
+  Demonstrate your understanding of real-time TorchVision pipelines on Jetson.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "Which context is recommended for deployment inference in PyTorch?"
+    options:
+      - "torch.training_mode()"
+      - "torch.inference_mode()"
+      - "torch.autograd.enable()"
+      - "torch.grad_mode()"
+    answer: 1
+    explanation: "torch.inference_mode() disables autograd overhead and is ideal for inference workloads."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "What is the most common first stage in a real-time vision app?"
+    options:
+      - "Database indexing"
+      - "Frame capture and preprocessing"
+      - "Model quantization report generation"
+      - "Cloud autoscaling"
+    answer: 1
+    explanation: "Vision pipelines start with frame capture and preprocessing before model inference."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Write a TorchVision preprocessing snippet for classification that:
+      1. Resizes to 224x224
+      2. Converts to tensor
+      3. Applies ImageNet normalization
+      4. Adds batch dimension and moves to CUDA
+    rubric: |
+      Award up to 20 points:
+      - Correct transform sequence (8 pts)
+      - Correct normalization values (4 pts)
+      - Adds batch dimension via unsqueeze (4 pts)
+      - Moves tensor to CUDA device (4 pts)
+    sample_answer: |
+      from torchvision import transforms
+
+      preprocess = transforms.Compose([
+          transforms.Resize((224, 224)),
+          transforms.ToTensor(),
+          transforms.Normalize(
+              mean=[0.485, 0.456, 0.406],
+              std=[0.229, 0.224, 0.225],
+          ),
+      ])
+
+      # input_tensor = preprocess(pil_image).unsqueeze(0).to("cuda")
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Your model runs at 30 FPS in a test clip but drops to 12 FPS in production.
+      Explain four debugging checks you would perform on Jetson and why.
+    rubric: |
+      Full-credit answers include four practical checks, such as:
+      - tegrastats for thermal or utilization bottlenecks
+      - camera input pipeline bottlenecks/dropped frames
+      - CPU/GPU device mismatch and unnecessary host<->device copies
+      - transform/postprocessing overhead and confidence thresholds
+      - model precision/input resolution differences between test and production
+    sample_answer: |
+      1) Check tegrastats for thermal throttling and memory pressure.
+      2) Profile camera capture and decode path for frame drops.
+      3) Verify tensors and model stay on CUDA to avoid copy overhead.
+      4) Compare production input resolution and postprocessing settings to test setup.

@@ -147,6 +147,29 @@ def test_api_chat_no_json_body(client):
     assert response.status_code in (400, 415)
 
 
+def test_api_chat_stream_no_api_key_returns_fallback_events(client, monkeypatch):
+    import ai_providers
+
+    monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
+    monkeypatch.setattr(ai_providers, "get_available_providers", lambda: [])
+
+    response = client.post(
+        "/api/chat/stream",
+        json={"message": "What is an IP address?"},
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    data = response.data.decode()
+    assert "event: delta" in data
+    assert "event: done" in data
+    assert "PERPLEXITY_API_KEY" in data
+
+
+def test_api_chat_stream_missing_message(client):
+    response = client.post("/api/chat/stream", json={}, content_type="application/json")
+    assert response.status_code == 400
+
+
 # ── Instructor page ────────────────────────────────────────────────────────────
 
 def test_instructor_page_ok(client):
