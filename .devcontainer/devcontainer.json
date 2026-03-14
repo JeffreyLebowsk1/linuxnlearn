@@ -1,7 +1,8 @@
 {
   "name": "LinuxNLearn",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
-  "postCreateCommand": "pip install -r requirements.txt && cp -n .env.example .env",
+  "postCreateCommand": "pip install -r requirements.txt && cp -n .env.example .env && python -c \"import secrets, pathlib; p=pathlib.Path('.env'); p.write_text(p.read_text().replace('your_flask_secret_key_here', secrets.token_hex(32)))\"",
+  "postStartCommand": "python run.py > /tmp/linuxnlearn.log 2>&1 &",
   "forwardPorts": [5000],
   "portsAttributes": {
     "5000": {
