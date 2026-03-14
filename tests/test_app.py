@@ -99,7 +99,7 @@ def test_chat_page_contains_input(client):
 
 def test_api_chat_no_api_key_returns_fallback(client, monkeypatch):
     """Without an API key, the endpoint returns a helpful fallback message."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
     response = client.post(
         "/api/chat",
         json={"message": "What is an IP address?"},
@@ -108,7 +108,7 @@ def test_api_chat_no_api_key_returns_fallback(client, monkeypatch):
     assert response.status_code == 200
     data = response.get_json()
     assert "reply" in data
-    assert "OPENAI_API_KEY" in data["reply"]
+    assert "PERPLEXITY_API_KEY" in data["reply"]
 
 
 def test_api_chat_missing_message(client):
@@ -151,7 +151,7 @@ def test_instructor_page_contains_heading(client):
 
 def test_api_instructor_no_api_key_returns_fallback(client, monkeypatch):
     """Without an API key, the endpoint returns a helpful fallback message."""
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
     response = client.post(
         "/api/instructor",
         json={"messages": [{"role": "user", "content": "Teach me about Linux"}]},
@@ -160,7 +160,7 @@ def test_api_instructor_no_api_key_returns_fallback(client, monkeypatch):
     assert response.status_code == 200
     data = response.get_json()
     assert "reply" in data
-    assert "OPENAI_API_KEY" in data["reply"]
+    assert "PERPLEXITY_API_KEY" in data["reply"]
 
 
 def test_api_instructor_missing_messages(client):

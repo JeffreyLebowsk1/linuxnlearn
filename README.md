@@ -6,7 +6,7 @@ An AI-assisted IT education web application built with Flask. Covers Linux, Netw
 
 - **Four learning categories**: Linux, Networking, Cisco, Python
 - **YAML-based lessons** — easy to add new content without touching code
-- **AI Chat Assistant** — powered by OpenAI GPT, available globally and per-lesson
+- **AI Chat Assistant** — powered by Perplexity Sonar (with OpenAI and Google Gemini also supported), available globally and per-lesson
 - **Clean, responsive UI** — works on desktop and mobile
 
 ## Quick Start
@@ -25,7 +25,7 @@ pip install -r requirements.txt
 
 # 4. Configure environment variables
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Edit .env and add your PERPLEXITY_API_KEY
 
 # 5. Run the app
 python app.py
@@ -86,7 +86,7 @@ key_takeaways:
 
 ## AI Chat
 
-The AI chat feature requires an OpenAI API key. Without it, users see a friendly message explaining how to enable it. Set `OPENAI_API_KEY` in your `.env` file to activate the assistant.
+The AI chat feature requires a Perplexity API key (default provider). Without it, users see a friendly message explaining how to enable it. Set `PERPLEXITY_API_KEY` in your `.env` file to activate the assistant. OpenAI (`OPENAI_API_KEY`) and Google Gemini (`GEMINI_API_KEY`) are also supported — set `AI_PROVIDER=openai` or `AI_PROVIDER=gemini` in `.env` to use them instead.
 
 ## Running Tests
 

@@ -18,7 +18,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY", "")
 
 # Which provider to use by default: "openai" | "gemini" | "perplexity"
-AI_PROVIDER = os.environ.get("AI_PROVIDER", "openai").lower()
+AI_PROVIDER = os.environ.get("AI_PROVIDER", "perplexity").lower()
 
 # ── ngrok ────────────────────────────────────────────────────────────────────
 NGROK_AUTH_TOKEN = os.environ.get("NGROK_AUTH_TOKEN", "")
