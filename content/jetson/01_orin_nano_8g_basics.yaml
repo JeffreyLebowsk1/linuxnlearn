@@ -38,6 +38,17 @@ sections:
 
       This app becomes the diagnostics panel reused by Apps 2 and 3.
 
+  - heading: "Architecture Diagram"
+    content: |
+      ```mermaid
+      flowchart LR
+        A[Jetson Orin Nano 8GB] --> B[Health Collector Service]
+        B --> C[/api/health]
+        B --> D[/api/metrics]
+        C --> E[Dashboard UI]
+        D --> E
+      ```
+
   - heading: "Milestone 1: Board Bring-Up Checklist"
     content: |
       Before writing AI code, verify your platform:
@@ -101,6 +112,7 @@ sections:
       print('CUDA available:', torch.cuda.is_available())
       if torch.cuda.is_available():
           print('Device:', torch.cuda.get_device_name(0))
+        ```
 
   - heading: "Hands-On Lab: Build App 1 (Edge Health Sentinel)"
     content: |
@@ -116,13 +128,30 @@ sections:
       - Dashboard updates without page refresh
       - Health endpoint detects CUDA availability correctly
 
+  - heading: "Screenshot Tasks (Required Deliverables)"
+    content: |
+      Include these screenshots in your submission:
+
+      1. **Build/Setup Screenshot**
+        - Jetson board setup and wiring (power, cooling, camera/peripherals as relevant)
+
+      2. **App Interface Screenshot**
+        - Edge Health Sentinel dashboard page in browser
+
+      3. **Output/Result Screenshot**
+        - Health status panel showing CUDA readiness and live metrics
+
+      4. **Troubleshooting Screenshot**
+        - A real issue you encountered (for example, service error state) and the resolved app state
+
+      Tip: focus on visual proof of progress, not terminal-only screenshots.
+
   - heading: "Homework"
     content: |
       Homework task (ship App 1):
       - Add a `README.md` with setup and run commands.
       - Record a 30-second telemetry log and explain one optimization.
       - Create a release note describing App 1 features and known limits.
-      ```
 
 quiz:
   - question: "Which command is commonly used on Jetson to observe live CPU/GPU/thermal metrics?"

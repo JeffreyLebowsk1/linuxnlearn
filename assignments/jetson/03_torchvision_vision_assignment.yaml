@@ -7,6 +7,33 @@ instructions: |
   Build and deliver **App 3: Vision Narrator** as your capstone.
   Your app must perform live vision inference and produce event-based narration.
 
+grading_guidance:
+  total_points: 60
+  pass_threshold: 42
+  mastery_levels:
+    - level: "Needs Improvement"
+      score_range: "0-29"
+      guidance: "Prioritize a stable live inference loop and correct device placement first."
+    - level: "Developing"
+      score_range: "30-41"
+      guidance: "Core loop runs; improve event filtering, narration timing, and snapshot reliability."
+    - level: "Pass"
+      score_range: "42-50"
+      guidance: "Capstone requirements met; tune FPS/latency and improve deployment readiness."
+    - level: "Strong Pass"
+      score_range: "51-56"
+      guidance: "Reliable capstone with clear domain focus and strong event handling."
+    - level: "Distinction"
+      score_range: "57-60"
+      guidance: "Production-quality capstone with robust logs, clear runbook, and measurable optimization outcomes."
+
+submission_checklist:
+  - "Live camera inference demo (minimum 2 minutes)"
+  - "Narration triggered by at least 3 meaningful event types"
+  - "Saved snapshots and event metadata logs"
+  - "Unique domain variant description and rationale"
+  - "Capstone README with setup, run, metrics, and troubleshooting"
+
 tasks:
   - id: 1
     type: "multiple_choice"

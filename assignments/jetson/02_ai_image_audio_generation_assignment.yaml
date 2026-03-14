@@ -7,6 +7,33 @@ instructions: |
   Build and deliver **App 2: Prompt Studio**.
   One prompt should produce both an image output and an audio narration output.
 
+grading_guidance:
+  total_points: 60
+  pass_threshold: 42
+  mastery_levels:
+    - level: "Needs Improvement"
+      score_range: "0-29"
+      guidance: "Implement a stable single endpoint first, then add queueing and artifact outputs."
+    - level: "Developing"
+      score_range: "30-41"
+      guidance: "Basic generation works; improve reliability and metadata completeness."
+    - level: "Pass"
+      score_range: "42-50"
+      guidance: "Meets requirements; improve uniqueness mode quality checks and benchmark discipline."
+    - level: "Strong Pass"
+      score_range: "51-56"
+      guidance: "Strong multimodal flow with good controls; refine latency and memory behavior."
+    - level: "Distinction"
+      score_range: "57-60"
+      guidance: "Polished Prompt Studio with robust queueing, observability, and high-quality outputs."
+
+submission_checklist:
+  - "Working /api/generate flow producing both image and audio"
+  - "Queue/concurrency control enabled and documented"
+  - "At least 3 prompt examples with saved artifacts"
+  - "Unique mode definition with prompt template"
+  - "Benchmark notes for latency and memory"
+
 tasks:
   - id: 1
     type: "multiple_choice"

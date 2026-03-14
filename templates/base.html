@@ -38,6 +38,17 @@
     </footer>
 
     <script src="{{ static_asset_url('js/main.js') }}"></script>
+    <script type="module">
+        import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+        if (document.querySelector(".mermaid")) {
+            mermaid.initialize({
+                startOnLoad: true,
+                theme: "neutral",
+                securityLevel: "loose"
+            });
+        }
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

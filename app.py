@@ -1,16 +1,65 @@
 import os
 import json
+import re
+from html import escape
 
+import bleach
 import markdown as md
+import structlog
 import yaml
 from flask import Flask, render_template, request, jsonify, url_for, Response, stream_with_context
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from markupsafe import Markup
+from prometheus_flask_exporter import PrometheusMetrics
 import config
 import ai_providers
 import instructor_agent
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
+
+logger = structlog.get_logger(__name__)
+limiter = Limiter(get_remote_address, app=app, default_limits=[])
+metrics = PrometheusMetrics(app)
+
+MARKDOWN_EXTENSIONS = [
+    "fenced_code",
+    "pymdownx.superfences",
+    "tables",
+    "nl2br",
+    "codehilite",
+    "attr_list",
+]
+
+BLEACH_ALLOWED_TAGS = list(bleach.sanitizer.ALLOWED_TAGS) + [
+    "p",
+    "pre",
+    "code",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "table",
+    "thead",
+    "tbody",
+    "tr",
+    "th",
+    "td",
+    "img",
+    "div",
+    "span",
+    "br",
+]
+BLEACH_ALLOWED_ATTRS = {
+    "*": ["class"],
+    "a": ["href", "title", "target", "rel"],
+    "img": ["src", "alt", "title", "class"],
+}
+
+MERMAID_BLOCK_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 
 
 @app.context_processor
@@ -67,11 +116,36 @@ def markdown_to_html(text):
     """Convert a markdown string to safe HTML."""
     if not text:
         return ""
+
+    mermaid_blocks = []
+
+    def _capture_mermaid(match):
+        idx = len(mermaid_blocks)
+        mermaid_blocks.append(match.group(1).strip())
+        return f"MERMAID_BLOCK_{idx}"
+
+    processed_text = MERMAID_BLOCK_RE.sub(_capture_mermaid, text)
+    rendered = md.markdown(
+        processed_text,
+        extensions=MARKDOWN_EXTENSIONS,
+    )
+
+    for idx, block in enumerate(mermaid_blocks):
+        token = f"MERMAID_BLOCK_{idx}"
+        diagram_html = f'<div class="mermaid">{escape(block)}</div>'
+        rendered = rendered.replace(f"<p>{token}</p>", diagram_html)
+        rendered = rendered.replace(token, diagram_html)
+
+    rendered = bleach.clean(
+        rendered,
+        tags=BLEACH_ALLOWED_TAGS,
+        attributes=BLEACH_ALLOWED_ATTRS,
+        protocols=["http", "https", "mailto", "data"],
+        strip=True,
+    )
+
     return Markup(
-        md.markdown(
-            text,
-            extensions=["fenced_code", "tables", "nl2br"],
-        )
+        rendered
     )
 
 
@@ -275,6 +349,7 @@ def chat():
 
 
 @app.route("/api/ask", methods=["POST"])
+@limiter.limit("120/minute")
 def ask():
     """AI assistant endpoint."""
     data = request.get_json(silent=True)
@@ -306,6 +381,7 @@ def ask():
 
 
 @app.route("/api/chat", methods=["POST"])
+@limiter.limit("120/minute")
 def chat_api():
     """Chat API endpoint used by the chat.js frontend."""
     data = request.get_json(silent=True)
@@ -359,6 +435,7 @@ def _sse(event, data):
 
 
 @app.route("/api/chat/stream", methods=["POST"])
+@limiter.limit("120/minute")
 def chat_stream_api():
     """Streaming chat endpoint (SSE over POST)."""
     data = request.get_json(silent=True)
@@ -413,6 +490,7 @@ def chat_stream_api():
 
 
 @app.route("/api/instructor", methods=["POST"])
+@limiter.limit("120/minute")
 def instructor_api():
     """
     Instructor agent endpoint supporting multi-turn conversations.
@@ -486,6 +564,7 @@ def instructor_api():
 # ---------------------------------------------------------------------------
 
 @app.route("/api/grade", methods=["POST"])
+@limiter.limit("60/minute")
 def grade():
     """
     Grade an assignment submission.

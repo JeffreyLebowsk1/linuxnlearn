@@ -40,6 +40,18 @@ sections:
       App uniqueness requirement:
       - Add one domain-specific mode, such as "lab safety monitor" or "smart inventory watcher".
 
+  - heading: "Architecture Diagram"
+    content: |
+      ```mermaid
+      flowchart LR
+        A[Camera Feed] --> B[Preprocessing]
+        B --> C[TorchVision Inference]
+        C --> D[Event Filter]
+        D --> E[Overlay Renderer]
+        D --> F[Audio Narration]
+        D --> G[Snapshot + Event Log]
+      ```
+
   - heading: "Milestone 1: Camera Input to Tensor Pipeline"
     content: |
       Vision pipelines generally follow:
@@ -109,6 +121,24 @@ sections:
       - Stable loop for at least 5 minutes.
       - FPS and latency are logged every 5 seconds.
       - At least 3 events produce spoken alerts and stored snapshots.
+
+  - heading: "Screenshot Tasks (Required Deliverables)"
+    content: |
+      Include these screenshots in your submission:
+
+      1. **Build/Setup Screenshot**
+        - Vision Narrator project layout (capture, inference, narration, logging modules)
+
+      2. **App Interface Screenshot**
+        - Live camera UI with overlay labels/confidence
+
+      3. **Output/Result Screenshot**
+        - Event log and snapshot gallery showing detected events
+
+      4. **Troubleshooting Screenshot**
+        - A difficult failure case (camera drop, model mismatch, or lag spike) and the recovered state
+
+      Tip: avoid terminal-only screenshots; prioritize app behavior and user-visible outputs.
 
   - heading: "Homework"
     content: |

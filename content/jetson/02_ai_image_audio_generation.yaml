@@ -39,6 +39,19 @@ sections:
 
       App 2 should include a unique style preset (for example: "retro-futuristic robotics").
 
+  - heading: "Architecture Diagram"
+    content: |
+      ```mermaid
+      flowchart LR
+        A[Prompt Input] --> B[Queue]
+        B --> C[Image Generator]
+        B --> D[Audio Generator]
+        C --> E[Image Artifact]
+        D --> F[Audio Artifact]
+        E --> G[Prompt Studio Gallery]
+        F --> G
+      ```
+
   - heading: "Milestone 1: Image Generation Pipeline Strategy"
     content: |
       A typical local image generation flow:
@@ -108,6 +121,24 @@ sections:
       - Service remains responsive under 3 quick consecutive requests.
       - No out-of-memory crash occurs during test run.
       - A single prompt creates both image and audio outputs.
+
+  - heading: "Screenshot Tasks (Required Deliverables)"
+    content: |
+      Include these screenshots in your submission:
+
+      1. **Build/Setup Screenshot**
+        - Prompt Studio project layout in VS Code (API routes, worker/queue files)
+
+      2. **App Interface Screenshot**
+        - Prompt Studio web UI with prompt input and run controls
+
+      3. **Output/Result Screenshot**
+        - Generated image plus audio output/player/waveform view for the same prompt
+
+      4. **Troubleshooting Screenshot**
+        - Example failure case (queue delay, bad prompt, or resource issue) and post-fix behavior
+
+      Tip: include one screenshot that demonstrates your unique mode/preset.
 
   - heading: "Homework"
     content: |

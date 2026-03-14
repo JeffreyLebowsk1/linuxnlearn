@@ -29,6 +29,41 @@
         <div class="assignment-instructions">
             {{ assignment.instructions | markdown_to_html }}
         </div>
+
+        {% if assignment.grading_guidance %}
+        <div class="grading-guidance-panel">
+            <h3>Grading Guidance</h3>
+            <div class="grading-guidance-meta">
+                <span class="tag">Total: {{ assignment.grading_guidance.total_points }} pts</span>
+                <span class="tag tag-pass">Pass: {{ assignment.grading_guidance.pass_threshold }}+ pts</span>
+            </div>
+
+            {% if assignment.grading_guidance.mastery_levels %}
+            <div class="mastery-levels">
+                {% for level in assignment.grading_guidance.mastery_levels %}
+                <div class="mastery-level-item">
+                    <div class="mastery-level-head">
+                        <strong>{{ level.level }}</strong>
+                        <span class="mastery-level-range">{{ level.score_range }}</span>
+                    </div>
+                    <p>{{ level.guidance }}</p>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if assignment.submission_checklist %}
+            <div class="submission-checklist">
+                <h4>Submission Checklist</h4>
+                <ul>
+                    {% for item in assignment.submission_checklist %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 
     {# ------------------------------------------------------------------ #}

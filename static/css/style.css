@@ -284,12 +284,109 @@ code, pre { font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace; 
   font-size: .88rem;
   line-height: 1.55;
 }
+.codehilite,
+.highlight {
+  background: #0b1020;
+  border: 1px solid #1f2937;
+  border-radius: var(--radius);
+  margin: .85rem 0;
+  overflow: auto;
+}
+.codehilite pre,
+.highlight pre {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  background: transparent;
+  color: #e5e7eb;
+}
+.codehilite code,
+.highlight code {
+  font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .86rem;
+}
+
+/* Pygments token colors (dark theme) */
+.codehilite .hll, .highlight .hll { background-color: #1f2937; }
+.codehilite .c, .highlight .c { color: #6b7280; font-style: italic; }
+.codehilite .err, .highlight .err { color: #fca5a5; }
+.codehilite .k, .highlight .k,
+.codehilite .kd, .highlight .kd,
+.codehilite .kn, .highlight .kn,
+.codehilite .kp, .highlight .kp,
+.codehilite .kr, .highlight .kr,
+.codehilite .kt, .highlight .kt { color: #c084fc; }
+.codehilite .o, .highlight .o,
+.codehilite .ow, .highlight .ow { color: #67e8f9; }
+.codehilite .s, .highlight .s,
+.codehilite .sa, .highlight .sa,
+.codehilite .sb, .highlight .sb,
+.codehilite .sc, .highlight .sc,
+.codehilite .sd, .highlight .sd,
+.codehilite .se, .highlight .se,
+.codehilite .sh, .highlight .sh,
+.codehilite .si, .highlight .si,
+.codehilite .sr, .highlight .sr,
+.codehilite .ss, .highlight .ss,
+.codehilite .sx, .highlight .sx,
+.codehilite .s1, .highlight .s1,
+.codehilite .s2, .highlight .s2 { color: #86efac; }
+.codehilite .m, .highlight .m,
+.codehilite .mf, .highlight .mf,
+.codehilite .mh, .highlight .mh,
+.codehilite .mi, .highlight .mi,
+.codehilite .mo, .highlight .mo,
+.codehilite .il, .highlight .il { color: #fca5a5; }
+.codehilite .n, .highlight .n,
+.codehilite .nx, .highlight .nx { color: #e5e7eb; }
+.codehilite .na, .highlight .na,
+.codehilite .nb, .highlight .nb,
+.codehilite .nc, .highlight .nc,
+.codehilite .nd, .highlight .nd,
+.codehilite .ne, .highlight .ne,
+.codehilite .nf, .highlight .nf,
+.codehilite .nl, .highlight .nl,
+.codehilite .nn, .highlight .nn,
+.codehilite .nt, .highlight .nt,
+.codehilite .nv, .highlight .nv { color: #93c5fd; }
+.codehilite .p, .highlight .p,
+.codehilite .w, .highlight .w { color: #d1d5db; }
+
 .section-content code:not(pre code) {
-  background: var(--gray-100);
-  color: var(--orange);
+  background: #eef2ff;
+  color: #312e81;
+  border: 1px solid #c7d2fe;
   padding: .1em .35em;
   border-radius: 4px;
   font-size: .88em;
+  font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Lesson screenshots */
+.section-content img {
+  display: block;
+  width: 100%;
+  max-width: 920px;
+  height: auto;
+  margin: .9rem auto;
+  border-radius: 12px;
+  border: 1px solid var(--gray-200);
+  box-shadow: var(--shadow-lg);
+  background: #fff;
+}
+
+/* Optional image class in markdown: ![...](...){.lesson-shot} */
+.section-content img.lesson-shot {
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .18);
+}
+
+/* Optional caption class in markdown: *Caption text*{.caption} */
+.section-content .caption {
+  margin-top: -.25rem;
+  margin-bottom: .95rem;
+  text-align: center;
+  font-size: .85rem;
+  color: var(--gray-600);
 }
 
 /* ---- Quiz ---- */
@@ -332,6 +429,71 @@ code, pre { font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace; 
 /* ---- Assignment page ---- */
 .assignment-header-meta { display: flex; gap: .5rem; flex-wrap: wrap; margin: .6rem 0 .9rem; }
 .assignment-instructions { background: var(--gray-100); border-radius: var(--radius); padding: .9rem 1.1rem; font-size: .95rem; }
+
+.grading-guidance-panel {
+  margin-top: 1rem;
+  background: #f8fafc;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+}
+.grading-guidance-panel h3 {
+  font-size: 1.05rem;
+  margin-bottom: .55rem;
+}
+.grading-guidance-meta {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .8rem;
+}
+.tag-pass {
+  background: var(--green-l);
+  color: var(--green);
+}
+
+.mastery-levels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: .6rem;
+  margin-bottom: .8rem;
+}
+.mastery-level-item {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  padding: .65rem .75rem;
+}
+.mastery-level-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .5rem;
+  margin-bottom: .3rem;
+}
+.mastery-level-range {
+  font-size: .8rem;
+  color: var(--gray-600);
+  font-weight: 600;
+}
+.mastery-level-item p {
+  margin: 0;
+  font-size: .86rem;
+  color: var(--gray-700);
+}
+
+.submission-checklist h4 {
+  margin: .25rem 0 .4rem;
+  font-size: .95rem;
+}
+.submission-checklist ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.submission-checklist li {
+  margin: .25rem 0;
+  font-size: .88rem;
+}
 
 /* Tags */
 .tag {

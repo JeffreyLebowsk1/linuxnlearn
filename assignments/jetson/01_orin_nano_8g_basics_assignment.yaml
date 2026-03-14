@@ -7,6 +7,33 @@ instructions: |
   Build and deliver **App 1: Edge Health Sentinel**.
   Your app must expose health APIs and a live dashboard for Jetson readiness.
 
+grading_guidance:
+  total_points: 60
+  pass_threshold: 42
+  mastery_levels:
+    - level: "Needs Improvement"
+      score_range: "0-29"
+      guidance: "Focus on reliable API responses first, then add telemetry quality checks."
+    - level: "Developing"
+      score_range: "30-41"
+      guidance: "Core app exists; improve JSON schema consistency, error handling, and metrics coverage."
+    - level: "Pass"
+      score_range: "42-50"
+      guidance: "Meets core requirements; next step is stronger logging and dashboard usability."
+    - level: "Strong Pass"
+      score_range: "51-56"
+      guidance: "Solid implementation with good reliability; optimize telemetry sampling and documentation."
+    - level: "Distinction"
+      score_range: "57-60"
+      guidance: "Production-minded quality with robust failure handling, clear docs, and clean architecture."
+
+submission_checklist:
+  - "Running app with /api/health and /api/metrics endpoints"
+  - "Screenshot or short clip of live dashboard"
+  - "Sample JSON response from both endpoints"
+  - "README with setup, run, and troubleshooting notes"
+  - "Release note with known limitations and App 2 handoff plan"
+
 tasks:
   - id: 1
     type: "multiple_choice"

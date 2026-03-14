@@ -74,10 +74,14 @@ def test_lesson_page_shows_title(client):
 
 
 def test_lesson_markdown_renders_as_html(client):
-    response = client.get("/lesson/python/01_python_basics")
+    response = client.get("/lesson/python/02_network_automation")
     assert response.status_code == 200
     assert b"&lt;p&gt;" not in response.data
-    assert b"<pre><code" in response.data
+    assert (
+        b"<pre><code" in response.data
+        or b"codehilite" in response.data
+        or b"class=\"highlight\"" in response.data
+    )
 
 
 def test_osi_lesson_paragraphs_are_not_escaped(client):
