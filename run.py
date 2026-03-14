@@ -7,8 +7,9 @@ Usage
 
 ngrok support
 -------------
-Set NGROK_AUTH_TOKEN in your .env file to expose the app publicly via an
-ngrok HTTPS tunnel.  The public URL is printed to the console on startup.
+Set NGROK_AUTH_TOKEN (or NGROK_AUTHTOKEN) in your .env file to expose the app
+publicly via an ngrok HTTPS tunnel. The public URL is printed to the console on
+startup.
 
 Optionally set NGROK_DOMAIN to a static domain from your ngrok dashboard
 (e.g. abc123.ngrok-free.app) so the URL never changes between restarts.
@@ -17,7 +18,9 @@ Environment variables (all set in .env)
 ---------------------------------------
   PORT              – local port to listen on              (default: 5000)
   DEBUG             – enable Flask debug mode              (default: false)
-  NGROK_AUTH_TOKEN  – your ngrok authtoken
+    NGROK_AUTH_TOKEN  – your ngrok authtoken (preferred)
+    NGROK_AUTHTOKEN   – alternate ngrok authtoken variable name
+    NGROK_API_KEY     – optional for ngrok API usage (not tunnel auth)
   NGROK_DOMAIN      – optional static ngrok domain
 """
 
@@ -53,7 +56,11 @@ def main():
     port = config.PORT
     public_url = None
 
-    if config.NGROK_AUTH_TOKEN:
+    if config.NGROK_AUTH_TOKEN and config.NGROK_AUTH_TOKEN.startswith("ak_"):
+        print("[ngrok] NGROK_AUTH_TOKEN appears to be an API key (starts with 'ak_').")
+        print("[ngrok] Use your ngrok authtoken from: https://dashboard.ngrok.com/get-started/your-authtoken")
+        print(f"\nStarting locally on http://localhost:{port}\n")
+    elif config.NGROK_AUTH_TOKEN:
         public_url = _start_ngrok(port)
         if public_url:
             print("\n" + "=" * 54)
@@ -63,6 +70,10 @@ def main():
             print("=" * 54 + "\n")
         else:
             print(f"\nStarting locally on http://localhost:{port}\n")
+    elif config.NGROK_API_KEY:
+        print("[ngrok] NGROK_API_KEY is set, but tunnel auth requires NGROK_AUTH_TOKEN/NGROK_AUTHTOKEN.")
+        print("[ngrok] Set your authtoken in .env to enable public tunnel startup.")
+        print(f"\nStarting locally on http://localhost:{port}\n")
     else:
         print(f"\nStarting LinuxNLearn on http://localhost:{port}")
         print("Tip: set NGROK_AUTH_TOKEN in .env to expose publicly.\n")
