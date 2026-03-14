@@ -21,7 +21,7 @@
         {% for section in lesson.sections %}
         <div class="lesson-section">
             <h2>{{ section.heading }}</h2>
-            <div class="section-content">{{ section.content | markdown_to_html | safe }}</div>
+            <div class="section-content">{{ section.content_html | safe }}</div>
         </div>
         {% endfor %}
     </div>

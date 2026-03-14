@@ -155,6 +155,10 @@ def lesson(category, slug):
     data = load_lesson(category, slug)
     if not data:
         return render_template("404.html"), 404
+    # Pre-render section markdown to HTML to avoid template/filter variance.
+    sections = data.get("sections", [])
+    for section in sections:
+        section["content_html"] = markdown_to_html(section.get("content", ""))
     meta = CATEGORIES[category]
     lessons = load_lessons(category)
     current_index = next((i for i, l in enumerate(lessons) if l["slug"] == slug), None)
