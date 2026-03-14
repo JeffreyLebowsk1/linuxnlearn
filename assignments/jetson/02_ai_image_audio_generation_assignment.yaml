@@ -1,11 +1,11 @@
-title: "Jetson Image and Audio Generation Assignment"
+title: "App 2 Assignment: Prompt Studio"
 category: "jetson"
 difficulty: "intermediate"
 estimated_minutes: 35
 related_lesson: "02_ai_image_audio_generation"
 instructions: |
-  Evaluate your understanding of running memory-aware generation workloads on
-  Jetson Orin Nano 8GB.
+  Build and deliver **App 2: Prompt Studio**.
+  One prompt should produce both an image output and an audio narration output.
 
 tasks:
   - id: 1
@@ -36,17 +36,17 @@ tasks:
     type: "practical"
     points: 20
     question: |
-      Write pseudocode or Python-like code for a generation endpoint that:
-      1. Accepts a prompt
-      2. Adds the request to a queue
-      3. Processes one request at a time
-      4. Returns output path and elapsed time
+      Implement Prompt Studio core flow:
+      1. Create `/api/generate` that accepts prompt + style preset
+      2. Queue requests with max concurrency of 1
+      3. Generate one image artifact and one audio artifact
+      4. Return output paths and elapsed processing time
     rubric: |
       Award up to 20 points:
-      - Clear endpoint/request structure (5 pts)
-      - Queue-based flow control shown (5 pts)
-      - Single-worker or concurrency limit logic included (5 pts)
-      - Response includes output artifact and timing metadata (5 pts)
+      - API and payload structure are clear and valid (5 pts)
+      - Queue/concurrency control is correctly implemented (5 pts)
+      - Both artifacts are produced and saved consistently (5 pts)
+      - Response includes timing and artifact metadata (5 pts)
     sample_answer: |
       from queue import Queue
       import time
@@ -72,16 +72,17 @@ tasks:
     type: "short_answer"
     points: 20
     question: |
-      Compare image generation and audio generation on Jetson in terms of
-      memory usage, latency behavior, and deployment considerations.
+      Uniqueness requirement:
+      Define one unique Prompt Studio mode (for example, "retro robotics poster"
+      or "industrial safety briefing"). Explain:
+      - Why it is unique
+      - What prompt template it uses
+      - What output quality checks you apply
     rubric: |
-      Full-credit response should compare all three dimensions:
-      - Memory footprint tendencies
-      - Latency profile and real-time constraints
-      - Service architecture/deployment patterns
-      Provide practical recommendations for each workload.
+      Full-credit response defines a concrete unique mode, includes template logic,
+      and gives at least 3 quality checks.
     sample_answer: |
-      Image generation often has larger burst memory demand and heavier denoising loops.
-      Audio generation/TTS can be lower memory per request but can become expensive for long clips.
-      For deployment, image workloads benefit from strict resolution limits and serialized processing,
-      while audio services often benefit from chunking/streaming outputs and short-request policies.
+      Unique mode: "Factory Floor Incident Briefing"
+      Why unique: combines visual hazard scene generation with concise spoken safety summary.
+      Prompt template: "Create a {style} image showing {scenario} with highlighted hazard zones..."
+      Quality checks: no clipped audio, image dimensions match target, response under 8 seconds median.

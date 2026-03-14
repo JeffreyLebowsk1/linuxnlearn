@@ -1,11 +1,11 @@
-title: "Jetson Orin Nano 8GB Setup Assignment"
+title: "App 1 Assignment: Edge Health Sentinel"
 category: "jetson"
 difficulty: "beginner"
 estimated_minutes: 30
 related_lesson: "01_orin_nano_8g_basics"
 instructions: |
-  This assignment validates your understanding of Jetson Orin Nano 8GB bring-up,
-  software readiness checks, and performance telemetry.
+  Build and deliver **App 1: Edge Health Sentinel**.
+  Your app must expose health APIs and a live dashboard for Jetson readiness.
 
 tasks:
   - id: 1
@@ -36,47 +36,49 @@ tasks:
     type: "practical"
     points: 20
     question: |
-      Write a short Python script that:
-      1. Imports torch
-      2. Prints whether CUDA is available
-      3. If available, prints the CUDA device name
-      4. Runs a small tensor operation on CUDA and prints the result shape
+      Implement the backend API for App 1:
+      1. Create `/api/health` returning CUDA status and uptime
+      2. Create `/api/metrics` returning sampled CPU/memory metrics
+      3. Return valid JSON with timestamp fields
+      4. Add one failure-state response when telemetry is unavailable
     rubric: |
       Award up to 20 points:
-      - Correct imports and script structure (5 pts)
-      - Correct CUDA availability check (5 pts)
-      - Correct retrieval of device name when CUDA is available (5 pts)
-      - Demonstrates tensor operation on CUDA and prints meaningful output (5 pts)
+      - Routes implemented with correct JSON schema (6 pts)
+      - CUDA status and key metrics are accurate (6 pts)
+      - Includes timestamp and failure handling (4 pts)
+      - Code clarity and maintainability (4 pts)
     sample_answer: |
+      from flask import Flask, jsonify
+      import time
       import torch
 
-      print("CUDA available:", torch.cuda.is_available())
-      if torch.cuda.is_available():
-          print("Device:", torch.cuda.get_device_name(0))
-          x = torch.randn(2, 3, device="cuda")
-          y = torch.randn(2, 3, device="cuda")
-          z = x + y
-          print("Result shape:", z.shape)
+      app = Flask(__name__)
+      START = time.time()
+
+      @app.route('/api/health')
+      def health():
+          return jsonify({
+              'ok': True,
+              'cuda_available': torch.cuda.is_available(),
+              'uptime_sec': int(time.time() - START),
+              'timestamp': int(time.time())
+          })
 
   - id: 4
     type: "short_answer"
     points: 20
     question: |
-      You see periodic latency spikes during inference. Explain three likely causes
-      specific to Jetson edge systems and one mitigation strategy for each.
+      App 1 release note task:
+      Write a short release note describing:
+      - What your dashboard currently measures
+      - Two known limitations
+      - One concrete next improvement for App 2 integration
     rubric: |
-      Full-credit answers should include at least three realistic causes such as:
-      - Thermal throttling
-      - Memory pressure/swapping
-      - CPU contention from background services
-      - Inconsistent power mode/clock profile
-      And provide one concrete mitigation for each cause.
+      Full-credit answers should include all three sections clearly,
+      show realistic system-awareness, and propose an App 2-ready improvement.
     sample_answer: |
-      1) Thermal throttling: device gets hot and clocks drop.
-         Mitigation: improve cooling and monitor with tegrastats.
+      Release Notes v1.0
 
-      2) Memory pressure: model + buffers exceed comfortable RAM headroom.
-         Mitigation: reduce resolution/batch size and reuse buffers.
-
-      3) CPU contention: capture, preprocessing, and inference compete for cores.
-         Mitigation: split workloads across threads/processes and reduce background tasks.
+      Included metrics: CUDA availability, uptime, memory %, CPU %, timestamp.
+      Known limits: no persistent storage; telemetry parser not robust to malformed lines.
+      Next improvement: push health events into App 2 queue service for unified monitoring.

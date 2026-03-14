@@ -1,10 +1,11 @@
-title: "Jetson TorchVision Vision Assignment"
+title: "App 3 Capstone Assignment: Vision Narrator"
 category: "jetson"
 difficulty: "intermediate"
 estimated_minutes: 35
 related_lesson: "03_torchvision_vision"
 instructions: |
-  Demonstrate your understanding of real-time TorchVision pipelines on Jetson.
+  Build and deliver **App 3: Vision Narrator** as your capstone.
+  Your app must perform live vision inference and produce event-based narration.
 
 tasks:
   - id: 1
@@ -35,17 +36,17 @@ tasks:
     type: "practical"
     points: 20
     question: |
-      Write a TorchVision preprocessing snippet for classification that:
-      1. Resizes to 224x224
-      2. Converts to tensor
-      3. Applies ImageNet normalization
-      4. Adds batch dimension and moves to CUDA
+      Implement core capstone loop:
+      1. Capture live camera frames
+      2. Run TorchVision detection/classification on CUDA
+      3. Trigger audio narration for selected events
+      4. Save event snapshots and metadata logs
     rubric: |
       Award up to 20 points:
-      - Correct transform sequence (8 pts)
-      - Correct normalization values (4 pts)
-      - Adds batch dimension via unsqueeze (4 pts)
-      - Moves tensor to CUDA device (4 pts)
+      - Stable camera + inference loop implementation (6 pts)
+      - Correct event detection and filtering logic (5 pts)
+      - Audio narration integration works for event triggers (5 pts)
+      - Snapshot/log persistence is implemented (4 pts)
     sample_answer: |
       from torchvision import transforms
 
@@ -64,17 +65,21 @@ tasks:
     type: "short_answer"
     points: 20
     question: |
-      Your model runs at 30 FPS in a test clip but drops to 12 FPS in production.
-      Explain four debugging checks you would perform on Jetson and why.
+      Capstone uniqueness pitch:
+      Describe your final unique app variant (for example, "Lab Safety Narrator",
+      "Smart Inventory Spotter", or "Workshop PPE Monitor").
+
+      Include:
+      1. Target user
+      2. Primary event classes
+      3. Why narration adds value
+      4. One metric you will optimize first
     rubric: |
-      Full-credit answers include four practical checks, such as:
-      - tegrastats for thermal or utilization bottlenecks
-      - camera input pipeline bottlenecks/dropped frames
-      - CPU/GPU device mismatch and unnecessary host<->device copies
-      - transform/postprocessing overhead and confidence thresholds
-      - model precision/input resolution differences between test and production
+      Full-credit responses provide concrete domain framing, actionable class/event design,
+      clear value proposition for narration, and a measurable optimization target.
     sample_answer: |
-      1) Check tegrastats for thermal throttling and memory pressure.
-      2) Profile camera capture and decode path for frame drops.
-      3) Verify tensors and model stay on CUDA to avoid copy overhead.
-      4) Compare production input resolution and postprocessing settings to test setup.
+      Variant: "Workshop PPE Monitor"
+      Target user: training supervisors in a fabrication lab.
+      Event classes: helmet missing, goggles missing, high-risk tool active.
+      Narration value: immediate audible warning when visual attention is elsewhere.
+      First metric: reduce missed critical events while maintaining >=15 FPS.
