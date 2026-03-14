@@ -2,7 +2,7 @@ import os
 
 import markdown as md
 import yaml
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, url_for
 from markupsafe import Markup
 import config
 import ai_providers
@@ -10,6 +10,19 @@ import instructor_agent
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
+
+
+@app.context_processor
+def inject_static_asset_url():
+    """Provide a cache-busted static asset URL helper for templates."""
+    def static_asset_url(filename):
+        static_path = os.path.join(app.static_folder, filename)
+        if os.path.isfile(static_path):
+            version = int(os.path.getmtime(static_path))
+            return url_for("static", filename=filename, v=version)
+        return url_for("static", filename=filename)
+
+    return {"static_asset_url": static_asset_url}
 
 CATEGORIES = {
     "networking": {
