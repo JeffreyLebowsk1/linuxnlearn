@@ -3,6 +3,7 @@ import os
 import markdown as md
 import yaml
 from flask import Flask, render_template, request, jsonify
+from markupsafe import Markup
 import config
 import ai_providers
 import instructor_agent
@@ -46,9 +47,11 @@ def markdown_to_html(text):
     """Convert a markdown string to safe HTML."""
     if not text:
         return ""
-    return md.markdown(
-        text,
-        extensions=["fenced_code", "tables", "nl2br"],
+    return Markup(
+        md.markdown(
+            text,
+            extensions=["fenced_code", "tables", "nl2br"],
+        )
     )
 
 

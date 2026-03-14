@@ -73,6 +73,13 @@ def test_lesson_page_shows_title(client):
     assert b"OSI" in response.data
 
 
+def test_lesson_markdown_renders_as_html(client):
+    response = client.get("/lesson/python/01_python_basics")
+    assert response.status_code == 200
+    assert b"&lt;p&gt;" not in response.data
+    assert b"<pre><code" in response.data
+
+
 def test_lesson_invalid_slug_returns_404(client):
     response = client.get("/lesson/networking/does_not_exist")
     assert response.status_code == 404
@@ -99,7 +106,10 @@ def test_chat_page_contains_input(client):
 
 def test_api_chat_no_api_key_returns_fallback(client, monkeypatch):
     """Without an API key, the endpoint returns a helpful fallback message."""
+    import ai_providers
+
     monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
+    monkeypatch.setattr(ai_providers, "get_available_providers", lambda: [])
     response = client.post(
         "/api/chat",
         json={"message": "What is an IP address?"},
@@ -151,7 +161,10 @@ def test_instructor_page_contains_heading(client):
 
 def test_api_instructor_no_api_key_returns_fallback(client, monkeypatch):
     """Without an API key, the endpoint returns a helpful fallback message."""
+    import ai_providers
+
     monkeypatch.delenv("PERPLEXITY_API_KEY", raising=False)
+    monkeypatch.setattr(ai_providers, "get_available_providers", lambda: [])
     response = client.post(
         "/api/instructor",
         json={"messages": [{"role": "user", "content": "Teach me about Linux"}]},
