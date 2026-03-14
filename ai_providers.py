@@ -72,7 +72,7 @@ def resolve_provider(requested=None):
     if config.AI_PROVIDER in valid:
         return config.AI_PROVIDER
     available = get_available_providers()
-    return available[0] if available else "openai"
+    return available[0] if available else "perplexity"
 
 
 def ask(message, system_prompt=None, provider=None):

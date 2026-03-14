@@ -295,8 +295,8 @@ def chat_api():
         return jsonify(
             {
                 "reply": (
-                    "No AI provider is configured. Please set OPENAI_API_KEY "
-                    "(or GEMINI_API_KEY / PERPLEXITY_API_KEY) in your .env file "
+                    "No AI provider is configured. Please set PERPLEXITY_API_KEY "
+                    "(or OPENAI_API_KEY / GEMINI_API_KEY) in your .env file "
                     "to enable AI responses."
                 )
             }
@@ -365,8 +365,8 @@ def instructor_api():
         return jsonify(
             {
                 "reply": (
-                    "No AI provider is configured. Please set OPENAI_API_KEY "
-                    "(or GEMINI_API_KEY / PERPLEXITY_API_KEY) in your .env file "
+                    "No AI provider is configured. Please set PERPLEXITY_API_KEY "
+                    "(or OPENAI_API_KEY / GEMINI_API_KEY) in your .env file "
                     "to enable the instructor agent."
                 )
             }
