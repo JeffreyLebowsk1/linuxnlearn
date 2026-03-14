@@ -43,8 +43,8 @@ sections:
       ```mermaid
       flowchart LR
         A[Jetson Orin Nano 8GB] --> B[Health Collector Service]
-        B --> C[/api/health]
-        B --> D[/api/metrics]
+        B --> C["/api/health"]
+        B --> D["/api/metrics"]
         C --> E[Dashboard UI]
         D --> E
       ```

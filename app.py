@@ -1,7 +1,7 @@
 import os
 import json
 import re
-from html import escape
+from html import unescape
 
 import bleach
 import markdown as md
@@ -132,7 +132,7 @@ def markdown_to_html(text):
 
     for idx, block in enumerate(mermaid_blocks):
         token = f"MERMAID_BLOCK_{idx}"
-        diagram_html = f'<div class="mermaid">{escape(block)}</div>'
+        diagram_html = f'<div class="mermaid">{block}</div>'
         rendered = rendered.replace(f"<p>{token}</p>", diagram_html)
         rendered = rendered.replace(token, diagram_html)
 
@@ -142,6 +142,14 @@ def markdown_to_html(text):
         attributes=BLEACH_ALLOWED_ATTRS,
         protocols=["http", "https", "mailto", "data"],
         strip=True,
+    )
+
+    # Bleach escapes Mermaid operators (like -->); restore only inside Mermaid blocks.
+    rendered = re.sub(
+        r'<div class="mermaid">(.*?)</div>',
+        lambda m: f'<div class="mermaid">{unescape(m.group(1))}</div>',
+        rendered,
+        flags=re.DOTALL,
     )
 
     return Markup(
