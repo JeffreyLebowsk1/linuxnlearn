@@ -1,0 +1,286 @@
+title: "Unified Edge AI Platform: Integrating Apps 1, 2, and 3"
+order: 4
+summary: "Connect Edge Health Sentinel, Prompt Studio, and Vision Narrator into a single unified edge AI platform with a shared API gateway, event bus, and control dashboard."
+sections:
+  - heading: "Learning Objectives"
+    content: |
+      By the end of this lesson, you should be able to:
+      - Decompose each app into a reusable microservice
+      - Wire Apps 1, 2, and 3 together through a shared event bus
+      - Build a unified control dashboard that aggregates all three services
+      - Apply inter-service health gating so generation and vision only run when the device is healthy
+
+  - heading: "Prerequisites"
+    content: |
+      Before starting:
+      - Apps 1, 2, and 3 completed and running independently
+      - Familiarity with Flask routes and JSON APIs
+      - Basic understanding of Python threads and queues
+
+  - heading: "90-Minute Lesson Plan"
+    content: |
+      Suggested schedule:
+
+      - **0-15 min**: Unified architecture design and service contracts
+      - **15-35 min**: Shared event bus and inter-service communication
+      - **35-55 min**: Health gating — Apps 2 and 3 consult App 1 before starting jobs
+      - **55-75 min**: Unified dashboard aggregating all three service feeds
+      - **75-90 min**: End-to-end integration test and recap
+
+  - heading: "Project Outcome: Unified Edge AI Platform"
+    content: |
+      By the end of this lesson you will ship **App 4: Unified Edge AI Platform**.
+
+      Platform features:
+      - `/api/gateway/health` — aggregated health from all three services
+      - `/api/gateway/generate` — delegates to Prompt Studio only when health is green
+      - `/api/gateway/vision/start` and `/api/gateway/vision/stop` — Vision Narrator lifecycle
+      - `/api/events` — streaming event log from all three apps
+      - Single dashboard page showing live status and recent events
+
+  - heading: "Architecture Diagram"
+    content: |
+      ```mermaid
+      flowchart TD
+        A[Edge Health Sentinel<br/>App 1] -->|health gate| G[API Gateway]
+        B[Prompt Studio<br/>App 2] <-->|generate jobs| G
+        C[Vision Narrator<br/>App 3] <-->|vision events| G
+        G --> D[Event Bus]
+        D --> E[Unified Dashboard]
+        A --> D
+        B --> D
+        C --> D
+      ```
+
+  - heading: "Milestone 1: Define Service Contracts"
+    content: |
+      Each app becomes a microservice with a documented contract.
+
+      **App 1 contract — health endpoint:**
+      ```json
+      {
+        "ok": true,
+        "cuda_available": true,
+        "uptime_sec": 3720,
+        "memory_pct": 42,
+        "cpu_pct": 18,
+        "timestamp": 1742519379
+      }
+      ```
+
+      **App 2 contract — generate endpoint:**
+      ```json
+      {
+        "job_id": "abc123",
+        "status": "queued",
+        "prompt": "retro robotics poster",
+        "preset": "retro-futuristic"
+      }
+      ```
+
+      **App 3 contract — event endpoint:**
+      ```json
+      {
+        "event_id": "evt001",
+        "label": "person",
+        "confidence": 0.87,
+        "snapshot_path": "snapshots/evt001.jpg",
+        "timestamp": 1742519400
+      }
+      ```
+
+      Keeping contracts stable lets you swap implementations without changing the gateway.
+
+  - heading: "Milestone 2: Build the Shared Event Bus"
+    content: |
+      A lightweight in-process event bus lets all three services publish and subscribe to events without tight coupling.
+
+      ```python
+      import threading
+      from collections import defaultdict
+
+      class EventBus:
+          def __init__(self):
+              self._subscribers = defaultdict(list)
+              self._lock = threading.Lock()
+
+          def subscribe(self, topic, callback):
+              with self._lock:
+                  self._subscribers[topic].append(callback)
+
+          def publish(self, topic, payload):
+              with self._lock:
+                  handlers = list(self._subscribers.get(topic, []))
+              for handler in handlers:
+                  handler(payload)
+
+      bus = EventBus()
+      ```
+
+      Each service publishes to a named topic:
+      - App 1 → `health.update`
+      - App 2 → `generate.complete` / `generate.failed`
+      - App 3 → `vision.event` / `vision.alert`
+
+  - heading: "Milestone 3: Health Gating"
+    content: |
+      Before dispatching a generation or vision job, the gateway checks App 1's health.
+
+      ```python
+      import requests
+
+      HEALTH_URL = "http://localhost:5001/api/health"
+      MEMORY_THRESHOLD_PCT = 80
+
+      def device_is_ready():
+          try:
+              resp = requests.get(HEALTH_URL, timeout=2)
+              data = resp.json()
+              return (
+                  data.get("ok") is True
+                  and data.get("cuda_available") is True
+                  and data.get("memory_pct", 100) < MEMORY_THRESHOLD_PCT
+              )
+          except Exception:
+              return False
+      ```
+
+      Gateway route with health gating:
+      ```python
+      from flask import Flask, jsonify, request
+
+      app = Flask(__name__)
+
+      @app.route('/api/gateway/generate', methods=['POST'])
+      def gateway_generate():
+          if not device_is_ready():
+              return jsonify({"error": "device not ready", "retry_after_sec": 10}), 503
+          payload = request.get_json()
+          # Forward to App 2
+          resp = requests.post("http://localhost:5002/api/generate", json=payload)
+          return resp.json(), resp.status_code
+      ```
+
+  - heading: "Milestone 4: Unified Event Stream"
+    content: |
+      Use Server-Sent Events (SSE) to stream all events to the dashboard in real time.
+
+      ```python
+      import queue
+      import json
+
+      _event_queue = queue.Queue(maxsize=200)
+
+      def push_event(source, data):
+          try:
+              _event_queue.put_nowait({"source": source, **data})
+          except queue.Full:
+              pass  # Drop oldest; avoid blocking
+
+      @app.route('/api/events')
+      def event_stream():
+          def generate():
+              while True:
+                  item = _event_queue.get()
+                  yield f"data: {json.dumps(item)}\n\n"
+          return app.response_class(generate(), mimetype='text/event-stream')
+      ```
+
+      Subscribe bus topics to push_event on startup:
+      ```python
+      bus.subscribe("health.update", lambda d: push_event("health", d))
+      bus.subscribe("generate.complete", lambda d: push_event("generate", d))
+      bus.subscribe("vision.event", lambda d: push_event("vision", d))
+      ```
+
+  - heading: "Milestone 5: Unified Dashboard"
+    content: |
+      The dashboard page consumes the SSE stream and renders three status panels.
+
+      ```html
+      <!-- Minimal dashboard skeleton -->
+      <div id="health-panel">Loading health...</div>
+      <div id="generate-panel">No generation events yet</div>
+      <div id="vision-panel">Vision inactive</div>
+
+      <script>
+      const es = new EventSource('/api/events');
+      es.onmessage = function(e) {
+          const data = JSON.parse(e.data);
+          if (data.source === 'health') {
+              document.getElementById('health-panel').textContent =
+                  `CUDA: ${data.cuda_available} | Mem: ${data.memory_pct}% | CPU: ${data.cpu_pct}%`;
+          } else if (data.source === 'generate') {
+              document.getElementById('generate-panel').textContent =
+                  `Last job: ${data.job_id} — ${data.status}`;
+          } else if (data.source === 'vision') {
+              document.getElementById('vision-panel').textContent =
+                  `Detected: ${data.label} (${(data.confidence * 100).toFixed(1)}%)`;
+          }
+      };
+      </script>
+      ```
+
+  - heading: "Hands-On Lab: Build App 4 (Unified Edge AI Platform)"
+    content: |
+      Lab task:
+      - Run Apps 1, 2, and 3 on separate ports (5001, 5002, 5003).
+      - Build a gateway service on port 5000 that health-gates requests to Apps 2 and 3.
+      - Wire all three apps into the shared event bus and push events to `/api/events`.
+      - Build the unified dashboard page and confirm all three panels update in real time.
+
+      Success criteria:
+      - Gateway returns `503` when App 1 reports unhealthy or CUDA unavailable.
+      - Dashboard shows live events from all three apps simultaneously.
+      - A single browser tab drives the full system without polling.
+
+  - heading: "Screenshot Tasks (Required Deliverables)"
+    content: |
+      Include these screenshots in your submission:
+
+      1. **Architecture Screenshot**
+        - Diagram or whiteboard showing your service layout and port assignments
+
+      2. **Gateway Health-Gate Screenshot**
+        - Request to `/api/gateway/generate` returning `503` when memory exceeds threshold
+
+      3. **Unified Dashboard Screenshot**
+        - All three service panels updating simultaneously from real events
+
+      4. **Event Stream Screenshot**
+        - Raw `/api/events` SSE output showing events from at least two different sources
+
+  - heading: "Homework"
+    content: |
+      Homework task (ship App 4):
+      - Add a `/api/gateway/status` endpoint that returns the aggregated state of all three services.
+      - Implement automatic retry logic in the gateway (retry once after 5 s if device becomes ready).
+      - Write a one-page integration runbook describing how to start, stop, and debug the full platform.
+
+quiz:
+  - question: "What is the primary role of the health gate in the unified platform?"
+    options:
+      - "Speed up image generation by preloading models"
+      - "Prevent generation and vision jobs from starting when the device is unhealthy"
+      - "Encrypt communication between services"
+      - "Reduce dashboard refresh rate"
+    answer: 1
+    explanation: "The health gate consults App 1 before dispatching work to Apps 2 and 3, protecting the device from overload."
+
+  - question: "Which Python mechanism is used in this lesson to decouple services without a network broker?"
+    options:
+      - "REST polling on a fixed interval"
+      - "A shared in-process event bus with subscribe/publish"
+      - "Shared global variables across Flask apps"
+      - "gRPC streaming"
+    answer: 1
+    explanation: "An in-process EventBus with subscribe/publish lets services communicate without tight coupling or an external message broker."
+
+  - question: "Which HTTP technique powers the real-time unified dashboard in this lesson?"
+    options:
+      - "WebSockets with binary frames"
+      - "Long polling every 500 ms"
+      - "Server-Sent Events (SSE)"
+      - "HTTP/2 push promises"
+    answer: 2
+    explanation: "Server-Sent Events (SSE) allow the server to push events to the browser over a single persistent HTTP connection."

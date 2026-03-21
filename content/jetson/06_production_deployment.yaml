@@ -1,0 +1,381 @@
+title: "Production Deployment: Shipping Your Unified Edge AI system"
+order: 6
+summary: "Containerize all three apps with Docker, wire them as systemd services on Jetson, add watchdog restarts and structured logging, and set up a CI pipeline for repeatable edge deployments."
+sections:
+  - heading: "Learning Objectives"
+    content: |
+      By the end of this lesson, you should be able to:
+      - Write production-grade Dockerfiles for Flask-based edge AI services
+      - Configure systemd unit files to manage and auto-restart each app
+      - Add structured JSON logging and a health-check endpoint pattern
+      - Build a Makefile-based deploy workflow for the full platform
+      - Implement a basic update-and-rollback procedure for edge devices
+
+  - heading: "Prerequisites"
+    content: |
+      Before starting:
+      - Apps 1, 2, and 3 running and tested individually
+      - App 4 (unified gateway) integrated and tested
+      - Basic familiarity with Docker (`build`, `run`, `ps`, `logs`)
+      - Root or sudo access on the Jetson device
+
+  - heading: "90-Minute Lesson Plan"
+    content: |
+      Suggested schedule:
+
+      - **0-15 min**: Production architecture review and deployment goals
+      - **15-35 min**: Write Dockerfiles and multi-service compose file
+      - **35-55 min**: systemd unit files, watchdog, and auto-restart
+      - **55-75 min**: Structured logging, health checks, and alerting
+      - **75-90 min**: Makefile deploy workflow and rollback procedure
+
+  - heading: "Project Outcome: Production-Ready Edge AI System"
+    content: |
+      By the end of this lesson your complete platform will:
+      - Start automatically on Jetson boot
+      - Restart individual services on crash without human intervention
+      - Log all events to structured JSON files parseable by log analysis tools
+      - Expose health endpoints monitored by a watchdog
+      - Be deployable from source in under 5 minutes with `make deploy`
+
+  - heading: "Architecture Diagram"
+    content: |
+      ```mermaid
+      flowchart TD
+        B[systemd] -->|manages| A1[app1.service<br/>Edge Health Sentinel]
+        B -->|manages| A2[app2.service<br/>Prompt Studio]
+        B -->|manages| A3[app3.service<br/>Vision Narrator]
+        B -->|manages| A4[app4.service<br/>API Gateway]
+        A1 --> L[Structured JSON Logs]
+        A2 --> L
+        A3 --> L
+        A4 --> L
+        A4 --> W[Watchdog Healthcheck]
+        W -->|restart| A2
+        W -->|restart| A3
+      ```
+
+  - heading: "Milestone 1: Production Dockerfiles"
+    content: |
+      A lean, reproducible Dockerfile for a Flask edge AI service:
+
+      ```dockerfile
+      # Dockerfile.app1
+      FROM nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth2.1-py3
+
+      WORKDIR /app
+      COPY requirements.txt .
+      RUN pip install --no-cache-dir -r requirements.txt
+
+      COPY app1/ .
+
+      ENV FLASK_ENV=production
+      ENV PORT=5001
+
+      EXPOSE 5001
+
+      HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+          CMD curl -f http://localhost:5001/api/health || exit 1
+
+      CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1",
+           "--timeout", "120", "app:app"]
+      ```
+
+      Key production Dockerfile practices:
+      - Pin base image tag explicitly — never use `latest`
+      - Use `--no-cache-dir` to keep image layers small
+      - Set `HEALTHCHECK` so Docker and systemd know when the service is live
+      - Use `gunicorn` instead of Flask dev server for production
+
+  - heading: "Milestone 2: Docker Compose for the Full Platform"
+    content: |
+      A single `docker-compose.yml` to run all four services together:
+
+      ```yaml
+      version: "3.9"
+
+      services:
+        app1:
+          build:
+            context: .
+            dockerfile: Dockerfile.app1
+          ports: ["5001:5001"]
+          restart: unless-stopped
+          runtime: nvidia
+          environment:
+            - NVIDIA_VISIBLE_DEVICES=all
+
+        app2:
+          build:
+            context: .
+            dockerfile: Dockerfile.app2
+          ports: ["5002:5002"]
+          restart: unless-stopped
+          runtime: nvidia
+          depends_on:
+            app1:
+              condition: service_healthy
+
+        app3:
+          build:
+            context: .
+            dockerfile: Dockerfile.app3
+          ports: ["5003:5003"]
+          restart: unless-stopped
+          runtime: nvidia
+          devices:
+            - /dev/video0:/dev/video0
+          depends_on:
+            app1:
+              condition: service_healthy
+
+        gateway:
+          build:
+            context: .
+            dockerfile: Dockerfile.gateway
+          ports: ["5000:5000"]
+          restart: unless-stopped
+          depends_on: [app1, app2, app3]
+      ```
+
+      `depends_on` with `condition: service_healthy` ensures Apps 2 and 3 only start
+      after App 1's `HEALTHCHECK` returns healthy — mirroring the health gate from Lesson 4.
+
+  - heading: "Milestone 3: systemd Unit Files"
+    content: |
+      Run Docker containers as systemd services for automatic startup at boot:
+
+      ```ini
+      # /etc/systemd/system/edge-ai-platform.service
+      [Unit]
+      Description=Edge AI Platform (Apps 1-4)
+      After=docker.service network-online.target
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/edge-ai-platform
+      ExecStart=/usr/bin/docker compose up -d
+      ExecStop=/usr/bin/docker compose down
+      TimeoutStartSec=120
+      TimeoutStopSec=30
+      Restart=on-failure
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+      ```
+
+      Enable and start the service:
+      ```bash
+      sudo systemctl daemon-reload
+      sudo systemctl enable edge-ai-platform.service
+      sudo systemctl start edge-ai-platform.service
+      sudo systemctl status edge-ai-platform.service
+      ```
+
+  - heading: "Milestone 4: Structured JSON Logging"
+    content: |
+      Replace `print()` and unstructured logs with structured JSON using `structlog`:
+
+      ```python
+      import structlog
+      import logging
+
+      logging.basicConfig(
+          format="%(message)s",
+          level=logging.INFO,
+      )
+
+      structlog.configure(
+          processors=[
+              structlog.processors.TimeStamper(fmt="iso"),
+              structlog.processors.add_log_level,
+              structlog.processors.JSONRenderer(),
+          ],
+          wrapper_class=structlog.BoundLogger,
+          context_class=dict,
+          logger_factory=structlog.PrintLoggerFactory(),
+      )
+
+      log = structlog.get_logger()
+
+      # Usage
+      log.info("health_check", cuda=True, memory_pct=42, uptime_sec=3720)
+      log.warning("queue_full", dropped_job_id="job_007")
+      log.error("inference_failed", error="CUDA OOM", model="resnet50")
+      ```
+
+      Structured logs make it easy to `grep`, pipe to `jq`, or forward to a log aggregator:
+      ```bash
+      journalctl -u edge-ai-platform.service | grep '"event":"inference_failed"'
+      docker logs app3 | jq 'select(.level=="error")'
+      ```
+
+  - heading: "Milestone 5: Watchdog Health Checker"
+    content: |
+      A lightweight watchdog script monitors all four services and restarts them if
+      their health endpoints stop responding:
+
+      ```python
+      #!/usr/bin/env python3
+      """watchdog.py — restart unhealthy edge AI services via systemd/docker."""
+      import time
+      import subprocess
+      import requests
+      import structlog
+
+      log = structlog.get_logger()
+
+      SERVICES = {
+          "app1": "http://localhost:5001/api/health",
+          "app2": "http://localhost:5002/api/health",
+          "app3": "http://localhost:5003/api/health",
+          "gateway": "http://localhost:5000/api/gateway/health",
+      }
+
+      FAIL_THRESHOLD = 3
+      CHECK_INTERVAL_SEC = 15
+
+      fail_counts = {name: 0 for name in SERVICES}
+
+      def check_service(name, url):
+          try:
+              r = requests.get(url, timeout=5)
+              if r.status_code == 200:
+                  fail_counts[name] = 0
+                  return True
+          except Exception:
+              pass
+          fail_counts[name] += 1
+          log.warning("service_unhealthy", service=name, fail_count=fail_counts[name])
+          return False
+
+      def restart_service(name):
+          log.error("restarting_service", service=name)
+          subprocess.run(
+              ["docker", "compose", "restart", name],
+              cwd="/opt/edge-ai-platform",
+              check=False,
+          )
+          fail_counts[name] = 0
+
+      if __name__ == "__main__":
+          log.info("watchdog_started", services=list(SERVICES))
+          while True:
+              for name, url in SERVICES.items():
+                  if not check_service(name, url):
+                      if fail_counts[name] >= FAIL_THRESHOLD:
+                          restart_service(name)
+              time.sleep(CHECK_INTERVAL_SEC)
+      ```
+
+  - heading: "Milestone 6: Makefile Deploy Workflow"
+    content: |
+      A `Makefile` at the project root gives you one-command deployment:
+
+      ```makefile
+      .PHONY: build deploy stop restart logs status rollback
+
+      IMAGE_TAG ?= $(shell git rev-parse --short HEAD)
+      COMPOSE_FILE = docker-compose.yml
+
+      build:
+      	docker compose -f $(COMPOSE_FILE) build --pull
+
+      deploy: build
+      	docker compose -f $(COMPOSE_FILE) up -d
+      	@echo "Platform deployed at commit $(IMAGE_TAG)"
+
+      stop:
+      	docker compose -f $(COMPOSE_FILE) down
+
+      restart:
+      	docker compose -f $(COMPOSE_FILE) restart
+
+      logs:
+      	docker compose -f $(COMPOSE_FILE) logs -f --tail=100
+
+      status:
+      	docker compose -f $(COMPOSE_FILE) ps
+      	curl -s http://localhost:5000/api/gateway/health | python3 -m json.tool
+
+      rollback:
+      	git checkout $(PREV_TAG)
+      	$(MAKE) deploy
+      ```
+
+      Usage:
+      ```bash
+      make deploy            # Build and start all services
+      make status            # Check running containers and gateway health
+      make logs              # Tail logs from all services
+      make rollback PREV_TAG=abc1234  # Roll back to a previous commit
+      ```
+
+  - heading: "Hands-On Lab: Ship the Production Platform"
+    content: |
+      Lab task:
+      - Write Dockerfiles for at least two of the four services.
+      - Run `docker compose up` and verify all four services are healthy.
+      - Enable the systemd unit and confirm services start on simulated reboot (`systemctl restart`).
+      - Run `watchdog.py` and deliberately stop one service to confirm it is restarted.
+      - Add structured logging to at least one service and pipe its output through `jq`.
+
+      Success criteria:
+      - All four services start with `make deploy` in under 5 minutes on a clean clone.
+      - Watchdog restarts a stopped service within 3 check intervals.
+      - Health check at `/api/gateway/health` returns green for all four services.
+
+  - heading: "Screenshot Tasks (Required Deliverables)"
+    content: |
+      Include these screenshots in your submission:
+
+      1. **Docker Screenshot**
+        - `docker compose ps` showing all four services running and healthy
+
+      2. **systemd Screenshot**
+        - `systemctl status edge-ai-platform.service` showing active (running) state
+
+      3. **Watchdog Screenshot**
+        - Watchdog log showing detection of an unhealthy service and its automatic restart
+
+      4. **Structured Log Screenshot**
+        - `docker logs` output piped through `jq` with at least three different log events visible
+
+  - heading: "Homework"
+    content: |
+      Homework task (ship production platform):
+      - Add a `make test` target that runs a smoke test against each service's health endpoint.
+      - Configure log rotation with Docker's `--log-opt max-size=10m --log-opt max-file=3`.
+      - Write a one-page runbook covering: how to deploy, how to check status, how to roll back,
+        and what to do if the watchdog itself stops responding.
+
+quiz:
+  - question: "Why is it important to pin the base Docker image tag explicitly in production Dockerfiles?"
+    options:
+      - "To reduce image download speed"
+      - "To ensure reproducible builds and avoid unexpected changes from the latest tag"
+      - "Docker requires a pinned tag to run on Jetson"
+      - "It enables INT8 quantization automatically"
+    answer: 1
+    explanation: "Pinning the base image tag ensures every build uses the same base, preventing unexpected breaking changes that would occur if 'latest' is updated."
+
+  - question: "What does `depends_on: condition: service_healthy` accomplish in Docker Compose?"
+    options:
+      - "It copies files between containers"
+      - "It delays starting dependent services until the dependency's HEALTHCHECK passes"
+      - "It increases the memory limit of dependent services"
+      - "It enables GPU sharing between containers"
+    answer: 1
+    explanation: "service_healthy ensures Apps 2 and 3 only start after App 1 passes its HEALTHCHECK, mirroring the health-gate pattern from Lesson 4."
+
+  - question: "What is the main benefit of structured JSON logging over plain text logs?"
+    options:
+      - "JSON logs use less disk space than plain text"
+      - "JSON logs can be queried, filtered, and forwarded to log aggregators with tools like jq"
+      - "JSON logs prevent log injection attacks automatically"
+      - "JSON logs disable stdout buffering"
+    answer: 1
+    explanation: "Structured JSON logs are machine-readable, making them easy to filter with jq, forward to log aggregators, and set up alerts on specific fields."

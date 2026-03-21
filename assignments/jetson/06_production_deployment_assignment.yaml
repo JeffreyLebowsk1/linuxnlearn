@@ -1,0 +1,141 @@
+title: "Assignment 6: Production Deployment"
+category: "jetson"
+difficulty: "advanced"
+estimated_minutes: 50
+related_lesson: "06_production_deployment"
+instructions: |
+  Package the full edge AI platform for production.
+  Deliver Dockerfiles, a systemd unit, a watchdog service, and a Makefile-based deploy workflow.
+
+grading_guidance:
+  total_points: 60
+  pass_threshold: 42
+  mastery_levels:
+    - level: "Needs Improvement"
+      score_range: "0-29"
+      guidance: "Start with a single working Dockerfile for App 1. One containerized service is a valid first step."
+    - level: "Developing"
+      score_range: "30-41"
+      guidance: "At least two services containerized; improve HEALTHCHECK configuration and compose dependencies."
+    - level: "Pass"
+      score_range: "42-50"
+      guidance: "Full platform deployable with compose; add systemd unit and structured logging."
+    - level: "Strong Pass"
+      score_range: "51-56"
+      guidance: "Systemd and watchdog working; improve rollback procedure and log analysis tooling."
+    - level: "Distinction"
+      score_range: "57-60"
+      guidance: "Production-quality deployment with robust watchdog, structured logs, Makefile workflow, and a complete runbook."
+
+submission_checklist:
+  - "Dockerfiles for at least two services with HEALTHCHECK configured"
+  - "docker-compose.yml with depends_on and service_healthy conditions"
+  - "systemd unit file that starts the platform at boot"
+  - "watchdog.py that detects and restarts an unhealthy service"
+  - "Makefile with deploy, stop, logs, status, and rollback targets"
+  - "One-page production runbook"
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "What does `depends_on: condition: service_healthy` do in a Docker Compose file?"
+    options:
+      - "Copies volumes from the dependency container"
+      - "Delays starting the service until the dependency's HEALTHCHECK passes"
+      - "Shares the network namespace between services"
+      - "Enables GPU passthrough for the dependency"
+    answer: 1
+    explanation: "service_healthy waits for the dependency's Docker HEALTHCHECK to report healthy before starting the dependent service, preventing startup race conditions."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "Which gunicorn setting is most important for a long-running model inference endpoint?"
+    options:
+      - "workers = 16"
+      - "timeout = 120 (or higher)"
+      - "reload = true"
+      - "max-requests = 1"
+    answer: 1
+    explanation: "Model inference can take many seconds; a low gunicorn timeout will kill requests before they complete. Setting timeout to 120 or higher prevents spurious worker timeouts."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Implement the production Dockerfile and watchdog:
+      1. Write a Dockerfile for App 1 (Edge Health Sentinel) that:
+         - Uses an NVIDIA L4T base image
+         - Installs requirements
+         - Configures a HEALTHCHECK on /api/health
+         - Runs with gunicorn
+      2. Write the core watchdog loop that:
+         - Checks each service URL every 15 seconds
+         - Counts consecutive failures
+         - Restarts the container after 3 consecutive failures using docker compose restart
+    rubric: |
+      Award up to 20 points:
+      - Dockerfile includes pinned base image, requirements install, HEALTHCHECK, and gunicorn CMD (8 pts)
+      - Watchdog correctly tracks consecutive failures per service (6 pts)
+      - Restart logic uses subprocess to call docker compose restart (6 pts)
+    sample_answer: |
+      # Dockerfile.app1
+      FROM nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth2.1-py3
+      WORKDIR /app
+      COPY requirements.txt .
+      RUN pip install --no-cache-dir -r requirements.txt
+      COPY app1/ .
+      EXPOSE 5001
+      HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+          CMD curl -f http://localhost:5001/api/health || exit 1
+      CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "1",
+           "--timeout", "120", "app:app"]
+
+      # watchdog.py (core loop)
+      import time, subprocess, requests
+      SERVICES = {"app1": "http://localhost:5001/api/health"}
+      THRESHOLD = 3
+      fails = {k: 0 for k in SERVICES}
+      while True:
+          for name, url in SERVICES.items():
+              try:
+                  requests.get(url, timeout=5).raise_for_status()
+                  fails[name] = 0
+              except Exception:
+                  fails[name] += 1
+                  if fails[name] >= THRESHOLD:
+                      subprocess.run(["docker","compose","restart",name], check=False)
+                      fails[name] = 0
+          time.sleep(15)
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Production runbook task:
+      Write a concise one-page runbook for the edge AI platform covering:
+      1. How to deploy (from a clean clone to running)
+      2. How to check the health of all services
+      3. How to roll back to the previous release
+      4. What to do if the watchdog itself stops responding
+    rubric: |
+      Full-credit runbooks include concrete commands for each step,
+      are written for someone unfamiliar with the system, and cover all four sections.
+    sample_answer: |
+      DEPLOY:
+        git clone <repo> /opt/edge-ai-platform && cd /opt/edge-ai-platform
+        cp .env.example .env && nano .env  # set API keys
+        make deploy
+
+      HEALTH CHECK:
+        make status
+        # or: curl http://localhost:5000/api/gateway/health | python3 -m json.tool
+
+      ROLLBACK:
+        make rollback PREV_TAG=$(git log --oneline -2 | tail -1 | cut -d' ' -f1)
+
+      WATCHDOG UNRESPONSIVE:
+        sudo systemctl restart edge-ai-watchdog.service
+        # If still dead: sudo docker compose -f /opt/edge-ai-platform/docker-compose.yml restart
+        # Check logs: journalctl -u edge-ai-watchdog.service -n 50

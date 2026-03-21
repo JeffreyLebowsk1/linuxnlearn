@@ -1,0 +1,126 @@
+title: "App 4 Assignment: Unified Edge AI Platform"
+category: "jetson"
+difficulty: "advanced"
+estimated_minutes: 45
+related_lesson: "04_system_integration"
+instructions: |
+  Build and deliver **App 4: Unified Edge AI Platform**.
+  Wire Apps 1, 2, and 3 into a single gateway with a shared event bus,
+  health gating, and a unified real-time dashboard.
+
+grading_guidance:
+  total_points: 60
+  pass_threshold: 42
+  mastery_levels:
+    - level: "Needs Improvement"
+      score_range: "0-29"
+      guidance: "Focus on getting a working gateway that proxies requests to at least one app. Add health gating next."
+    - level: "Developing"
+      score_range: "30-41"
+      guidance: "Gateway and health gate work; improve event bus coverage and dashboard real-time updates."
+    - level: "Pass"
+      score_range: "42-50"
+      guidance: "Core integration complete; improve service contract documentation and dashboard reliability."
+    - level: "Strong Pass"
+      score_range: "51-56"
+      guidance: "Solid platform with reliable event bus; tune health-gate thresholds and improve dashboard UX."
+    - level: "Distinction"
+      score_range: "57-60"
+      guidance: "Production-minded integration with robust error handling, clean contracts, and a polished dashboard."
+
+submission_checklist:
+  - "Gateway running with /api/gateway/health, /api/gateway/generate, /api/gateway/vision/* endpoints"
+  - "Health gate returning 503 when App 1 reports unhealthy"
+  - "Event bus wiring all three apps to /api/events SSE stream"
+  - "Unified dashboard showing live status from all three services"
+  - "Integration runbook describing how to start, stop, and debug the full platform"
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "What HTTP status code should the gateway return when the health gate blocks a request because the device is unhealthy?"
+    options:
+      - "400 Bad Request"
+      - "401 Unauthorized"
+      - "503 Service Unavailable"
+      - "429 Too Many Requests"
+    answer: 2
+    explanation: "503 Service Unavailable communicates that the server cannot handle the request right now due to a temporary condition — exactly what a failed health gate represents."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "Which browser API does Server-Sent Events (SSE) use to receive a real-time stream from the server?"
+    options:
+      - "XMLHttpRequest with polling"
+      - "WebSocket"
+      - "EventSource"
+      - "fetch() with streaming"
+    answer: 2
+    explanation: "EventSource is the browser API for Server-Sent Events — it opens a single persistent HTTP connection and fires message events as the server sends data."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Implement the gateway health gate:
+      1. Write a `device_is_ready()` function that queries App 1's `/api/health`
+      2. Check that `ok`, `cuda_available` are True and `memory_pct` is below 80%
+      3. Implement `/api/gateway/generate` returning 503 with a `retry_after_sec` field when not ready
+      4. Forward valid requests to App 2 and return its response
+    rubric: |
+      Award up to 20 points:
+      - `device_is_ready()` correctly queries and parses App 1 response (6 pts)
+      - Memory and CUDA conditions are both checked (4 pts)
+      - 503 response includes `retry_after_sec` field (4 pts)
+      - Successful requests are correctly forwarded to App 2 (6 pts)
+    sample_answer: |
+      import requests
+      from flask import Flask, jsonify, request as freq
+
+      app = Flask(__name__)
+      HEALTH_URL = "http://localhost:5001/api/health"
+      APP2_URL = "http://localhost:5002/api/generate"
+
+      def device_is_ready():
+          try:
+              data = requests.get(HEALTH_URL, timeout=2).json()
+              return (
+                  data.get("ok") is True
+                  and data.get("cuda_available") is True
+                  and data.get("memory_pct", 100) < 80
+              )
+          except Exception:
+              return False
+
+      @app.route('/api/gateway/generate', methods=['POST'])
+      def gateway_generate():
+          if not device_is_ready():
+              return jsonify({"error": "device not ready", "retry_after_sec": 10}), 503
+          resp = requests.post(APP2_URL, json=freq.get_json())
+          return resp.json(), resp.status_code
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Integration design task:
+      Describe how your event bus connects all three apps to the unified dashboard.
+      Include:
+      1. Which topics each app publishes to
+      2. How the `/api/events` SSE endpoint receives and forwards events
+      3. One failure scenario (for example, App 3 disconnects mid-stream) and how your design handles it
+    rubric: |
+      Full-credit answers name specific topics for each app, explain the SSE delivery mechanism
+      clearly, and describe a concrete failure handling strategy.
+    sample_answer: |
+      Topics: App1 -> health.update (every 5s), App2 -> generate.complete / generate.failed,
+      App3 -> vision.event / vision.alert.
+
+      /api/events subscribes all topics and uses a Queue(maxsize=200) to buffer events.
+      The SSE generator reads from the queue and yields "data: <json>\n\n" frames.
+
+      Failure scenario: App 3 process crashes and stops publishing vision.event.
+      Handling: the dashboard detects >10s silence on the vision panel and shows a
+      "Vision Inactive" warning. The watchdog (Lesson 6) restarts App 3 within 45s.

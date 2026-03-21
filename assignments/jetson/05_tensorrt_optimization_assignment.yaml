@@ -1,0 +1,127 @@
+title: "App 5 Assignment: TensorRT Optimization"
+category: "jetson"
+difficulty: "advanced"
+estimated_minutes: 45
+related_lesson: "05_tensorrt_optimization"
+instructions: |
+  Optimize the models from App 2 (Prompt Studio) and App 3 (Vision Narrator) using TensorRT.
+  Measure and document the performance improvement with a structured benchmark log.
+
+grading_guidance:
+  total_points: 60
+  pass_threshold: 42
+  mastery_levels:
+    - level: "Needs Improvement"
+      score_range: "0-29"
+      guidance: "Install torch2trt and export at least one model to FP16. A working engine beats no engine."
+    - level: "Developing"
+      score_range: "30-41"
+      guidance: "Export works; improve benchmark methodology and ensure the drop-in swap doesn't change app behavior."
+    - level: "Pass"
+      score_range: "42-50"
+      guidance: "Meets optimization requirements; improve benchmark coverage and add memory measurements."
+    - level: "Strong Pass"
+      score_range: "51-56"
+      guidance: "Strong benchmark analysis; add INT8 results and improve the factory function pattern."
+    - level: "Distinction"
+      score_range: "57-60"
+      guidance: "Complete optimization with INT8, thorough benchmarks, power metrics, and no regression in app behavior."
+
+submission_checklist:
+  - "TensorRT FP16 engine exported and saved for App 3 vision model"
+  - "Benchmark log (JSON) showing PyTorch vs TensorRT FPS and latency"
+  - "App 3 running correctly with TensorRT engine via drop-in factory function"
+  - "tegrastats screenshot showing GPU memory comparison"
+  - "Optional: INT8 calibration results included in benchmark log"
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "Which TensorRT precision mode requires a calibration dataset?"
+    options:
+      - "FP32"
+      - "FP16"
+      - "INT8"
+      - "BF16"
+    answer: 2
+    explanation: "INT8 quantization requires a calibration dataset so TensorRT can determine the activation value ranges needed to safely clip to 8-bit precision."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "What is the purpose of running warm-up iterations before benchmarking a TensorRT engine?"
+    options:
+      - "To train the model on new data"
+      - "To allow CUDA kernels to reach steady-state before measuring latency"
+      - "To flush the Python garbage collector"
+      - "To apply INT8 calibration at runtime"
+    answer: 1
+    explanation: "The first few inferences include kernel launch and caching overhead. Warm-up iterations stabilize execution time so benchmark numbers are representative."
+
+  - id: 3
+    type: "practical"
+    points: 20
+    question: |
+      Implement the benchmark and drop-in replacement:
+      1. Write a `benchmark(model, input_tensor, iterations=200, warmup=20)` function
+         that returns `(fps, latency_ms)` using `torch.cuda.synchronize()`
+      2. Run it for both the PyTorch model and TensorRT FP16 engine
+      3. Write a `load_vision_model(engine_path)` factory function that loads
+         the TensorRT engine if it exists or falls back to PyTorch
+      4. Print a comparison table: model type, FPS, latency p50
+    rubric: |
+      Award up to 20 points:
+      - `benchmark()` uses `torch.cuda.synchronize()` correctly (6 pts)
+      - Both models are benchmarked and results compared (5 pts)
+      - Factory function handles missing engine gracefully (5 pts)
+      - Output includes a readable comparison table or JSON summary (4 pts)
+    sample_answer: |
+      import time
+      import torch
+      from torch2trt import TRTModule
+      from torchvision.models import resnet50, ResNet50_Weights
+      import os
+
+      def benchmark(model, x, iterations=200, warmup=20):
+          model.eval()
+          with torch.inference_mode():
+              for _ in range(warmup):
+                  model(x)
+              torch.cuda.synchronize()
+              t0 = time.perf_counter()
+              for _ in range(iterations):
+                  model(x)
+              torch.cuda.synchronize()
+              elapsed = time.perf_counter() - t0
+          return iterations / elapsed, (elapsed / iterations) * 1000
+
+      def load_vision_model(engine_path="models/resnet50_trt_fp16.pth"):
+          if os.path.exists(engine_path):
+              m = TRTModule()
+              m.load_state_dict(torch.load(engine_path))
+          else:
+              m = resnet50(weights=ResNet50_Weights.DEFAULT).cuda()
+          return m.eval()
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Benchmark analysis task:
+      After running your benchmarks, write a short analysis that includes:
+      1. Measured FPS and latency for PyTorch baseline and TensorRT FP16
+      2. Calculated speed-up ratio
+      3. GPU memory comparison from tegrastats
+      4. Whether you would recommend INT8 for this use case and why
+    rubric: |
+      Full-credit answers provide real measured numbers, a calculated speed-up,
+      a memory comparison, and a justified INT8 recommendation.
+    sample_answer: |
+      PyTorch ResNet-50: 72 FPS, 13.9 ms latency, 1,850 MB GPU memory.
+      TensorRT FP16:    188 FPS,  5.3 ms latency, 1,210 MB GPU memory.
+      Speed-up: 2.6x FPS, 2.6x latency improvement, 35% memory reduction.
+
+      INT8 recommendation: Yes for pure classification; needs accuracy validation
+      against a held-out set first. The 8GB memory headroom means FP16 is safe,
+      but INT8 would free ~400 MB more for generation model co-loading in App 2.
