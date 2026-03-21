@@ -1,0 +1,294 @@
+title: "TensorRT Acceleration: Optimizing Apps 2 and 3 for Production"
+order: 5
+summary: "Export PyTorch models from Prompt Studio and Vision Narrator to TensorRT engines, benchmark the speed-up, and apply INT8/FP16 calibration to maximize edge throughput."
+sections:
+  - heading: "Learning Objectives"
+    content: |
+      By the end of this lesson, you should be able to:
+      - Explain the TensorRT compilation pipeline and where it fits in your app
+      - Export a TorchVision model to a TensorRT engine using `torch2trt`
+      - Apply FP16 and INT8 precision to reduce latency on Jetson
+      - Benchmark inference before and after TensorRT and interpret the results
+      - Integrate TensorRT engines back into App 2 and App 3 without changing APIs
+
+  - heading: "Prerequisites"
+    content: |
+      Before starting:
+      - Apps 2 and 3 are running and producing correct outputs
+      - JetPack 5 or later installed with TensorRT libraries
+      - Comfortable with PyTorch `model.eval()`, tensors, and device placement
+
+  - heading: "90-Minute Lesson Plan"
+    content: |
+      Suggested schedule:
+
+      - **0-15 min**: TensorRT concepts — engines, plans, calibration
+      - **15-35 min**: Export Vision Narrator model (App 3) to TensorRT FP16
+      - **35-55 min**: Benchmark FPS and latency before and after
+      - **55-75 min**: Apply INT8 calibration for App 2 generation pipeline
+      - **75-90 min**: Drop-in replacement and regression test
+
+  - heading: "What is TensorRT and Why Use It?"
+    content: |
+      **TensorRT** is NVIDIA's inference optimization library. It takes a trained model,
+      applies graph fusion, kernel auto-tuning, and precision reduction, then compiles a
+      device-specific engine that runs faster and uses less memory than the original PyTorch model.
+
+      Key concepts:
+      | Concept | Description |
+      |---------|-------------|
+      | Engine / Plan | Compiled, device-specific binary that replaces the PyTorch model |
+      | FP16 | Half-precision mode — up to 2× faster with minimal accuracy loss |
+      | INT8 | 8-bit quantization — up to 4× faster, requires calibration dataset |
+      | Layer fusion | Adjacent operations merged into single GPU kernels |
+      | Workspace | GPU memory budget given to TensorRT during compilation |
+
+      On Jetson Orin Nano 8GB, TensorRT engines for typical vision models deliver
+      2–4× throughput improvements over PyTorch eager execution.
+
+  - heading: "Milestone 1: Install torch2trt"
+    content: |
+      `torch2trt` provides a simple Python API to convert PyTorch models to TensorRT:
+
+      ```bash
+      # Verify TensorRT is present (included in JetPack)
+      python3 -c "import tensorrt; print(tensorrt.__version__)"
+
+      # Install torch2trt from NVIDIA GitHub
+      git clone https://github.com/NVIDIA-AI-IOT/torch2trt
+      cd torch2trt
+      pip install .
+      ```
+
+      Verify the installation:
+      ```python
+      from torch2trt import torch2trt
+      print("torch2trt ready")
+      ```
+
+  - heading: "Milestone 2: Export App 3 Vision Model to TensorRT FP16"
+    content: |
+      Start with the TorchVision model used in Vision Narrator (App 3).
+
+      ```python
+      import torch
+      from torchvision.models import resnet50, ResNet50_Weights
+      from torch2trt import torch2trt
+
+      # Load and prepare model
+      model = resnet50(weights=ResNet50_Weights.DEFAULT).cuda().eval()
+
+      # Dummy input matching your preprocessing output shape
+      x = torch.ones((1, 3, 224, 224)).cuda()
+
+      # Convert to TensorRT engine with FP16
+      model_trt = torch2trt(
+          model,
+          [x],
+          fp16_mode=True,
+          max_workspace_size=1 << 25,  # 32 MB
+      )
+
+      # Save engine for reuse
+      torch.save(model_trt.state_dict(), "models/resnet50_trt_fp16.pth")
+      print("Engine saved.")
+      ```
+
+      Loading the saved engine on next startup avoids recompilation:
+      ```python
+      from torch2trt import TRTModule
+
+      model_trt = TRTModule()
+      model_trt.load_state_dict(torch.load("models/resnet50_trt_fp16.pth"))
+      model_trt.eval()
+      ```
+
+  - heading: "Milestone 3: Benchmark Before and After"
+    content: |
+      Always benchmark with warm-up iterations to get stable numbers.
+
+      ```python
+      import time
+      import torch
+
+      def benchmark(model, input_tensor, iterations=200, warmup=20):
+          model.eval()
+          with torch.inference_mode():
+              # Warm up
+              for _ in range(warmup):
+                  model(input_tensor)
+              torch.cuda.synchronize()
+
+              start = time.perf_counter()
+              for _ in range(iterations):
+                  model(input_tensor)
+              torch.cuda.synchronize()
+              elapsed = time.perf_counter() - start
+
+          fps = iterations / elapsed
+          latency_ms = (elapsed / iterations) * 1000
+          return fps, latency_ms
+
+      x = torch.ones((1, 3, 224, 224)).cuda()
+
+      fps_pt, lat_pt = benchmark(model_pytorch, x)
+      fps_trt, lat_trt = benchmark(model_trt, x)
+
+      print(f"PyTorch  — FPS: {fps_pt:.1f}  Latency: {lat_pt:.2f} ms")
+      print(f"TensorRT — FPS: {fps_trt:.1f}  Latency: {lat_trt:.2f} ms")
+      print(f"Speed-up: {fps_trt / fps_pt:.2f}×")
+      ```
+
+      Expected outcome on Jetson Orin Nano 8GB (ResNet-50, FP16):
+      - PyTorch baseline: ~60–80 FPS
+      - TensorRT FP16: ~150–200 FPS
+
+  - heading: "Milestone 4: INT8 Calibration for App 2 Generation Models"
+    content: |
+      INT8 quantization requires a calibration dataset — a small set of representative inputs
+      that TensorRT uses to compute activation ranges.
+
+      ```python
+      from torch2trt import torch2trt
+      import torch
+
+      # Collect calibration inputs (50–500 representative samples)
+      calibration_inputs = [torch.randn(1, 3, 512, 512).cuda() for _ in range(100)]
+
+      class ListCalibrator:
+          def __init__(self, inputs):
+              self.inputs = inputs
+              self.idx = 0
+          def __iter__(self):
+              return self
+          def __next__(self):
+              if self.idx >= len(self.inputs):
+                  raise StopIteration
+              batch = self.inputs[self.idx]
+              self.idx += 1
+              return [batch]
+
+      model_int8 = torch2trt(
+          model,
+          [calibration_inputs[0]],
+          int8_mode=True,
+          int8_calib_dataset=ListCalibrator(calibration_inputs),
+          max_workspace_size=1 << 26,  # 64 MB for INT8
+      )
+      ```
+
+      INT8 gains are largest for models with many convolutional layers (UNet encoder,
+      ResNet backbone). Verify output quality after calibration by comparing sample outputs.
+
+  - heading: "Milestone 5: Drop-in Replacement in App 2 and App 3"
+    content: |
+      Replace the PyTorch model in each app with the TensorRT version using a factory function
+      so the rest of the code is unchanged.
+
+      ```python
+      import os
+      import torch
+      from torch2trt import TRTModule
+      from torchvision.models import resnet50, ResNet50_Weights
+
+      ENGINE_PATH = "models/resnet50_trt_fp16.pth"
+
+      def load_vision_model():
+          if os.path.exists(ENGINE_PATH):
+              print("Loading TensorRT engine...")
+              m = TRTModule()
+              m.load_state_dict(torch.load(ENGINE_PATH))
+          else:
+              print("TensorRT engine not found — using PyTorch fallback.")
+              m = resnet50(weights=ResNet50_Weights.DEFAULT).cuda()
+          return m.eval()
+
+      model = load_vision_model()
+      ```
+
+      This pattern keeps App 2 and App 3 APIs unchanged while upgrading the inference backend.
+
+  - heading: "Milestone 6: Profiling Memory and Power"
+    content: |
+      After switching to TensorRT, confirm the device stays within safe operating limits.
+
+      ```bash
+      # Watch GPU memory during inference
+      sudo tegrastats --interval 500 | grep -E "GR3D|RAM"
+      ```
+
+      Useful metrics to record in your benchmark log:
+      | Metric | PyTorch | TensorRT FP16 | TensorRT INT8 |
+      |--------|---------|---------------|---------------|
+      | Inference FPS | | | |
+      | Latency p50 (ms) | | | |
+      | Latency p95 (ms) | | | |
+      | GPU memory (MB) | | | |
+      | Power draw (mW) | | | |
+
+      Fill in actual numbers from `tegrastats` and your benchmark script.
+
+  - heading: "Hands-On Lab: Optimize and Benchmark"
+    content: |
+      Lab task:
+      - Export the App 3 ResNet/detection model to TensorRT FP16.
+      - Run the benchmark script and record before/after FPS and latency.
+      - Replace the model in App 3 using the factory function pattern.
+      - Confirm all existing App 3 tests pass with the TensorRT engine.
+      - Optionally: apply INT8 calibration and compare accuracy against FP16.
+
+      Success criteria:
+      - TensorRT FP16 engine achieves at least 1.5× FPS vs PyTorch baseline.
+      - App 3 event detection and narration work identically after the swap.
+      - Benchmark log is saved as `benchmarks/vision_model_<date>.json`.
+
+  - heading: "Screenshot Tasks (Required Deliverables)"
+    content: |
+      Include these screenshots in your submission:
+
+      1. **Export Screenshot**
+        - Terminal output showing successful TensorRT engine compilation and save
+
+      2. **Benchmark Screenshot**
+        - Side-by-side PyTorch vs TensorRT FPS and latency numbers from your benchmark script
+
+      3. **Drop-in Test Screenshot**
+        - App 3 running correctly (event detection working) after switching to TensorRT
+
+      4. **Memory Screenshot**
+        - `tegrastats` output comparing GPU memory usage between PyTorch and TensorRT runs
+
+  - heading: "Homework"
+    content: |
+      Homework task:
+      - Build a `benchmark_all.py` script that tests both apps and produces a single JSON report.
+      - Try batch size 2 and 4 — does TensorRT benefit more from batching than PyTorch?
+      - Add the TensorRT engine load/fallback pattern to App 2 and record the speed-up.
+
+quiz:
+  - question: "What does TensorRT do to improve inference performance?"
+    options:
+      - "Downloads a faster model from the internet"
+      - "Fuses layers, tunes kernels, and compiles a device-specific engine"
+      - "Adds more CPU threads automatically"
+      - "Replaces CUDA with CPU computation"
+    answer: 1
+    explanation: "TensorRT applies graph fusion, precision reduction, and kernel auto-tuning to compile an optimized engine for the target GPU."
+
+  - question: "What is required to use INT8 precision with TensorRT that FP16 does not need?"
+    options:
+      - "A larger GPU with more VRAM"
+      - "A calibration dataset to compute activation ranges"
+      - "Internet access during compilation"
+      - "A special NVIDIA license"
+    answer: 1
+    explanation: "INT8 quantization requires a calibration dataset — representative inputs that TensorRT uses to determine safe activation clipping ranges."
+
+  - question: "Why is a warm-up phase important when benchmarking TensorRT engines?"
+    options:
+      - "It trains the model on new data"
+      - "It allows CUDA kernels to reach steady-state execution times before measurement"
+      - "It clears the Python garbage collector"
+      - "It prevents thermal throttling from starting"
+    answer: 1
+    explanation: "The first few GPU inferences include JIT compilation and cache warm-up overhead; running warm-up iterations gives stable, representative latency measurements."
