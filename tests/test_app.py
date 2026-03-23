@@ -56,10 +56,10 @@ def test_category_invalid_returns_404(client):
     ("cisco",      "01_ios_basics"),
     ("cisco",      "02_vlans"),
     ("cisco",      "03_routing"),
-    ("python",     "01_basics"),
+    ("python",     "01_python_basics"),
     ("python",     "02_data_structures"),
     ("python",     "03_networking"),
-    ("linux",      "01_commands"),
+    ("linux",      "01_essential_commands"),
     ("linux",      "02_filesystem"),
     ("linux",      "03_networking"),
 ])
