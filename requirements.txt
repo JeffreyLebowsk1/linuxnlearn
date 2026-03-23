@@ -4,7 +4,6 @@ google-generativeai==0.8.6
 gunicorn==22.0.0
 Markdown==3.6
 openai==1.30.1
-perplexityai
 Pygments==2.18.0
 bleach==6.2.0
 prometheus-flask-exporter==0.23.2
