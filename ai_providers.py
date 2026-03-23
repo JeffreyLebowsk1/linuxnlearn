@@ -5,7 +5,7 @@ Supported providers
 -------------------
   openai      – OpenAI GPT-4o-mini (chat.completions)
   gemini      – Google Gemini 2.0 Flash (google-generativeai)
-    perplexity  – Perplexity Sonar (official perplexityai SDK)
+  perplexity  – Perplexity Sonar (OpenAI-compatible API via openai SDK)
 
 The active provider is chosen by:
   1. The ``provider`` argument passed to ask() / grade_open_ended()
@@ -411,16 +411,20 @@ def _raise_gemini_error(exc):
 
 
 # ---------------------------------------------------------------------------
-# Perplexity (official SDK)
+# Perplexity (OpenAI-compatible API via openai SDK)
 # ---------------------------------------------------------------------------
 
+_PERPLEXITY_BASE_URL = "https://api.perplexity.ai"
 _PERPLEXITY_CHAT_MODEL = "sonar"
 
 
 def _new_perplexity_client():
-    from perplexity import Perplexity
+    import openai
 
-    return Perplexity(api_key=config.PERPLEXITY_API_KEY)
+    return openai.OpenAI(
+        api_key=config.PERPLEXITY_API_KEY,
+        base_url=_PERPLEXITY_BASE_URL,
+    )
 
 
 def _ask_perplexity(message, system_prompt):
@@ -612,24 +616,21 @@ def _extract_choice_content(response_obj):
 
 
 def _raise_perplexity_error(exc):
-    """Normalize perplexity SDK exceptions to ProviderError for API responses."""
-    if isinstance(exc, ModuleNotFoundError) and getattr(exc, "name", "") == "perplexity":
-        raise ProviderError("Perplexity SDK not installed. Install dependencies from requirements.txt.", 500)
+    """Normalize OpenAI SDK exceptions to ProviderError for Perplexity API responses."""
+    import openai
 
-    import perplexity
-
-    if isinstance(exc, perplexity.AuthenticationError):
+    if isinstance(exc, openai.AuthenticationError):
         raise ProviderError("Invalid Perplexity API key.", 401)
-    if isinstance(exc, perplexity.RateLimitError):
+    if isinstance(exc, openai.RateLimitError):
         raise ProviderError("Perplexity rate limit exceeded. Try again in a moment.", 429)
-    if isinstance(exc, perplexity.APIStatusError):
+    if isinstance(exc, openai.APIStatusError):
         status_code = getattr(exc, "status_code", 500) or 500
         if status_code == 401:
             raise ProviderError("Invalid Perplexity API key.", 401)
         if status_code == 429:
             raise ProviderError("Perplexity rate limit exceeded. Try again in a moment.", 429)
         raise ProviderError(f"Perplexity API error: {exc}", int(status_code))
-    if isinstance(exc, perplexity.APIConnectionError):
+    if isinstance(exc, openai.APIConnectionError):
         raise ProviderError("Perplexity connection error. Please try again.", 502)
     if isinstance(exc, TypeError):
         raise ProviderError(
