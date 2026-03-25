@@ -1,92 +1,249 @@
 title: "Cisco IOS Basics"
 order: 1
-summary: "Cisco IOS (Internetwork Operating System) is the software that runs on Cisco routers and switches. Learning IOS is the foundation of Cisco networking."
+summary: "Introduction to the Cisco IOS operating system, privilege modes, essential show commands, and basic device configuration following CCNA 200-301 objectives."
+learning_objectives:
+  - "Identify the four memory types in Cisco devices and explain what each stores."
+  - "Explain the difference between User EXEC, Privileged EXEC, and configuration modes."
+  - "Demonstrate navigation between IOS privilege modes and use essential show commands."
+  - "Analyze running-config versus startup-config and describe the save process."
+builds_on:
+  - "IP addressing and subnetting (NET 201) — every interface configuration uses subnet masks you designed in that course"
+  - "OSI model (NET 201) — IOS show commands map directly to Layer 2 and Layer 3 operations"
+  - "Linux SSH and terminal skills (SYS 202) — you will SSH into routers and switches daily; the terminal workflow is identical"
 sections:
+  - heading: "What Is Cisco IOS?"
+    content: |
+      Cisco IOS (Internetwork Operating System) is the software that runs on the vast majority of Cisco routers and switches. First introduced in the mid-1980s, IOS provides the command-line interface (CLI) through which network engineers configure, monitor, and troubleshoot devices. According to Wendell Odom's *CCNA 200-301 Official Cert Guide* (Vol. 1, Ch. 4), IOS is loaded from **Flash memory** into **RAM** at boot time, and the running configuration is also stored in RAM — meaning any unsaved changes are lost if the device loses power.
+
+      Understanding the memory architecture is essential before touching any configuration. Cisco devices use four distinct memory types, each serving a different purpose:
+
+      | Memory | Contents | Volatile? |
+      |--------|----------|-----------|
+      | **ROM** | Bootstrap/POST code, ROMMON mini-IOS | No |
+      | **Flash** | IOS image file(s) | No |
+      | **NVRAM** | startup-config | No |
+      | **RAM** | running-config, ARP table, routing table, packet buffers | Yes |
+
+      The distinction between **running-config** (in RAM) and **startup-config** (in NVRAM) is one of the most tested CCNA concepts. When you make configuration changes, they immediately affect the running-config in RAM. If you reboot without saving, those changes are gone. The command `copy running-config startup-config` (or shorthand `write memory`) copies RAM → NVRAM, making the changes persistent across reboots.
+
+      ```mermaid
+      graph LR
+        subgraph "Cisco Device Memory Architecture"
+          ROM["ROM\n(Bootstrap / ROMMON)"]
+          FLASH["Flash\n(IOS Image)"]
+          NVRAM["NVRAM\n(startup-config)"]
+          RAM["RAM\n(running-config\nARP Table\nRouting Table\nPacket Buffers)"]
+        end
+        ROM -->|"loads IOS"| FLASH
+        FLASH -->|"decompresses into"| RAM
+        NVRAM -->|"loaded at boot"| RAM
+        RAM -->|"copy run start"| NVRAM
+      ```
+
+      When a Cisco device boots, the bootstrap code in ROM runs POST (Power-On Self Test), then locates the IOS image in Flash memory, decompresses it into RAM, and finally loads the startup-config from NVRAM into RAM to create the initial running-config. If no startup-config exists (factory-fresh device), IOS starts a Setup Wizard. You will encounter this sequence every time you rack a new device in the lab.
+
   - heading: "Connecting to a Cisco Device"
     content: |
-      You can access a Cisco device through:
-      - **Console port** – Direct physical connection using a rollover/console cable
-      - **Telnet** – Unencrypted remote access (not recommended)
-      - **SSH** – Encrypted remote access (preferred)
+      There are three primary methods to access the IOS CLI: **console**, **Telnet**, and **SSH**. For initial configuration of a brand-new device — before any IP address is configured — you must use the **console port**. The console port uses an RJ-45 connector (on most Cisco platforms) and requires a **rollover cable** (pin 1↔8, 2↔7, 3↔6, 4↔5) connected to a USB-to-serial adapter on your laptop. Terminal emulator settings: **9600 baud, 8 data bits, no parity, 1 stop bit, no flow control** (9600-8-N-1).
 
-      When you first connect, you'll see a prompt like:
+      **Telnet** (TCP port 23) transmits all data — including passwords — in plaintext. RFC 854 defines the Telnet protocol, but it is universally deprecated for production network management. Never use Telnet on a production device; it is a significant security risk documented in CCNA security objectives. **SSH** (TCP port 22, defined in RFC 4253) encrypts the entire session. In SYS 202 you generated SSH key pairs and connected to Linux servers; the workflow to SSH into a Cisco router is identical from the client side: `ssh -l admin 192.168.1.1`.
+
+      To enable SSH on a Cisco device, you need: a hostname set, a domain name configured, RSA keys generated, and VTY lines configured to accept SSH. The minimum configuration is shown below:
+
       ```
-      Router>
+      Router(config)# hostname R1
+      R1(config)# ip domain-name netlab.local
+      R1(config)# crypto key generate rsa modulus 2048
+      R1(config)# ip ssh version 2
+      R1(config)# line vty 0 4
+      R1(config-line)# transport input ssh
+      R1(config-line)# login local
+      R1(config)# username admin privilege 15 secret Cisco123!
       ```
 
-  - heading: "IOS Modes"
+      The `transport input ssh` command on VTY lines is critical — it explicitly **blocks Telnet** while allowing only SSH, which is the correct production posture. Odom dedicates an entire chapter to securing device access (Vol. 1, Ch. 6), emphasising that unsecured VTY lines are one of the most common exam topics and real-world vulnerabilities. Always verify SSH connectivity before removing console access in a production environment.
+
+  - heading: "IOS Privilege Modes and Navigation"
     content: |
-      Cisco IOS has several privilege modes:
+      IOS organises its commands into a hierarchy of **privilege modes**, each with a distinct prompt that tells you exactly what level of access you have. Understanding this hierarchy is fundamental — many troubleshooting commands are only available at Privileged EXEC level, and all configuration changes require Global Config mode or a sub-mode beneath it.
 
-      | Mode | Prompt | Access | Purpose |
-      |---|---|---|---|
-      | User EXEC | `Router>` | Default | Basic monitoring |
-      | Privileged EXEC | `Router#` | `enable` | Full monitoring, exec commands |
-      | Global Config | `Router(config)#` | `configure terminal` | Device-wide changes |
-      | Interface Config | `Router(config-if)#` | `interface <type><#>` | Per-interface settings |
-      | Line Config | `Router(config-line)#` | `line console 0` | Console/VTY settings |
+      ```mermaid
+      stateDiagram-v2
+        [*] --> UserEXEC : Power on / connect
+        UserEXEC : User EXEC\nPrompt: Router>
+        PrivEXEC : Privileged EXEC\nPrompt: Router#
+        GlobalConfig : Global Config\nPrompt: Router(config)#
+        InterfaceConfig : Interface Sub-mode\nPrompt: Router(config-if)#
+        LineConfig : Line Sub-mode\nPrompt: Router(config-line)#
+        RouterConfig : Router Sub-mode\nPrompt: Router(config-router)#
+        VLANConfig : VLAN Sub-mode\nPrompt: Switch(config-vlan)#
 
-  - heading: "Essential Navigation Commands"
+        UserEXEC --> PrivEXEC : enable
+        PrivEXEC --> UserEXEC : disable
+        PrivEXEC --> GlobalConfig : configure terminal
+        GlobalConfig --> PrivEXEC : end / Ctrl+Z
+        GlobalConfig --> InterfaceConfig : interface Gi0/0
+        GlobalConfig --> LineConfig : line vty 0 4
+        GlobalConfig --> RouterConfig : router ospf 1
+        GlobalConfig --> VLANConfig : vlan 10
+        InterfaceConfig --> GlobalConfig : exit
+        LineConfig --> GlobalConfig : exit
+        RouterConfig --> GlobalConfig : exit
+        VLANConfig --> GlobalConfig : exit
+      ```
+
+      **User EXEC mode** (`Router>`) provides a very limited set of commands — primarily basic connectivity tests like `ping` and `traceroute` and a few `show` commands. It is the mode you land in after connecting via console or Telnet/SSH (if configured with `login` but no `privilege 15`). **Privileged EXEC mode** (`Router#`) is accessed by typing `enable` and providing the enable password or enable secret. This mode gives you access to all `show` commands, `debug` commands, and the ability to enter configuration mode.
+
+      **Global Configuration mode** (`Router(config)#`) is entered with `configure terminal` (abbreviated `conf t`). Commands here apply to the entire device — hostname, IP domain name, routing protocols, etc. From Global Config, you can enter **sub-modes** for more specific configuration: `interface Gi0/0` takes you to Interface Config mode, `line vty 0 4` to Line Config mode, and `router ospf 1` to Router Config mode. The key navigation commands are: `exit` (go up one level), `end` or `Ctrl+Z` (return directly to Privileged EXEC from any config sub-mode), and `?` (context-sensitive help at any point in a command).
+
+      Navigation shortcuts that every Cisco engineer uses daily: **Tab** completes partial commands (type `sh` + Tab → `show`), **?** after a partial command shows matching commands, **Up Arrow** recalls command history (also `show history`), and **Ctrl+C** aborts a command in progress. These shortcuts are documented in Odom Vol. 1, Appendix C, and you will use all of them in every lab session.
+
+  - heading: "Essential Show Commands"
     content: |
+      The `show` commands are your primary diagnostic toolkit. A Cisco network engineer who masters show commands can diagnose 90% of problems without ever entering configuration mode. All show commands are available at Privileged EXEC level. Below is a comprehensive reference for the commands you must know for CCNA 200-301 and for this course.
+
+      | Command | Purpose |
+      |---------|---------|
+      | `show version` | IOS version, uptime, hardware model, serial number, register |
+      | `show running-config` | Current active config in RAM |
+      | `show startup-config` | Saved config in NVRAM |
+      | `show interfaces` | Detailed stats for all interfaces (errors, bandwidth, encap) |
+      | `show ip interface brief` | One-line summary: interface, IP, status, protocol |
+      | `show ip route` | IP routing table (connected, static, dynamic routes) |
+      | `show arp` | ARP cache (IP → MAC mappings) |
+      | `show cdp neighbors` | Directly connected Cisco devices (Layer 2 discovery) |
+      | `show mac address-table` | Switch MAC table (MAC → port mappings) |
+      | `show history` | Last 10 commands entered |
+
+      The `show ip interface brief` command is arguably the most-used show command in networking. Its output gives you a quick health check of every interface:
+
       ```
-      Router> enable                    ! Enter privileged EXEC mode
-      Router# configure terminal        ! Enter global config mode
-      Router(config)# exit              ! Go back one level
-      Router(config)# end               ! Return to privileged EXEC
-      Router# disable                   ! Return to user EXEC
+      R1# show ip interface brief
+      Interface          IP-Address      OK? Method Status                Protocol
+      GigabitEthernet0/0 192.168.1.1     YES NVRAM  up                    up
+      GigabitEthernet0/1 10.0.0.1        YES NVRAM  up                    up
+      GigabitEthernet0/2 unassigned      YES unset  administratively down down
       ```
 
-      **Keyboard shortcuts:**
-      - `Ctrl+C` – Interrupt/abort
-      - `Ctrl+Z` – Return to privileged EXEC
-      - `Tab` – Auto-complete a command
-      - `?` – Show available commands
+      The **Status** column reflects Layer 1 (physical): "up" means a cable is connected and signalling is detected; "administratively down" means the interface has been shut down with the `shutdown` command. The **Protocol** column reflects Layer 2: "up" means the Layer 2 keepalives (or the data link protocol) are working. Connecting back to your NET 201 OSI model studies: Status = Layer 1, Protocol = Layer 2. A Status of "up" but Protocol of "down" usually indicates a Layer 2 mismatch (encapsulation, duplex, etc.). Both "down" on a physically connected link often means a cable, SFP, or speed/duplex problem.
 
-  - heading: "Show Commands (Your Best Friend)"
+      `show cdp neighbors` leverages Cisco Discovery Protocol (CDP), a Layer 2 Cisco-proprietary protocol defined in RFC-adjacent Cisco documentation. CDP sends multicast frames every 60 seconds (by default) to advertise the device ID, local interface, capabilities, platform, and remote interface. This is invaluable for building or verifying a network topology without having a diagram. `show cdp neighbors detail` adds IP addresses to the output, making it even more useful for troubleshooting.
+
+      ```mermaid
+      flowchart TD
+        A["Start: Device seems unreachable"] --> B["show ip interface brief\nCheck Status/Protocol"]
+        B --> C{Status = up?}
+        C -->|No| D["Physical problem:\nCheck cable, SFP, speed/duplex"]
+        C -->|Yes| E{Protocol = up?}
+        E -->|No| F["Layer 2 problem:\nEncapsulation, duplex mismatch"]
+        E -->|Yes| G["show ip route\nCheck routing table"]
+        G --> H{Route exists?}
+        H -->|No| I["Add static route or\ncheck dynamic routing"]
+        H -->|Yes| J["show arp / ping\nVerify end-to-end"]
+      ```
+    interactive: ios_terminal
+
+  - heading: "Basic Device Configuration"
     content: |
+      Before configuring any advanced features, every Cisco device should have a baseline security and management configuration applied. Odom Vol. 1, Ch. 5 calls this the "initial device setup" and it is the first thing you do when deploying any router or switch in a production environment.
+
+      **Hostname**: Sets the device name displayed in the prompt and used in syslog, CDP, and SNMP.
       ```
-      Router# show version              ! IOS version, uptime, hardware
-      Router# show running-config       ! Current active configuration
-      Router# show startup-config       ! Saved configuration in NVRAM
-      Router# show interfaces           ! All interfaces status
-      Router# show ip interface brief   ! Quick interface summary
-      Router# show ip route             ! Routing table
-      Router# show cdp neighbors        ! Discover connected Cisco devices
-      Router# show arp                  ! ARP table
+      Router(config)# hostname R1
+      R1(config)#
       ```
 
-      > **Tip:** `show ip interface brief` is one of the most-used commands for troubleshooting.
+      **Enable Secret**: Protects Privileged EXEC mode with an MD5-hashed password. Always use `enable secret` rather than the older `enable password` — the latter stores the password in plaintext in the config.
+      ```
+      R1(config)# enable secret Cisco@Lab2024
+      ```
 
-  - heading: "Basic Configuration"
+      **Service Password-Encryption**: Applies a weak Cisco Type 7 cipher to all plaintext passwords in the config (console, VTY, etc.). It is **not** strong encryption, but it prevents shoulder-surfing and casual reading of a printed config. The enable secret uses MD5 regardless of this command.
+      ```
+      R1(config)# service password-encryption
+      ```
+
+      **Banner MOTD**: Displayed to anyone who connects before they log in. Should contain a legal warning, never a welcoming message (a welcoming banner has been used in court to argue that unauthorised access was implicitly permitted).
+      ```
+      R1(config)# banner motd # Authorised users only. All activity is monitored and logged. #
+      ```
+
+      **No IP Domain-Lookup**: Without this, IOS interprets mistyped commands as hostnames and attempts a DNS lookup, causing a 30-second wait. This is frustrating in the lab and can expose device activity to DNS servers in production.
+      ```
+      R1(config)# no ip domain-lookup
+      ```
+
+  - heading: "Interface Configuration and Saving"
     content: |
+      Interfaces are the heart of any router or switch configuration. On a router, each physical interface connects to a different network segment. Recall from NET 201 that each interface on a router must be in its own subnet — a router is a Layer 3 device that connects multiple Layer 3 networks.
+
+      **Full worked example — configuring two router interfaces:**
       ```
-      Router(config)# hostname R1                      ! Set device name
-      R1(config)# enable secret cisco123               ! Set privileged password
-      R1(config)# service password-encryption          ! Encrypt passwords
-      R1(config)# banner motd # Authorized Access Only! #  ! Login banner
-      R1(config)# no ip domain-lookup                  ! Disable DNS lookup on typos
+      R1(config)# interface GigabitEthernet0/0
+      R1(config-if)# description Link to LAN-Sales (VLAN 10 native)
+      R1(config-if)# ip address 192.168.10.1 255.255.255.0
+      R1(config-if)# no shutdown
+      R1(config-if)# exit
+
+      R1(config)# interface GigabitEthernet0/1
+      R1(config-if)# description Link to WAN (ISP hand-off)
+      R1(config-if)# ip address 203.0.113.2 255.255.255.252
+      R1(config-if)# no shutdown
+      R1(config-if)# exit
       ```
 
-  - heading: "Saving Your Configuration"
-    content: |
-      Changes in IOS are applied immediately but are **not saved** unless you explicitly save:
+      Note that interfaces are **shutdown by default on routers** — the `no shutdown` command is mandatory to bring the interface up (Layer 1 and Layer 2). Switches, by contrast, have interfaces that are up by default. The subnet `255.255.255.252` (/30) on the WAN link is a best practice you learned in NET 201 for point-to-point links — it wastes only 2 addresses instead of 254.
 
+      The `description` command is optional but highly recommended in production. It appears in `show interfaces` and `show running-config`, and makes it clear to any engineer what each interface connects to without needing a separate diagram. Descriptions save hours of troubleshooting time in large networks.
+
+      **Saving the configuration** is the final critical step. After any configuration work, save immediately:
       ```
-      R1# copy running-config startup-config   ! Save config (long form)
-      R1# write memory                         ! Save config (short form)
-      R1# write erase                          ! ⚠️ Erase saved config (careful!)
+      R1# copy running-config startup-config
+      Destination filename [startup-config]? [Enter]
+      Building configuration...
+      [OK]
+
+      ! Short form equivalent:
+      R1# write memory
+      Building configuration...
+      [OK]
       ```
 
-      - **Running config** – stored in RAM (lost on reboot)
-      - **Startup config** – stored in NVRAM (survives reboot)
+      Both commands are equivalent — `write memory` is the legacy form and `copy running-config startup-config` is the explicit EXEC form. Both copy the current RAM configuration to NVRAM. Odom specifically warns (Vol. 1, Ch. 4): "If you make configuration changes and do not save, those changes will be lost on the next reload." In a production outage, engineers have spent hours re-applying configurations that were never saved — always `write mem` before walking away from a device.
 
 quiz:
-  - question: "What prompt indicates you are in Global Configuration mode?"
-    options: ["Router>", "Router#", "Router(config)#", "Router(config-if)#"]
-    answer: 2
-    explanation: "Router(config)# is the Global Configuration mode prompt, accessed with 'configure terminal'."
-
-  - question: "Which command saves the running configuration to survive a reboot?"
-    options: ["save config", "copy running-config startup-config", "write running", "save startup"]
+  - question: "A router interface shows 'Status: up, Protocol: down' in show ip interface brief. What layer has the problem?"
+    options:
+      - "Layer 1 — physical cable or SFP issue"
+      - "Layer 2 — encapsulation or keepalive mismatch"
+      - "Layer 3 — IP address misconfiguration"
+      - "Layer 4 — TCP session problem"
     answer: 1
-    explanation: "'copy running-config startup-config' copies the active config from RAM to NVRAM, where it persists after reboot."
+    explanation: "Status reflects Layer 1 (physical). Since Status is up, Layer 1 is fine. Protocol reflects Layer 2 (data link). Protocol down indicates a Layer 2 issue such as encapsulation mismatch, duplex mismatch, or missing keepalives. This is a key OSI-layer diagnostic concept from Odom Vol. 1, Ch. 8."
+
+  - question: "Which memory type stores the startup-config on a Cisco router?"
+    options:
+      - "RAM — volatile memory that loses content on power loss"
+      - "Flash — non-volatile memory that stores the IOS image"
+      - "NVRAM — non-volatile memory specifically for the startup config"
+      - "ROM — read-only memory that stores the bootstrap"
+    answer: 2
+    explanation: "NVRAM (Non-Volatile RAM) stores the startup-config. It retains its contents when power is removed. RAM stores the running-config and is volatile. Flash stores the IOS image. ROM stores the bootstrap/POST code. This memory architecture is a foundational CCNA concept covered in Odom Vol. 1, Ch. 4."
+
+  - question: "Which command prevents IOS from performing DNS lookups on mistyped commands?"
+    options:
+      - "no cdp run"
+      - "no ip domain-lookup"
+      - "no service dns"
+      - "ip name-server 0.0.0.0"
+    answer: 1
+    explanation: "The 'no ip domain-lookup' command disables the default IOS behaviour of treating unrecognised input as a hostname and attempting a broadcast DNS query. Without it, a typo causes a ~30-second delay. This command is standard in all lab configurations and is documented in Odom Vol. 1, Ch. 5."
+
+  - question: "What is the key security difference between 'enable password' and 'enable secret'?"
+    options:
+      - "enable password uses SSH; enable secret uses Telnet"
+      - "enable password is stored in MD5; enable secret is plaintext"
+      - "enable secret is stored as an MD5 hash; enable password stores the password in plaintext"
+      - "They are identical; 'enable secret' is just a newer syntax alias"
+    answer: 2
+    explanation: "The 'enable secret' command stores the password as an MD5 hash in the running-config, which is significantly more secure than 'enable password', which stores the password in plaintext (visible in show running-config). Always use enable secret. Service password-encryption only applies weak Type 7 encoding to other passwords, not enable secret. Reference: Odom Vol. 1, Ch. 5."

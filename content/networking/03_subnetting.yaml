@@ -1,81 +1,233 @@
-title: "Subnetting"
+title: "IP Subnetting and VLSM"
 order: 3
-summary: "Subnetting is the process of dividing a network into smaller sub-networks. It's a critical skill for network engineers."
+summary: "Master binary subnetting mechanics, CIDR notation, and Variable Length Subnet Masking (VLSM) for efficient IPv4 address allocation."
+
+learning_objectives:
+  - "Convert IPv4 addresses between dotted-decimal and 32-bit binary notation"
+  - "Apply the subnet-mask AND operation to derive the network address of any host"
+  - "Calculate the network address, broadcast address, and usable host range for any CIDR prefix"
+  - "Design a VLSM addressing scheme that satisfies multiple departments with different host requirements"
+  - "Verify subnet assignments using the Linux ip addr and ip route commands introduced in SYS 202"
+
+builds_on:
+  - "IPv4 addressing and CIDR notation (Lesson 2 of this course) — you must be comfortable reading x.x.x.x/n notation"
+  - "Binary arithmetic (MATH 110 prerequisite) — subnet calculations are fundamentally binary AND operations"
+  - "Linux ip addr and ip route commands (SYS 202) — used to observe subnet assignments on live interfaces"
+
 sections:
   - heading: "Why Subnet?"
     content: |
-      Subnetting allows you to:
-      - **Improve security** by isolating network segments
-      - **Reduce broadcast traffic** (smaller broadcast domains)
-      - **Efficiently use IP address space**
-      - **Organize networks** by department, floor, or function
+      A single, flat network — say 192.168.0.0/16 with 65,534 hosts — is operationally disastrous at scale.
+      Every broadcast (ARP request, DHCP discover) is heard by every device. A single misconfigured host can
+      flood the entire organisation. Subnetting solves this by partitioning one large block into smaller,
+      isolated **broadcast domains**.
 
-  - heading: "The Magic of Powers of 2"
+      **Four reasons to subnet (as enumerated in Tanenbaum §5.6):**
+
+      | Reason | Explanation |
+      |--------|-------------|
+      | Broadcast containment | Broadcasts stay inside one subnet; routers do not forward them |
+      | Security isolation | HR payroll servers can be on a separate subnet, unreachable by default from guest Wi-Fi |
+      | Efficient address use | VLSM lets you assign a /30 (2 hosts) to a router-to-router link instead of wasting a /24 |
+      | Policy enforcement | ACLs and firewall rules are written per-subnet, not per host |
+
+      In the data centre, subnets also map to VLANs (covered in NET 310), so every subnet you design here will
+      reappear as a VLAN in Cisco configuration labs.
+
+  - heading: "Binary Fundamentals"
     content: |
-      Subnetting relies on understanding powers of 2:
+      Every IPv4 address is a 32-bit unsigned integer written as four 8-bit **octets** in dotted-decimal.
+      To subnet correctly you must convert each octet to binary.
 
-      | Power | Value |
-      |---|---|
-      | 2^1 | 2 |
-      | 2^2 | 4 |
-      | 2^3 | 8 |
-      | 2^4 | 16 |
-      | 2^5 | 32 |
-      | 2^6 | 64 |
-      | 2^7 | 128 |
-      | 2^8 | 256 |
+      **Powers of 2 reference table:**
 
-      **Formula:** Usable hosts = 2^n - 2 (subtract network and broadcast addresses)
+      | Bit position | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+      |---|---|---|---|---|---|---|---|---|
+      | Value | 128 | 64 | 32 | 16 | 8 | 4 | 2 | 1 |
 
-  - heading: "Subnetting Example"
+      **Worked conversion — 192.168.10.55:**
+      ```
+      192  →  1100 0000
+      168  →  1010 1000
+       10  →  0000 1010
+       55  →  0011 0111
+      ```
+
+      **The subnet mask AND operation:**
+      The network address is found by bitwise-AND of the host address and the subnet mask.
+
+      ```
+      Address:  192.168.10.55   = 11000000.10101000.00001010.00110111
+      Mask:     255.255.255.0   = 11111111.11111111.11111111.00000000
+      AND:      192.168.10.0    = 11000000.10101000.00001010.00000000
+      ```
+
+      The mask's **1-bits** preserve the network portion; the **0-bits** zero out the host portion.
+      This operation is performed in hardware by every router on every packet it forwards.
+
+  - heading: "CIDR Prefix Length and Subnet Calculations"
     content: |
-      **Problem:** Subnet 192.168.10.0/24 into 4 equal subnets.
+      CIDR (Classless Inter-Domain Routing, RFC 1519) replaced classful addressing in 1993.
+      A **/n** prefix means the first **n** bits are the network portion; the remaining **32−n** bits
+      are the host portion.
 
-      **Step 1:** We need at least 4 subnets → need 2 bits for subnetting (2^2 = 4)
+      **Complete CIDR reference table (most-used prefixes):**
 
-      **Step 2:** New prefix = /24 + 2 = **/26**
+      | Prefix | Dotted Mask | Host bits | Total addrs | Usable hosts | Block size |
+      |--------|-------------|-----------|-------------|--------------|------------|
+      | /24 | 255.255.255.0 | 8 | 256 | 254 | 256 |
+      | /25 | 255.255.255.128 | 7 | 128 | 126 | 128 |
+      | /26 | 255.255.255.192 | 6 | 64 | 62 | 64 |
+      | /27 | 255.255.255.224 | 5 | 32 | 30 | 32 |
+      | /28 | 255.255.255.240 | 4 | 16 | 14 | 16 |
+      | /29 | 255.255.255.248 | 3 | 8 | 6 | 8 |
+      | /30 | 255.255.255.252 | 2 | 4 | 2 | 4 |
+      | /16 | 255.255.0.0 | 16 | 65536 | 65534 | 65536 |
+      | /8  | 255.0.0.0 | 24 | 16777216 | 16777214 | 16777216 |
 
-      **Step 3:** New subnet mask = 255.255.255.192
+      **Formula:** usable hosts = 2^(32−n) − 2  (subtract network and broadcast addresses)
 
-      **Step 4:** Block size = 256 - 192 = **64**
+      **Five-step subnetting method:**
+      1. Determine how many subnets and hosts per subnet are required
+      2. Pick the **smallest** prefix that satisfies both (enough host bits, enough subnet bits)
+      3. Compute block size = 256 − (last non-255 octet of mask)
+      4. List subnets by incrementing the relevant octet by the block size
+      5. For each subnet: network = base; first host = base+1; last host = broadcast−1; broadcast = base+blocksize−1
 
-      | Subnet | Network | Host Range | Broadcast |
-      |---|---|---|---|
-      | 1 | 192.168.10.0 | .1 – .62 | .63 |
-      | 2 | 192.168.10.64 | .65 – .126 | .127 |
-      | 3 | 192.168.10.128 | .129 – .190 | .191 |
-      | 4 | 192.168.10.192 | .193 – .254 | .255 |
+      **Worked example — divide 192.168.10.0/24 into 4 equal subnets:**
 
-  - heading: "VLSM (Variable Length Subnet Masking)"
+      Need ≥4 subnets → borrow 2 bits → /26 (block size = 64)
+
+      | Subnet | Network | First Host | Last Host | Broadcast |
+      |--------|---------|------------|-----------|-----------|
+      | 1 | 192.168.10.0 | 192.168.10.1 | 192.168.10.62 | 192.168.10.63 |
+      | 2 | 192.168.10.64 | 192.168.10.65 | 192.168.10.126 | 192.168.10.127 |
+      | 3 | 192.168.10.128 | 192.168.10.129 | 192.168.10.190 | 192.168.10.191 |
+      | 4 | 192.168.10.192 | 192.168.10.193 | 192.168.10.254 | 192.168.10.255 |
+
+      ```mermaid
+      graph TD
+          A["192.168.10.0/24<br/>256 addresses"] --> B["Subnet 1<br/>192.168.10.0/26<br/>62 hosts"]
+          A --> C["Subnet 2<br/>192.168.10.64/26<br/>62 hosts"]
+          A --> D["Subnet 3<br/>192.168.10.128/26<br/>62 hosts"]
+          A --> E["Subnet 4<br/>192.168.10.192/26<br/>62 hosts"]
+      ```
+
+  - heading: "VLSM — Variable Length Subnet Masking"
     content: |
-      **VLSM** allows you to use different subnet sizes within the same network, saving IP addresses.
+      Fixed-size subnetting wastes addresses. A router-to-router link needs only **2 hosts**, yet a /27
+      wastes 28 usable addresses. VLSM (RFC 1878) allows different subnets within the same address block
+      to use different prefix lengths.
 
-      **Example:** You need subnets for:
-      - Sales (50 hosts) → /26 (62 hosts)
-      - HR (20 hosts) → /27 (30 hosts)
-      - IT (10 hosts) → /28 (14 hosts)
-      - Point-to-point link (2 hosts) → /30 (2 hosts)
+      **Golden rule:** always allocate the **largest** requirement first to avoid fragmentation.
 
-      This is far more efficient than giving every department a /24!
+      **Design scenario — 192.168.100.0/24:**
 
-  - heading: "Quick Subnet Reference"
+      | Department | Hosts required | Chosen prefix | Usable hosts |
+      |------------|---------------|---------------|--------------|
+      | Sales | 50 | /26 | 62 |
+      | IT | 20 | /27 | 30 |
+      | Management | 5 | /29 | 6 |
+      | P2P Link 1 | 2 | /30 | 2 |
+      | P2P Link 2 | 2 | /30 | 2 |
+
+      **Full VLSM allocation (allocate largest first):**
+
+      ```
+      Sales (50 hosts) → /26 — block size 64:
+        Network:    192.168.100.0
+        First host: 192.168.100.1
+        Last host:  192.168.100.62
+        Broadcast:  192.168.100.63
+
+      IT (20 hosts) → /27 — block size 32:
+        Network:    192.168.100.64
+        First host: 192.168.100.65
+        Last host:  192.168.100.94
+        Broadcast:  192.168.100.95
+
+      Management (5 hosts) → /29 — block size 8:
+        Network:    192.168.100.96
+        First host: 192.168.100.97
+        Last host:  192.168.100.102
+        Broadcast:  192.168.100.103
+
+      P2P Link 1 → /30 — block size 4:
+        Network:    192.168.100.104
+        First host: 192.168.100.105
+        Last host:  192.168.100.106
+        Broadcast:  192.168.100.107
+
+      P2P Link 2 → /30 — block size 4:
+        Network:    192.168.100.108
+        First host: 192.168.100.109
+        Last host:  192.168.100.110
+        Broadcast:  192.168.100.111
+      ```
+
+      Total addresses used: 64+32+8+4+4 = **112** out of 256.
+      Addresses remaining: 192.168.100.112 – 192.168.100.255 (available for future growth).
+
+      Verify your assignments with the interactive calculator below.
+    interactive: subnet_calc
+
+  - heading: "Route Summarisation"
     content: |
-      | /CIDR | Mask | Subnets from /24 | Hosts/Subnet |
-      |---|---|---|---|
-      | /25 | .128 | 2 | 126 |
-      | /26 | .192 | 4 | 62 |
-      | /27 | .224 | 8 | 30 |
-      | /28 | .240 | 16 | 14 |
-      | /29 | .248 | 32 | 6 |
-      | /30 | .252 | 64 | 2 |
+      The reverse of subnetting is **summarisation** (also called supernetting or aggregation).
+      When four contiguous /26 subnets are under the same administrative domain, they can be
+      advertised to the rest of the internet as a single /24 route — reducing routing table size.
+
+      ```
+      192.168.10.0/26
+      192.168.10.64/26   →  summarised as  192.168.10.0/24
+      192.168.10.128/26
+      192.168.10.192/26
+      ```
+
+      **Rule:** subnets can be summarised only when they share the same network bits up to the
+      summary prefix length, and the group starts on a boundary divisible by the block size.
+
+      On a Cisco router, static summary routes are configured as:
+      ```
+      R1(config)# ip route 192.168.10.0 255.255.255.0 192.168.1.2
+      ```
+
+      OSPF automatic summarisation is disabled by default in OSPFv2. Use the `area X range`
+      command to configure manual summarisation at an ABR (Area Border Router).
 
 quiz:
-  - question: "How many usable hosts are in a /28 subnet?"
-    options: ["14", "16", "30", "32"]
-    answer: 0
-    explanation: "A /28 has 2^4 = 16 addresses. Subtract 2 (network + broadcast) = 14 usable hosts."
+  - question: "How many usable host addresses are in a /27 subnet?"
+    options:
+      - "14"
+      - "30"
+      - "32"
+      - "62"
+    answer: 1
+    explanation: "A /27 has 5 host bits: 2^5 = 32 total addresses minus 2 (network + broadcast) = 30 usable hosts."
 
-  - question: "You need to subnet 192.168.5.0/24 into 8 equal subnets. What is the new prefix length?"
-    options: ["/25", "/26", "/27", "/28"]
+  - question: "You subnet 10.0.0.0/24 with a /26 mask. What is the broadcast address of the SECOND subnet?"
+    options:
+      - "10.0.0.63"
+      - "10.0.0.127"
+      - "10.0.0.128"
+      - "10.0.0.191"
+    answer: 1
+    explanation: "A /26 has a block size of 64. Subnet 1: .0–.63; Subnet 2: .64–.127. The broadcast of subnet 2 is 10.0.0.127."
+
+  - question: "A P2P router link needs exactly 2 host addresses. Which prefix wastes the fewest addresses?"
+    options:
+      - "/28"
+      - "/29"
+      - "/30"
+      - "/31"
     answer: 2
-    explanation: "To get 8 subnets, you need 3 bits (2^3=8). /24 + 3 = /27."
+    explanation: "A /30 gives exactly 2 usable hosts (4 total − 2). RFC 3021 allows /31 for P2P links (no broadcast), but /30 is the traditional standard."
+
+  - question: "In VLSM design, why must you allocate the LARGEST subnet first?"
+    options:
+      - "Routers process larger subnets faster"
+      - "Smaller subnets cannot be created after larger ones"
+      - "To prevent address space fragmentation that would leave unusable gaps"
+      - "VLSM requires subnets to be in ascending order of mask length"
+    answer: 2
+    explanation: "Allocating largest first ensures subnets fall on proper boundaries and leaves contiguous free space for future allocations."
