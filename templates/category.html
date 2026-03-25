@@ -17,6 +17,48 @@
         </div>
     </div>
 
+    {# ── Course Progression Bar ── #}
+    {% if meta.prev_course is defined or meta.next_course is defined %}
+    <div class="course-progression-bar">
+        <div class="prog-prev">
+            {% if prev_cat and prev_course_key %}
+            <span class="prog-label">◀ Prerequisite</span>
+            <a href="{{ url_for('category', category=prev_course_key) }}" class="prog-link prog-link-prev">
+                {{ prev_cat.icon }} {{ prev_cat.course_number }} — {{ prev_cat.title }}
+            </a>
+            {% endif %}
+        </div>
+        <div class="prog-current">
+            <span class="prog-current-badge">📍 {{ meta.course_number }} — {{ meta.title }}</span>
+        </div>
+        <div class="prog-next">
+            {% if next_cat and next_course_key %}
+            <span class="prog-label">Next Course ▶</span>
+            <a href="{{ url_for('category', category=next_course_key) }}" class="prog-link prog-link-next">
+                {{ next_cat.icon }} {{ next_cat.course_number }} — {{ next_cat.title }}
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Builds-on & Leads-to ── #}
+    {% if meta.builds_on %}
+    <div class="builds-on-panel">
+        <h3>🔗 This Course Builds On</h3>
+        <ul>
+            {% for item in meta.builds_on %}
+            <li>{{ item }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+    {% if meta.leads_to %}
+    <div class="leads-to-panel">
+        <strong>🚀 Where This Leads:</strong> {{ meta.leads_to }}
+    </div>
+    {% endif %}
+
     {# ── Official Course Syllabus Card ── #}
     {% if meta.course_number %}
     <div class="syllabus-card">
@@ -30,45 +72,29 @@
                 {% if meta.lab_credits %}<span class="credits-badge credits-lab">+ {{ meta.lab_credits }} Lab Credit{{ 's' if meta.lab_credits != 1 else '' }}</span>{% endif %}
             </div>
         </div>
-
-        {% if meta.department %}
-        <p class="syllabus-dept">📐 {{ meta.department }}</p>
-        {% endif %}
-
-        {% if meta.faculty %}
-        <p class="syllabus-faculty">🎓 {{ meta.faculty.note }}</p>
-        {% endif %}
-
+        {% if meta.department %}<p class="syllabus-dept">📐 {{ meta.department }}</p>{% endif %}
+        {% if meta.faculty %}<p class="syllabus-faculty">🎓 {{ meta.faculty.note }}</p>{% endif %}
         {% if meta.catalog_description %}
         <div class="syllabus-section">
             <h3>Course Description</h3>
             <p>{{ meta.catalog_description }}</p>
         </div>
         {% endif %}
-
         {% if meta.prerequisites %}
         <div class="syllabus-section">
             <h3>Prerequisites</h3>
             <ul class="syllabus-list">
-                {% for prereq in meta.prerequisites %}
-                <li>{{ prereq }}</li>
-                {% endfor %}
+                {% for prereq in meta.prerequisites %}<li>{{ prereq }}</li>{% endfor %}
             </ul>
         </div>
         {% endif %}
-
         {% if meta.textbooks %}
         <div class="syllabus-section">
             <h3>Required Texts</h3>
             <ul class="syllabus-list">
                 {% for book in meta.textbooks %}
-                <li>
-                    <strong>{{ book.title }}</strong> — {{ book.authors }}.
-                    {{ book.edition }}.
-                    {% if book.isbn and book.isbn != 'N/A (online documentation)' %}
-                    <span class="syllabus-isbn">ISBN {{ book.isbn }}</span>
-                    {% endif %}
-                </li>
+                <li><strong>{{ book.title }}</strong> — {{ book.authors }}. {{ book.edition }}.
+                {% if book.isbn and book.isbn != 'N/A (online documentation)' %}<span class="syllabus-isbn"> ISBN {{ book.isbn }}</span>{% endif %}</li>
                 {% endfor %}
             </ul>
         </div>

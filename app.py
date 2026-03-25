@@ -80,11 +80,19 @@ CATEGORIES = {
         "icon": "🌐",
         "description": "Learn fundamental and advanced networking concepts including OSI model, TCP/IP, subnetting, and more.",
         "color": "blue",
+        "sequence": 2,
+        "prev_course": "linux",
+        "next_course": "cisco",
+        "builds_on": [
+            "Linux command-line (SYS 202) — you will use ssh, ping, traceroute, ip addr, ss, and tcpdump throughout every lab",
+            "Binary arithmetic (MATH 110) — subnetting calculations depend on binary-to-decimal conversion",
+        ],
+        "leads_to": "Cisco Enterprise Networking (NET 310), where you apply IP addressing and routing theory to real Cisco IOS devices",
         "course_number": "NET 201",
         "credits": 3,
         "lab_credits": 1,
         "department": "Department of Computer Science & Network Engineering",
-        "prerequisites": ["Introduction to Computing (CS 101)", "College Mathematics (MATH 110)"],
+        "prerequisites": ["Introduction to Linux (SYS 202)", "College Mathematics (MATH 110)"],
         "catalog_description": (
             "A rigorous introduction to data communications and computer networking. "
             "Topics include the OSI and TCP/IP reference models, IPv4/IPv6 addressing and "
@@ -117,6 +125,15 @@ CATEGORIES = {
         "icon": "🔧",
         "description": "Master Cisco IOS, VLANs, routing protocols, switching, and enterprise networking.",
         "color": "teal",
+        "sequence": 3,
+        "prev_course": "networking",
+        "next_course": "jetson",
+        "builds_on": [
+            "IP addressing and subnetting (NET 201) — every lab requires you to design and assign subnets",
+            "OSI model layers (NET 201) — IOS show commands map directly to Layer 2 (MAC/VLAN) and Layer 3 (IP/routing) concepts",
+            "Linux SSH and SCP (SYS 202) — you SSH into routers and use SCP to back up configurations",
+        ],
+        "leads_to": "Edge AI Development (AI 340), where solid network infrastructure skills underpin multi-device AI deployments",
         "course_number": "NET 310",
         "credits": 3,
         "lab_credits": 2,
@@ -154,11 +171,20 @@ CATEGORIES = {
         "icon": "🐍",
         "description": "Learn Python programming from basics to advanced topics including network automation.",
         "color": "green",
+        "sequence": 3,
+        "prev_course": "linux",
+        "next_course": "jetson",
+        "builds_on": [
+            "Linux shell and file system (SYS 202) — Python scripts run from Bash and interact with the Linux filesystem daily",
+            "File permissions and processes (SYS 202) — Python automation manages files, processes, and services",
+            "Networking fundamentals (NET 201) — the network-automation modules assume fluency with IP addressing and SSH",
+        ],
+        "leads_to": "Edge AI Development (AI 340), which requires Python for model training, inference pipelines, and hardware control",
         "course_number": "CS 215",
         "credits": 3,
         "lab_credits": 1,
         "department": "Department of Computer Science & Software Engineering",
-        "prerequisites": ["Introduction to Programming (CS 101)"],
+        "prerequisites": ["Introduction to Linux (SYS 202)", "Networking Fundamentals (NET 201)"],
         "catalog_description": (
             "An intermediate course in Python programming with emphasis on practical "
             "applications in systems administration and network automation. "
@@ -191,6 +217,13 @@ CATEGORIES = {
         "icon": "🐧",
         "description": "Master Linux commands, file system management, shell scripting, and system administration.",
         "color": "orange",
+        "sequence": 1,
+        "prev_course": None,
+        "next_course": "networking",
+        "builds_on": [
+            "Basic computer literacy — familiarity with files, folders, and operating systems at the end-user level",
+        ],
+        "leads_to": "Networking (NET 201) and Python Programming (CS 215), both of which assume daily Bash shell proficiency",
         "course_number": "SYS 202",
         "credits": 3,
         "lab_credits": 1,
@@ -228,11 +261,20 @@ CATEGORIES = {
         "icon": "🤖",
         "description": "Build practical edge AI workflows on NVIDIA Jetson Orin Nano 8GB: setup, media generation, and computer vision.",
         "color": "purple",
+        "sequence": 4,
+        "prev_course": "python",
+        "next_course": None,
+        "builds_on": [
+            "Python programming (CS 215) — all inference pipelines, training scripts, and automation are written in Python",
+            "Linux system administration (SYS 202) — Jetson runs Ubuntu/L4T; you configure services, manage storage, and write systemd units",
+            "Networking fundamentals (NET 201) — edge devices communicate over networks; IP addressing and SSH are assumed knowledge",
+        ],
+        "leads_to": "Graduate-level AI systems research or industry roles in robotics, autonomous vehicles, and edge computing",
         "course_number": "AI 340",
         "credits": 3,
         "lab_credits": 2,
         "department": "Department of Artificial Intelligence & Robotics",
-        "prerequisites": ["Python Programming (CS 215)", "Introduction to Machine Learning (AI 201)"],
+        "prerequisites": ["Python Programming (CS 215)", "Introduction to Linux (SYS 202)", "Introduction to Machine Learning (AI 201)"],
         "catalog_description": (
             "A hands-on course in edge AI deployment using the NVIDIA Jetson Orin Nano 8 GB. "
             "Students configure the Jetson platform, optimize deep learning models with TensorRT, "
@@ -629,7 +671,18 @@ def index():
     for key, meta in CATEGORIES.items():
         lessons = load_lessons(key)
         category_data[key] = {**meta, "lesson_count": len(lessons)}
-    return render_template("index.html", categories=category_data)
+    ordered = sorted(category_data.values(), key=lambda c: c.get("sequence", 99))
+    return render_template("index.html", categories=category_data, ordered_courses=ordered)
+
+
+@app.route("/learning-path")
+def learning_path():
+    category_data = {}
+    for key, meta in CATEGORIES.items():
+        lessons = load_lessons(key)
+        category_data[key] = {**meta, "key": key, "lesson_count": len(lessons)}
+    ordered = sorted(category_data.values(), key=lambda c: c.get("sequence", 99))
+    return render_template("learning_path.html", ordered_courses=ordered, categories=category_data)
 
 
 @app.route("/category/<category>")
@@ -638,7 +691,20 @@ def category(category):
         return render_template("404.html"), 404
     meta = CATEGORIES[category]
     lessons = load_lessons(category)
-    return render_template("category.html", category=category, meta=meta, lessons=lessons)
+    prev_key = meta.get("prev_course")
+    next_key = meta.get("next_course")
+    prev_cat = CATEGORIES.get(prev_key) if prev_key else None
+    next_cat = CATEGORIES.get(next_key) if next_key else None
+    return render_template(
+        "category.html",
+        category=category,
+        meta=meta,
+        lessons=lessons,
+        prev_course_key=prev_key,
+        next_course_key=next_key,
+        prev_cat=prev_cat,
+        next_cat=next_cat,
+    )
 
 
 @app.route("/lesson/<category>/<slug>")

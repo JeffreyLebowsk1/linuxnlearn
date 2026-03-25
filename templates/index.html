@@ -6,27 +6,54 @@
     <div class="hero-content">
         <h1>Learn IT with AI Assistance</h1>
         <p class="hero-subtitle">
-            Master networking, Cisco, Python, and Linux with structured lessons and an
-            AI tutor that answers your questions in real time.
+            Accredited college-level courses in Linux, Networking, Cisco, Python, and Edge AI —
+            each course building directly on the one before it, with interactive labs and AI tutoring.
         </p>
         <div class="hero-actions">
-            <a href="{{ url_for('category', category='networking') }}" class="btn btn-primary">Start Learning</a>
-            <a href="{{ url_for('assistant') }}" class="btn btn-secondary">🤖 Ask AI Assistant</a>
+            <a href="{{ url_for('category', category='linux') }}" class="btn btn-primary">Start with Linux →</a>
+            <a href="{{ url_for('learning_path') }}" class="btn btn-secondary">🗺 View Learning Path</a>
+            <a href="{{ url_for('assistant') }}" class="btn btn-secondary">🤖 Ask AI</a>
         </div>
+    </div>
+</section>
+
+{# ── Degree Pathway Roadmap ── #}
+<section class="roadmap-section">
+    <div class="section-container">
+        <h2 class="section-title">🎓 Degree Pathway</h2>
+        <p class="section-subtitle">Complete courses in sequence — each one builds on the previous and unlocks the next.</p>
+        <div class="roadmap-track">
+            {% for course in ordered_courses %}
+            <div class="roadmap-step category-{{ course.color }}">
+                <div class="roadmap-step-icon">{{ course.icon }}</div>
+                <div class="roadmap-step-body">
+                    <span class="roadmap-course-num">{{ course.course_number }}</span>
+                    <strong>{{ course.title }}</strong>
+                    <span class="roadmap-credits">{{ course.credits }} cr{% if course.lab_credits %} + {{ course.lab_credits }} lab{% endif %}</span>
+                </div>
+                {% for key, cat in categories.items() %}{% if cat.course_number == course.course_number %}
+                <a href="{{ url_for('category', category=key) }}" class="roadmap-link" aria-label="{{ course.title }}"></a>
+                {% endif %}{% endfor %}
+            </div>
+            {% if not loop.last %}<div class="roadmap-arrow">→</div>{% endif %}
+            {% endfor %}
+        </div>
+        <p class="roadmap-note"><a href="{{ url_for('learning_path') }}">View full course descriptions and prerequisites →</a></p>
     </div>
 </section>
 
 <section class="categories-section">
     <div class="section-container">
-        <h2 class="section-title">Learning Tracks</h2>
+        <h2 class="section-title">Course Catalog</h2>
         <div class="categories-grid">
             {% for key, cat in categories.items() %}
             <a href="{{ url_for('category', category=key) }}" class="category-card category-{{ cat.color }}">
                 <div class="category-icon">{{ cat.icon }}</div>
+                <div class="category-course-num">{{ cat.course_number }}</div>
                 <h3>{{ cat.title }}</h3>
                 <p>{{ cat.description }}</p>
                 <div class="category-meta">
-                    <span class="lesson-count">{{ cat.lesson_count }} lesson{{ 's' if cat.lesson_count != 1 else '' }}</span>
+                    <span class="lesson-count">{{ cat.lesson_count }} module{{ 's' if cat.lesson_count != 1 else '' }}</span>
                     <span class="arrow">→</span>
                 </div>
             </a>
@@ -40,24 +67,34 @@
         <h2 class="section-title">Why LinuxNLearn?</h2>
         <div class="features-grid">
             <div class="feature-card">
+                <div class="feature-icon">🎓</div>
+                <h3>Accredited Course Structure</h3>
+                <p>Full syllabi, Bloom's-taxonomy learning outcomes, academic integrity policies, and formal grading rubrics — as used in accredited university programs.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔗</div>
+                <h3>Sequenced Progression</h3>
+                <p>Each course explicitly builds on the previous one. Linux → Networking → Cisco / Python → Edge AI forms a coherent degree pathway.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🖼</div>
+                <h3>Illustrations &amp; Diagrams</h3>
+                <p>Every major concept includes Mermaid diagrams — OSI stacks, TCP handshakes, filesystem trees, VLAN topologies, and routing tables rendered inline.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Interactive Examples</h3>
+                <p>Practice in your browser: simulated Linux terminal, subnet calculator, chmod calculator, Python sandbox, and Cisco IOS simulator — no install needed.</p>
+            </div>
+            <div class="feature-card">
                 <div class="feature-icon">🤖</div>
-                <h3>AI-Powered Learning</h3>
-                <p>Get instant answers from an AI tutor that understands networking, Cisco IOS, Python, and Linux in depth.</p>
+                <h3>AI Instructor</h3>
+                <p>Ask the AI tutor any question mid-lesson. It knows the full curriculum context and calibrates answers to your current course level.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">📚</div>
-                <h3>Structured Content</h3>
-                <p>Lessons progress from fundamentals to advanced topics, with quizzes to reinforce your understanding.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🔧</div>
-                <h3>Practical Focus</h3>
-                <p>Every lesson includes real commands, real configs, and real-world examples you can use on the job.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🚀</div>
-                <h3>Ever-Expanding</h3>
-                <p>New lessons and topics are added continuously. YAML-based content makes it easy to add anything.</p>
+                <div class="feature-icon">📝</div>
+                <h3>AI-Graded Assignments</h3>
+                <p>Open-ended lab reports and problem sets are graded by AI with per-task feedback, ideal-answer reveals, and letter grades.</p>
             </div>
         </div>
     </div>

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Learning Path — LinuxNLearn{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="breadcrumb">
+        <a href="{{ url_for('index') }}">Home</a>
+        <span>›</span>
+        <span>Learning Path</span>
+    </div>
+
+    <div class="lp-hero">
+        <h1>🗺 Degree Learning Path</h1>
+        <p>These courses form a coherent, sequenced curriculum — each one builds directly on the skills
+        introduced in the previous course. Start with <strong>SYS 202 Linux</strong> and work your way
+        to <strong>AI 340 Edge AI</strong>.</p>
+    </div>
+
+    <div class="lp-track">
+        {% for course in ordered_courses %}
+        <div class="lp-course-card category-{{ course.color }}">
+            <div class="lp-course-header">
+                <span class="lp-step-num">Step {{ loop.index }}</span>
+                <span class="lp-course-num">{{ course.course_number }}</span>
+                <span class="lp-credits">
+                    {{ course.credits }} credit{{ 's' if course.credits != 1 else '' }}
+                    {% if course.lab_credits %}+ {{ course.lab_credits }} lab{% endif %}
+                </span>
+            </div>
+            <div class="lp-course-title">
+                <span class="lp-icon">{{ course.icon }}</span>
+                <h2>{{ course.title }}</h2>
+            </div>
+            <p class="lp-course-desc">{{ course.catalog_description }}</p>
+            {% if course.builds_on %}
+            <div class="lp-builds-on">
+                <strong>🔗 Builds on:</strong>
+                <ul>{% for item in course.builds_on %}<li>{{ item }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% if course.leads_to %}
+            <div class="lp-leads-to"><strong>🚀 Leads to:</strong> {{ course.leads_to }}</div>
+            {% endif %}
+            {% if course.textbooks %}
+            <div class="lp-textbooks">
+                <strong>📚 Required Texts:</strong>
+                <ul>{% for book in course.textbooks %}<li><em>{{ book.title }}</em> — {{ book.authors }}. {{ book.edition }}.</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% for key, cat in categories.items() %}{% if cat.course_number == course.course_number %}
+            <a href="{{ url_for('category', category=key) }}" class="btn btn-primary lp-enroll-btn">Open Course →</a>
+            {% endif %}{% endfor %}
+        </div>
+        {% if not loop.last %}
+        <div class="lp-connector">
+            <div class="lp-connector-line"></div>
+            <div class="lp-connector-arrow">▼</div>
+            <div class="lp-connector-label">Prerequisites satisfied → enrol in next course</div>
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -15,6 +15,7 @@
 
     <div class="lesson-header">
         <span class="lesson-badge category-{{ meta.color }}">{{ meta.icon }} {{ meta.title }}</span>
+        {% if meta.course_number %}<p class="assignment-course-label">{{ meta.course_number }} — {{ meta.title }} | {{ meta.department }}</p>{% endif %}
         <h1>{{ assignment.title }}</h1>
         <div class="assignment-header-meta">
             <span class="tag tag-difficulty tag-{{ assignment.difficulty }}">{{ assignment.difficulty | title }}</span>
@@ -28,6 +29,13 @@
         </div>
         <div class="assignment-instructions">
             {{ assignment.instructions | markdown_to_html }}
+        </div>
+        <div class="academic-integrity-notice">
+            <strong>⚖️ Academic Integrity</strong>
+            Submitted work must represent your own original analysis and writing.
+            Collaboration is permitted for discussing concepts, but all written answers,
+            commands, and code must be composed independently.
+            Refer to your institution's Academic Honesty Policy for full details.
         </div>
 
         {% if assignment.grading_guidance %}
