@@ -1,95 +1,357 @@
-title: "The OSI Model"
+title: "The OSI Reference Model"
 order: 1
-summary: "The OSI (Open Systems Interconnection) model is a conceptual framework that describes how data communication occurs between two devices in a network."
+summary: "A rigorous examination of the ISO/IEC 7498-1 seven-layer OSI reference model, covering encapsulation, PDUs, protocols, and device roles at each layer with live Linux observation techniques."
+learning_objectives:
+  - "Identify all seven OSI layers by name, number, PDU, and key protocols."
+  - "Explain the historical rationale for layered network models and vendor interoperability."
+  - "Demonstrate how encapsulation and decapsulation occur as data traverses the OSI stack."
+  - "Analyze network traffic at each layer using Linux tools such as tcpdump, ss, ip, and curl."
+  - "Apply OSI layer knowledge to map TCP/IP model layers and troubleshoot network issues systematically."
+builds_on:
+  - "Linux command-line tools (SYS 202) — you will use ping, traceroute, ss, tcpdump, and ip addr to observe each layer live"
 sections:
-  - heading: "What is the OSI Model?"
+  - heading: "Why Layered Models? Historical Context and Design Rationale"
     content: |
-      The OSI model divides network communication into **7 layers**, each responsible for a specific function. Think of it like mailing a letter — there are multiple steps involved in getting the message from sender to receiver.
+      ## Why Layered Models? Historical Context and Design Rationale
 
-      The model was developed by ISO (International Organization for Standardization) in 1984 and remains the foundational framework for understanding networking.
+      In the early 1970s, networking was a chaotic landscape of proprietary, incompatible systems.
+      IBM's Systems Network Architecture (SNA, 1974), DEC's DECnet, and ARPANET each used
+      fundamentally different approaches to framing, addressing, and session management.
+      A device from one vendor simply could not communicate with a device from another without
+      expensive, custom gateway software. The International Organization for Standardization
+      (ISO) responded with a landmark effort: the **Open Systems Interconnection (OSI)** reference
+      model, formally published in 1984 as **ISO/IEC 7498-1**. This standard defined a universal
+      conceptual framework into which any network technology could be mapped, enabling true
+      vendor-neutral interoperability. Tanenbaum notes in *Computer Networks* (6th ed., §1.4) that
+      the OSI model "provides a framework for discussing what layers should do, not a description
+      of specific protocols."
 
-  - heading: "The 7 Layers"
-    content: |
-      | Layer | Name | Key Protocols/Examples |
-      |-------|------|------------------------|
-      | 7 | Application | HTTP, FTP, DNS, SMTP |
-      | 6 | Presentation | SSL/TLS, JPEG, ASCII |
-      | 5 | Session | NetBIOS, RPC |
-      | 4 | Transport | TCP, UDP |
-      | 3 | Network | IP, ICMP, OSPF |
-      | 2 | Data Link | Ethernet, Wi-Fi (802.11), ARP |
-      | 1 | Physical | Cables, Hubs, Repeaters |
+      The fundamental insight behind layered design is **separation of concerns**: each layer
+      provides a well-defined service to the layer above it and consumes a well-defined service
+      from the layer below it, using a defined **interface**. This means an engineer can swap the
+      physical medium from copper to fibre without touching the IP routing code, or upgrade TLS
+      without modifying the TCP implementation beneath it. This principle mirrors software
+      engineering's use of abstraction — and for exactly the same reasons: it reduces complexity,
+      enables independent testing, and allows parallel development by different teams or vendors.
 
-  - heading: "Layer 7 – Application"
-    content: |
-      The **Application layer** is the layer closest to the end user. It provides network services directly to applications.
+      Lammle's *CompTIA Network+ Study Guide* (4th ed., Chapter 1) introduces the OSI model as
+      the single most important framework for the networking professional because every
+      troubleshooting methodology ultimately reduces to the question: "At which layer is the
+      failure occurring?" A physical cable break is a Layer 1 fault; an IP misconfiguration is a
+      Layer 3 fault; a TLS certificate error is a Layer 6/7 fault. Localising the failure layer
+      immediately narrows the diagnostic search space from thousands of possible causes to a
+      handful. This is why the model remains central to certifications (CompTIA Network+, CCNA)
+      and university curricula decades after its publication, even though production networks use
+      TCP/IP rather than the OSI protocol suite.
 
-      - **HTTP/HTTPS** – Web browsing
-      - **FTP** – File transfers
-      - **DNS** – Domain name resolution
-      - **SMTP/IMAP/POP3** – Email
+      There are two popular mnemonics for remembering the seven layers. Reading **bottom-up**
+      (Layer 1 → 7): **"Please Do Not Throw Sausage Pizza Away"** — Physical, Data Link, Network,
+      Transport, Session, Presentation, Application. Reading **top-down** (Layer 7 → 1):
+      **"All People Seem To Need Data Processing"** — Application, Presentation, Session,
+      Transport, Network, Data Link, Physical. Both mnemonics are used in this course; choose the
+      one that suits your mental model.
 
-      > Think of this layer as the interface between the user and the network.
+      ```mermaid
+      graph TD
+          L7["Layer 7 — Application<br/>PDU: Data<br/>HTTP · DNS · SMTP · FTP"]
+          L6["Layer 6 — Presentation<br/>PDU: Data<br/>SSL/TLS · ASCII · JPEG"]
+          L5["Layer 5 — Session<br/>PDU: Data<br/>NetBIOS · RPC · PPTP"]
+          L4["Layer 4 — Transport<br/>PDU: Segment / Datagram<br/>TCP · UDP"]
+          L3["Layer 3 — Network<br/>PDU: Packet<br/>IP · ICMP · OSPF"]
+          L2["Layer 2 — Data Link<br/>PDU: Frame<br/>Ethernet · ARP · PPP"]
+          L1["Layer 1 — Physical<br/>PDU: Bit<br/>1000BASE-T · 802.11 · DSL"]
 
-  - heading: "Layer 4 – Transport"
-    content: |
-      The **Transport layer** ensures reliable data delivery between two hosts.
-
-      **TCP (Transmission Control Protocol):**
-      - Connection-oriented (3-way handshake: SYN, SYN-ACK, ACK)
-      - Reliable, ordered delivery
-      - Used for HTTP, email, file transfers
-
-      **UDP (User Datagram Protocol):**
-      - Connectionless
-      - Faster, but no guarantee of delivery
-      - Used for streaming, DNS, VoIP
-
-  - heading: "Layer 3 – Network"
-    content: |
-      The **Network layer** handles logical addressing and routing of packets between networks.
-
-      - **IP addresses** (IPv4 and IPv6) operate at this layer
-      - **Routers** are the primary devices at Layer 3
-      - **ICMP** (used by `ping`) works here
-
+          L7 --> L6 --> L5 --> L4 --> L3 --> L2 --> L1
+          style L7 fill:#4A90D9,color:#fff
+          style L6 fill:#5BA35B,color:#fff
+          style L5 fill:#D4A017,color:#fff
+          style L4 fill:#C0392B,color:#fff
+          style L3 fill:#8E44AD,color:#fff
+          style L2 fill:#16A085,color:#fff
+          style L1 fill:#2C3E50,color:#fff
       ```
-      Source IP: 192.168.1.10
-      Destination IP: 8.8.8.8
-      → Router finds the best path to deliver the packet
+
+  - heading: "The Seven Layers in Detail"
+    content: |
+      ## The Seven Layers in Detail
+
+      ### Layer 1 — Physical
+
+      The Physical layer (Layer 1) is responsible for the transmission of raw **bits** over a
+      communication medium. It defines the electrical, optical, or radio-frequency characteristics
+      of the signal, as well as the mechanical properties of connectors, cable types (Cat5e, Cat6,
+      Cat6A, multimode/single-mode fibre), and signal encoding schemes (Manchester encoding, PAM4).
+      Devices operating at this layer include **hubs**, **repeaters**, and **NICs** (at the
+      hardware level). A hub is a classic Layer 1 device: it receives a bit stream on one port and
+      blindly re-transmits it out all other ports, with no concept of addressing or error checking.
+
+      **Linux observation:** Use `ethtool eth0` to view the negotiated speed and duplex of the
+      NIC. Use `ip link show` to see interface state (UP/DOWN) and MTU. The MTU (Maximum
+      Transmission Unit, typically 1500 bytes for Ethernet) is set here and constrains Layer 2
+      frame size. Run `ethtool -S eth0` for NIC driver statistics including physical-level counters
+      such as CRC errors and dropped frames, which indicate Layer 1 problems like bad cables.
+
+      ### Layer 2 — Data Link
+
+      The Data Link layer (Layer 2) takes the raw bit stream and organises it into **frames**. It
+      provides two sub-layers defined by IEEE 802: the **Logical Link Control (LLC)** sub-layer
+      (error detection, flow control) and the **Media Access Control (MAC)** sub-layer (hardware
+      addressing, access to the shared medium). MAC addresses are 48-bit identifiers burned into
+      every NIC, written in colon-hex notation (e.g., `00:1A:2B:3C:4D:5E`). **Switches** are the
+      quintessential Layer 2 device: they learn MAC addresses by inspecting source frames and build
+      a **MAC address table (CAM table)**, forwarding frames only to the port where the destination
+      MAC resides. **ARP (Address Resolution Protocol)** operates at this boundary, resolving Layer
+      3 IP addresses to Layer 2 MAC addresses.
+
+      **Linux observation:** Run `ip neigh show` (or the older `arp -n`) to view the ARP cache —
+      the mapping of IP addresses to MAC addresses on the local segment. Use
+      `tcpdump -i eth0 -e -n` (the `-e` flag prints the Ethernet header, revealing source and
+      destination MAC addresses) to watch frames arriving. Run `bridge flink` on a Linux bridge
+      interface to inspect the software equivalent of a CAM table.
+
+      ### Layer 3 — Network
+
+      The Network layer (Layer 3) is responsible for logical **addressing** and **routing** of
+      **packets** across multiple networks. The dominant Layer 3 protocol is **IPv4**, defined in
+      **RFC 791** (September 1981), which introduced the 32-bit IP address space. **Routers** are
+      Layer 3 devices: they examine the destination IP address in each packet's header, consult
+      their **routing table**, and forward the packet toward the destination via the best path.
+      **ICMP** (Internet Control Message Protocol, RFC 792) also lives at Layer 3, carrying
+      diagnostic messages such as "Destination Unreachable" and "Time Exceeded" — the latter being
+      the mechanism exploited by `traceroute`.
+
+      **Linux observation:** Run `ip addr show` to see all Layer 3 addresses assigned to
+      interfaces. Run `ip route show` to inspect the routing table. Use `ping 8.8.8.8` to send
+      ICMP Echo Requests (Layer 3 packets). Use `traceroute -n 8.8.8.8` to trace the Layer 3 path,
+      observing each router hop. Use `tcpdump -i eth0 -n icmp` to capture only ICMP traffic.
+
+      ### Layer 4 — Transport
+
+      The Transport layer (Layer 4) provides **end-to-end** communication between processes on
+      different hosts. The two primary Layer 4 protocols are **TCP** (Transmission Control
+      Protocol, **RFC 793**, September 1981) and **UDP** (User Datagram Protocol, **RFC 768**,
+      August 1980). TCP provides reliable, ordered, connection-oriented delivery using a three-way
+      handshake and acknowledgements. UDP is connectionless, trading reliability for low overhead.
+      The PDU at Layer 4 is a **segment** (TCP) or **datagram** (UDP). Layer 4 introduces the
+      concept of **ports** — 16-bit numbers that demultiplex traffic to the correct application
+      process on the destination host.
+
+      **Linux observation:** Run `ss -tulnp` to list all listening TCP and UDP sockets with the
+      associated process. The `-t` flag shows TCP, `-u` shows UDP, `-l` shows listening, `-n`
+      disables DNS resolution, and `-p` shows the owning process. Compare this with the older
+      `netstat -tulnp`. To watch Layer 4 traffic, run
+      `tcpdump -i eth0 -n 'tcp port 80'` to capture only HTTP TCP segments.
+
+      ### Layer 5 — Session
+
+      The Session layer (Layer 5) is responsible for establishing, managing, and terminating
+      **sessions** (dialogues) between applications. It provides mechanisms for synchronisation
+      (checkpoints that allow a long data transfer to resume after a failure) and for half-duplex
+      vs full-duplex control. In practice, the Session layer is the least visible of the seven
+      layers in TCP/IP networks because TCP itself handles much of session management. Protocols
+      historically placed here include **NetBIOS** (Windows file sharing), **RPC** (Remote
+      Procedure Call), **PPTP**, and **NFS** session management. In TLS-based connections, the
+      TLS handshake that establishes shared keys and authenticates peers is sometimes mapped to
+      both Layer 5 and Layer 6.
+
+      **Linux observation:** Run `ss -tn state ESTABLISHED` to see currently established TCP
+      sessions — each row represents an active Layer 5 session between a local and remote endpoint.
+      The `Local Address:Port` and `Peer Address:Port` tuple uniquely identifies each session.
+      Run `ss -tn state TIME-WAIT` to see sessions in the TCP TIME_WAIT state, where the kernel
+      is waiting for any stray duplicate packets before fully closing the session.
+
+      ### Layer 6 — Presentation
+
+      The Presentation layer (Layer 6) is responsible for **data representation**, **translation**,
+      and **encryption/decryption**. It ensures that data produced by one system's application
+      layer can be read by another system's application layer, regardless of internal data format
+      differences. This layer handles character encoding translation (ASCII, UTF-8, EBCDIC),
+      data serialisation formats (JSON, ASN.1, XDR), compression, and cryptographic
+      transformation. **SSL/TLS** is the most consequential Layer 6 technology in modern networking:
+      it encrypts the data stream so that Layer 7 protocols like HTTP become HTTPS. Without the
+      Presentation layer's encryption services, all application-layer data would traverse networks
+      in plaintext.
+
+      **Linux observation:** Run `openssl s_client -connect www.example.com:443` to initiate a
+      TLS handshake and inspect the certificate chain, cipher suite negotiated, and TLS version.
+      The output reveals exactly what the Presentation layer has agreed with the remote server.
+      Run `curl -v https://www.example.com 2>&1 | head -30` and note the `* SSL connection using`
+      and `* Server certificate` lines — these are Presentation layer details reported by curl's
+      verbose mode.
+
+      ### Layer 7 — Application
+
+      The Application layer (Layer 7) is the topmost layer, providing the interface between the
+      network stack and the end-user application. It defines high-level **protocols** that
+      applications use directly: **HTTP/HTTPS** (web browsing), **DNS** (name resolution, port 53),
+      **FTP** (file transfer, ports 20/21), **SMTP** (email sending, port 25), **IMAP/POP3**
+      (email retrieval), **SSH** (secure remote shell, port 22), and many others. The PDU at this
+      layer is simply called **data** or a **message**. The Application layer does not include the
+      end-user application itself (e.g., a web browser) — it is the protocol the application uses
+      to communicate, not the application binary.
+
+      **Linux observation:** Run `curl -v http://example.com` to see the full HTTP request and
+      response — a Layer 7 protocol exchange. The `> GET / HTTP/1.1` lines are the raw HTTP
+      request (Layer 7 PDU). Run `dig @8.8.8.8 example.com` to perform a DNS lookup and observe
+      a Layer 7 DNS query/response. Run `nc -zv example.com 80` (netcat) to test TCP
+      connectivity to a specific application-layer port.
+
+  - heading: "Encapsulation and Decapsulation"
+    content: |
+      ## Encapsulation and Decapsulation
+
+      **Encapsulation** is the process by which each OSI layer adds its own **header** (and
+      sometimes **trailer**) to the payload received from the layer above, wrapping it like an
+      envelope inside an envelope. When a web browser sends an HTTP GET request, the Application
+      layer (L7) produces the HTTP message. The Transport layer (L4) wraps it in a TCP segment
+      header containing source/destination ports and sequence numbers. The Network layer (L3)
+      wraps the segment in an IP packet header containing source/destination IP addresses and TTL.
+      The Data Link layer (L2) wraps the packet in an Ethernet frame with source/destination MAC
+      addresses and a Frame Check Sequence (FCS) trailer for error detection. Finally, the Physical
+      layer (L1) serialises the frame into a stream of bits (electrical signals, light pulses, or
+      radio waves) onto the medium.
+
+      At the receiving host, the process runs in reverse: **decapsulation**. Each layer strips off
+      its own header, checks it for correctness, and passes the payload upward to the next layer.
+      The Ethernet driver checks the FCS; if the frame is intact it removes the Ethernet header
+      and passes the IP packet to the IP stack. The IP stack checks the destination IP, decrements
+      the TTL (re-computing the checksum), and if the packet is for this host, passes the payload
+      to TCP. TCP uses the sequence number and acknowledgement number to reassemble segments in
+      order and passes the complete HTTP response to the browser. This symmetry — encapsulate on
+      the way down, decapsulate on the way up — is a foundational concept described in both
+      ISO/IEC 7498-1 and Tanenbaum §1.4.2.
+
+      An important implication of encapsulation is **overhead**. Every header adds bytes that must
+      be transmitted but carry no application payload. An IP header is 20 bytes (minimum), a TCP
+      header is 20 bytes (minimum), and an Ethernet header is 18 bytes (14 header + 4 FCS).
+      For a 40-byte HTTP request, the total Ethernet frame is 40 + 20 + 20 + 18 = 98 bytes —
+      more than half the frame is overhead. This overhead is one reason UDP is preferred for
+      latency-sensitive applications like DNS and VoIP: at 8 bytes, the UDP header is much smaller
+      than TCP's 20-byte minimum.
+
+      Routers perform **partial decapsulation**: they strip the incoming Ethernet frame (L2) to
+      expose the IP packet (L3), make routing decisions, then re-encapsulate the packet in a
+      **new** Ethernet frame with updated source/destination MACs for the next hop. The IP header
+      (and everything above) is passed through untouched (except for TTL decrement). This is why
+      MAC addresses change at each router hop while IP addresses remain constant end-to-end —
+      a distinction critical to understanding both routing and NAT.
+
+      ```mermaid
+      sequenceDiagram
+          participant Browser as Browser (App)
+          participant L7 as Layer 7 HTTP
+          participant L4 as Layer 4 TCP
+          participant L3 as Layer 3 IP
+          participant L2 as Layer 2 Ethernet
+          participant Wire as Physical Medium
+          participant L2r as Layer 2 Ethernet
+          participant L3r as Layer 3 IP
+          participant L4r as Layer 4 TCP
+          participant L7r as Layer 7 HTTP
+          participant Server as Server (App)
+
+          Browser->>L7: HTTP GET /index.html
+          L7->>L4: [HTTP Data]
+          Note over L4: Add TCP header (src:49200 dst:80 SYN=1 SEQ=0)
+          L4->>L3: [TCP | HTTP Data]
+          Note over L3: Add IP header (src:192.168.1.5 dst:93.184.216.34 TTL=64)
+          L3->>L2: [IP | TCP | HTTP Data]
+          Note over L2: Add Ethernet header+FCS (src MAC → dst MAC)
+          L2->>Wire: 10101100... (bits)
+          Wire->>L2r: 10101100... (bits)
+          Note over L2r: Strip Ethernet header, check FCS
+          L2r->>L3r: [IP | TCP | HTTP Data]
+          Note over L3r: Strip IP header, check TTL/checksum
+          L3r->>L4r: [TCP | HTTP Data]
+          Note over L4r: Strip TCP header, reassemble segments
+          L4r->>L7r: [HTTP Data]
+          L7r->>Server: HTTP GET /index.html
       ```
 
-  - heading: "Layer 2 – Data Link"
+  - heading: "OSI vs TCP/IP Model Comparison"
     content: |
-      The **Data Link layer** transfers data between adjacent nodes and handles error detection.
+      ## OSI vs TCP/IP Model Comparison
 
-      - Uses **MAC addresses** (e.g., `00:1A:2B:3C:4D:5E`)
-      - **Switches** operate at this layer
-      - **Frames** are the PDU (Protocol Data Unit) at Layer 2
-      - Ethernet and Wi-Fi are Layer 2 protocols
+      The **TCP/IP model** (also called the Internet model or DoD model) was developed alongside
+      ARPANET and predates the OSI model. While OSI has seven layers, TCP/IP consolidates them
+      into four layers. Understanding the mapping is essential because production networks run
+      TCP/IP but engineers reason about them using OSI terminology. When a colleague says "that is
+      a Layer 3 problem," they are using OSI numbering even though the network is running TCP/IP.
+      RFC 1122 ("Requirements for Internet Hosts — Communication Layers") defines the TCP/IP
+      layer boundaries.
 
-  - heading: "Memory Trick"
-    content: |
-      Remember the layers from top to bottom with:
+      | OSI Layer | OSI Name       | TCP/IP Layer    | Example Protocols              |
+      |-----------|----------------|-----------------|-------------------------------|
+      | 7         | Application    | Application     | HTTP, HTTPS, DNS, FTP, SMTP   |
+      | 6         | Presentation   | Application     | TLS/SSL, MIME, ASCII encoding |
+      | 5         | Session        | Application     | NetBIOS, RPC, TLS handshake   |
+      | 4         | Transport      | Transport       | TCP (RFC 793), UDP (RFC 768)  |
+      | 3         | Network        | Internet        | IPv4 (RFC 791), ICMP, OSPF    |
+      | 2         | Data Link      | Network Access  | Ethernet, ARP, 802.11 Wi-Fi   |
+      | 1         | Physical       | Network Access  | Cat6, Fibre, DSL, 802.11 PHY  |
 
-      > **"All People Seem To Need Data Processing"**
-      > Application → Presentation → Session → Transport → Network → Data Link → Physical
+      The consolidation of OSI Layers 5, 6, and 7 into a single TCP/IP "Application" layer
+      reflects a pragmatic reality: in TCP/IP implementations, these functions are handled by
+      application libraries rather than distinct kernel subsystems. For instance, TLS encryption
+      (OSI Layer 6) is handled by OpenSSL, which is linked into applications like Apache or curl.
+      There is no separate "Presentation layer kernel module" in Linux. Similarly, session
+      management (OSI Layer 5) is embedded in application-layer protocols — HTTP/2 has its own
+      stream multiplexing, NFS has its own session state, and so on.
 
-      Or bottom to top:
-      > **"Please Do Not Throw Sausage Pizza Away"**
+      The TCP/IP "Network Access" layer (combining OSI Layers 1 and 2) similarly reflects the
+      practical reality that the kernel's network driver handles both physical signalling and
+      Ethernet framing together. The Linux `net_device` structure and the `sk_buff` (socket
+      buffer) abstraction span both layers. When you run `tcpdump -i eth0`, you are hooking into
+      the kernel at the boundary between the Network Access layer and the Internet layer — a
+      conceptual split that maps to OSI's Layer 2/3 boundary.
+
+      A useful mnemonic for the four TCP/IP layers (top to bottom) is **"ATNA"**: **A**pplication,
+      **T**ransport, **N**etwork (Internet), **A**ccess (Network Access). As Lammle (*Network+
+      Study Guide*, Chapter 1) emphasises: "Know both models cold — the OSI model for
+      troubleshooting logic, the TCP/IP model for understanding what actually runs on the wire."
+
+      | PDU Name     | OSI Layer(s) | TCP/IP Layer    | Linux Capture Command                       |
+      |--------------|--------------|-----------------|---------------------------------------------|
+      | Data/Message | 7, 6, 5      | Application     | `curl -v`, `dig`, `openssl s_client`        |
+      | Segment      | 4 (TCP)      | Transport       | `tcpdump 'tcp port 80'`, `ss -tn`           |
+      | Datagram     | 4 (UDP)      | Transport       | `tcpdump udp`, `ss -un`                     |
+      | Packet       | 3            | Internet        | `tcpdump -n ip`, `ip route`, `ping`         |
+      | Frame        | 2            | Network Access  | `tcpdump -e`, `ip neigh`, `arp -n`          |
+      | Bit          | 1            | Network Access  | `ethtool -S eth0`, `ip link`                |
 
 quiz:
-  - question: "At which OSI layer does a router primarily operate?"
-    options: ["Layer 1", "Layer 2", "Layer 3", "Layer 4"]
-    answer: 2
-    explanation: "Routers operate at Layer 3 (Network layer) and make forwarding decisions based on IP addresses."
+  - question: "Which OSI layer is responsible for logical addressing and routing packets between networks?"
+    options:
+      - "Layer 2 — Data Link"
+      - "Layer 3 — Network"
+      - "Layer 4 — Transport"
+      - "Layer 5 — Session"
+    answer: 1
+    explanation: "Layer 3 (Network) handles logical IP addressing and routing via devices such as routers. Layer 2 handles physical MAC addressing within a single network segment. This is defined in ISO/IEC 7498-1 and described in Tanenbaum, Computer Networks 6th ed., §1.4."
 
-  - question: "Which protocol operates at the Transport layer?"
-    options: ["IP", "HTTP", "TCP", "Ethernet"]
-    answer: 2
-    explanation: "TCP operates at Layer 4 (Transport). IP is Layer 3, HTTP is Layer 7, and Ethernet is Layer 2."
+  - question: "A network administrator captures traffic with `tcpdump -e -i eth0`. The `-e` flag reveals source and destination MAC addresses. At which OSI layer does MAC addressing operate?"
+    options:
+      - "Layer 1 — Physical"
+      - "Layer 2 — Data Link"
+      - "Layer 3 — Network"
+      - "Layer 6 — Presentation"
+    answer: 1
+    explanation: "MAC addresses are a Layer 2 (Data Link) concept. The Data Link layer uses MAC addresses to deliver frames within a single network segment. Switches learn and forward based on MAC addresses. IP addresses at Layer 3 handle inter-network routing."
 
-  - question: "What is the PDU (Protocol Data Unit) at the Data Link layer?"
-    options: ["Packet", "Segment", "Frame", "Bit"]
+  - question: "During encapsulation, a TCP segment is passed from Layer 4 to Layer 3. What does Layer 3 add to create the resulting PDU?"
+    options:
+      - "An Ethernet frame header with source and destination MAC addresses"
+      - "An IP header containing source and destination IP addresses and TTL"
+      - "A TLS encryption envelope"
+      - "An HTTP request header"
+    answer: 1
+    explanation: "Layer 3 (Network) adds the IP header — containing source IP, destination IP, TTL, protocol field, and checksum — to the TCP segment passed down from Layer 4. The result is called an IP packet. Ethernet framing occurs at Layer 2."
+
+  - question: "Which Linux command best allows a student to observe currently established TCP sessions, mapping to OSI Layer 5 session state?"
+    options:
+      - "ip addr show"
+      - "ethtool eth0"
+      - "ss -tn state ESTABLISHED"
+      - "tcpdump -e -i eth0"
     answer: 2
-    explanation: "The PDU at Layer 2 (Data Link) is called a Frame. Packets are Layer 3, Segments are Layer 4, and Bits are Layer 1."
+    explanation: "`ss -tn state ESTABLISHED` displays active TCP sessions, each representing an OSI Layer 5 session. `ip addr show` reveals Layer 3 addresses. `ethtool` inspects Layer 1 physical properties. `tcpdump -e` shows Layer 2 frames."

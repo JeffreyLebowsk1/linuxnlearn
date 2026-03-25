@@ -1,119 +1,573 @@
 title: "Linux Networking Commands"
-order: 2
-summary: "Linux includes powerful built-in tools for network configuration, troubleshooting, and monitoring. These are essential for any network engineer."
+order: 3
+summary: "Covers the modern iproute2 toolkit and essential networking utilities for interface configuration, connectivity testing, DNS resolution, socket inspection, packet capture, and SSH on Linux systems."
+learning_objectives:
+  - "Identify the iproute2 replacements for deprecated net-tools commands and explain why the transition was made."
+  - "Explain the output of ip addr show and ip route show to determine interface configuration and routing state."
+  - "Demonstrate connectivity testing using ping and traceroute, relating ICMP behavior to OSI Layer 3 concepts."
+  - "Analyze ss -tulnp output to identify listening services, their protocols, and owning processes."
+  - "Construct a systematic OSI-layer network troubleshooting workflow from physical layer to application layer."
+builds_on:
+  - "Essential Linux commands from Lesson 1 of this course: command syntax, man pages, grep, and process management"
+  - "FHS and filesystem navigation from Lesson 2 of this course: /etc/resolv.conf, /etc/hosts locations"
+  - "Concurrent: Basic networking concepts from NET 201 -- OSI model layers, IP addressing, subnetting, MAC addresses"
 sections:
-  - heading: "Network Interface Configuration"
+  - heading: "iproute2 vs. Deprecated net-tools"
     content: |
-      ```bash
-      # Modern tools (iproute2)
-      ip addr show                          # Show all interfaces and IPs
-      ip addr show eth0                     # Show specific interface
-      ip link show                          # Show link state
-      ip link set eth0 up                   # Bring interface up
-      ip link set eth0 down                 # Bring interface down
-      ip addr add 192.168.1.100/24 dev eth0 # Add IP address
-      ip route show                         # Show routing table
-      ip route add default via 192.168.1.1  # Add default gateway
+      Linux networking tools fall into two generations: the older **net-tools** suite (written in
+      the 1990s) and the modern **iproute2** suite (maintained by the Linux kernel community,
+      part of the kernel source tree). On most modern distributions (Ubuntu 18.04+, RHEL 7+,
+      Debian 9+), net-tools commands (`ifconfig`, `route`, `netstat`, `arp`) are no longer
+      installed by default and are officially deprecated. System administrators must learn the
+      iproute2 equivalents.
 
-      # Legacy tools (still common)
-      ifconfig                              # Show interfaces
-      ifconfig eth0 192.168.1.100 netmask 255.255.255.0
+      **Why was net-tools deprecated?** The net-tools suite has several limitations. It does not
+      support the full range of modern Linux networking features: policy routing, network
+      namespaces (used extensively by Docker and Kubernetes), MPLS, and newer tunnel types.
+      The internal implementation uses outdated kernel interfaces (`ioctl`-based) while iproute2
+      uses the modern `netlink` socket protocol, which provides richer information and better
+      performance. The iproute2 suite is actively maintained; net-tools has been in maintenance
+      mode for over a decade.
+
+      **Command Mapping Table:**
+
+      | Legacy net-tools          | Modern iproute2 Equivalent | Purpose                           |
+      |---------------------------|----------------------------|-----------------------------------|
+      | `ifconfig`                | `ip addr show`             | Show interface addresses           |
+      | `ifconfig eth0 up`        | `ip link set eth0 up`      | Bring interface up                 |
+      | `ifconfig eth0 192.0.2.1` | `ip addr add 192.0.2.1/24 dev eth0` | Assign IP address        |
+      | `route -n`                | `ip route show`            | Display routing table              |
+      | `route add default gw`    | `ip route add default via` | Add default gateway                |
+      | `netstat -tulnp`          | `ss -tulnp`                | List listening sockets             |
+      | `netstat -an`             | `ss -an`                   | All active connections             |
+      | `arp -n`                  | `ip neigh show`            | ARP/NDP neighbor table             |
+      | `arp -s ip mac`           | `ip neigh add`             | Add static ARP entry               |
+      | `mii-tool`                | `ethtool eth0`             | Ethernet interface diagnostics     |
+
+      On systems where net-tools is still present, you may encounter it in legacy scripts. The
+      `ip` command from iproute2 is now universally available and should be used in all new work.
+      Install iproute2 if missing: `sudo apt install iproute2` or `sudo yum install iproute`.
+
+  - heading: "Interface Configuration with ip addr, ip route, and ip link"
+    content: |
+      The `ip` command is the single entry point for the iproute2 suite. Its syntax is
+      `ip [options] OBJECT COMMAND` where OBJECT is one of `addr`, `link`, `route`, `neigh`,
+      `rule`, `tunnel`, etc. The most important objects for daily administration are `addr`
+      (IP addresses), `link` (network interfaces), and `route` (routing table).
+
+      **`ip addr show` -- Interface Addresses.** Displays all network interfaces and their
+      configured IP addresses. Reading the output:
+
+      ```
+      2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default
+          link/ether 00:11:22:33:44:55 brd ff:ff:ff:ff:ff:ff
+          inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0
+             valid_lft forever preferred_lft forever
+          inet6 fe80::211:22ff:fe33:4455/64 scope link
+             valid_lft forever preferred_lft forever
       ```
 
-  - heading: "Connectivity Testing"
-    content: |
+      - Interface index `2`, name `eth0`
+      - Flags: `UP` (enabled), `LOWER_UP` (physical link detected), `BROADCAST`, `MULTICAST`
+      - `mtu 1500`: Maximum Transmission Unit in bytes (standard Ethernet frame payload)
+      - `link/ether`: Layer 2 MAC address (48-bit hardware address)
+      - `inet`: IPv4 address with CIDR prefix length and broadcast address
+      - `inet6`: IPv6 link-local address (fe80::/10 scope link)
+
+      **`ip route show` -- Routing Table.** Every packet leaving the host is matched against
+      the routing table. The most specific matching route wins.
+
       ```bash
-      # ICMP ping
-      ping 8.8.8.8                          # Ping continuously
-      ping -c 4 192.168.1.1                 # Ping 4 times
-      ping -i 0.2 -c 100 10.0.0.1           # Fast ping with count
-
-      # Traceroute
-      traceroute 8.8.8.8                    # Trace path (UDP)
-      traceroute -T 8.8.8.8                 # TCP traceroute (bypass firewalls)
-      mtr 8.8.8.8                           # Combined ping + traceroute (real-time)
-
-      # DNS lookups
-      nslookup google.com                   # Basic DNS query
-      dig google.com                        # Detailed DNS query
-      dig google.com MX                     # Query MX records
-      dig @8.8.8.8 google.com               # Query specific DNS server
-      host google.com                       # Simple DNS lookup
+      ip route show
+      # Example output:
+      # default via 192.168.1.1 dev eth0 proto dhcp metric 100
+      # 192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.100 metric 100
+      # 10.0.0.0/8 via 10.0.0.1 dev eth1 metric 200
       ```
 
-  - heading: "Port and Connection Scanning"
-    content: |
+      - `default via 192.168.1.1`: default gateway -- all traffic not matching a specific route
+        goes here (corresponds to OSI Layer 3 forwarding decisions)
+      - `192.168.1.0/24 dev eth0`: directly connected network, no gateway needed
+      - `metric`: route preference when multiple routes match (lower metric wins)
+
+      **`ip link` -- Interface State and Parameters.**
+
       ```bash
-      # netstat (legacy)
-      netstat -tuln                         # Show listening ports (TCP/UDP)
-      netstat -an | grep ESTABLISHED        # Active connections
-
-      # ss (modern replacement for netstat)
-      ss -tuln                              # Listening ports
-      ss -tnp                               # TCP connections with process names
-      ss -s                                 # Socket statistics summary
-
-      # Check if a port is open
-      nc -zv 192.168.1.1 22                 # Test SSH port
-      nc -zv 192.168.1.1 80                 # Test HTTP port
-      telnet 192.168.1.1 80                 # Old-school port test
+      ip addr show                         # show all interfaces and IPs
+      ip addr show eth0                    # show one specific interface
+      ip addr add 10.0.0.5/24 dev eth0    # temporarily add IP address
+      ip addr del 10.0.0.5/24 dev eth0    # remove IP address
+      ip route show                        # full routing table
+      ip route get 8.8.8.8                # which route would be used for this destination
+      ip link show                         # all interface names and states
+      ip link set eth0 up                  # bring interface up
+      ip link set eth0 down                # take interface down
+      ip link set eth0 mtu 9000            # set jumbo frames MTU
+      ip -s link show eth0                 # include TX/RX byte and error statistics
       ```
 
-  - heading: "SSH – Remote Access"
+      Note that all `ip addr add` and `ip route add` changes are **temporary** -- they are lost
+      on reboot. For persistent configuration, use `/etc/netplan/*.yaml` (Ubuntu), systemd
+      `.network` files (systemd-networkd), or `/etc/network/interfaces` (older Debian systems).
+
+  - heading: "Connectivity Testing: ping and traceroute"
     content: |
-      ```bash
-      # Basic SSH
-      ssh user@192.168.1.1                  # Connect to remote host
-      ssh -p 2222 user@host.com             # Non-standard port
-      ssh -i ~/.ssh/id_rsa user@host        # Use specific key
+      Connectivity testing is the first step in any network troubleshooting workflow. The tools
+      in this section operate at OSI **Layer 3 (Network)** using the ICMP protocol (RFC 792 for
+      ICMPv4, RFC 4443 for ICMPv6). They allow an administrator to verify reachability, measure
+      round-trip time, detect packet loss, and trace the path packets take through the network.
 
-      # SSH key management
-      ssh-keygen -t ed25519                 # Generate ED25519 key pair (recommended)
-      ssh-copy-id user@192.168.1.1          # Copy public key to remote host
+      **`ping` -- ICMP Echo Test.** `ping` sends ICMP Echo Request packets to a destination and
+      waits for ICMP Echo Reply packets. Each line of output shows the sequence number, TTL
+      field, and round-trip time (RTT). Key output fields:
 
-      # SSH tunneling
-      ssh -L 8080:192.168.1.100:80 user@jumphost    # Local port forward
-      ssh -R 9090:localhost:3000 user@server         # Remote port forward
-      ssh -D 1080 user@proxy                         # SOCKS proxy
-
-      # SCP – Secure copy
-      scp file.txt user@remote:/tmp/               # Copy to remote
-      scp user@remote:/etc/hosts ./               # Copy from remote
-      scp -r ./configs user@remote:/opt/backup/   # Copy directory
+      ```
+      PING 8.8.8.8 (8.8.8.8) 56(84) bytes of data.
+      64 bytes from 8.8.8.8: icmp_seq=1 ttl=117 rtt=12.4 ms
+      64 bytes from 8.8.8.8: icmp_seq=2 ttl=117 rtt=11.9 ms
+      --- 8.8.8.8 ping statistics ---
+      4 packets transmitted, 4 received, 0% packet loss
+      round-trip min/avg/max/mdev = 11.9/12.1/12.4/0.2 ms
       ```
 
-  - heading: "Network Troubleshooting Workflow"
-    content: |
-      When a connection isn't working, follow this systematic approach:
+      - `ttl=117`: Time To Live -- the number of router hops remaining. Starts at 64 or 128
+        on the source; each router decrements by 1. When TTL reaches 0 the packet is dropped
+        and an ICMP Time Exceeded message is sent back. (OSI Layer 3 concept from NET 201)
+      - `0% packet loss`: important metric; any loss indicates network problems
+      - `mdev`: mean deviation of RTT -- a measure of jitter
+
+      Useful `ping` flags: `-c N` (send N packets then stop), `-i N` (interval in seconds),
+      `-s N` (packet size in bytes), `-W N` (timeout in seconds), `-6` (use IPv6/ICMPv6).
+
+      **`traceroute` and `tracepath` -- Hop-by-Hop Path Discovery.** `traceroute` discovers
+      each router on the path to a destination by exploiting the TTL field. It sends probes
+      with TTL=1 (first router responds with ICMP Time Exceeded), then TTL=2 (second router),
+      and so on until the destination responds. Each hop shows its IP address and three RTT
+      measurements. Asterisks `* * *` indicate that the router at that hop does not send ICMP
+      Time Exceeded (filtered by firewall) or the probe timed out.
+
+      `tracepath` is similar but does not require root and additionally discovers the path MTU.
+      By default `traceroute` uses UDP probes; `traceroute -I` uses ICMP; `traceroute -T` uses
+      TCP (useful for testing through firewalls that allow TCP but block UDP/ICMP).
+
+      ```mermaid
+      sequenceDiagram
+        participant C as Client
+        participant R1 as Router 1 (ISP)
+        participant R2 as Router 2 (Backbone)
+        participant R3 as Router 3 (Dest AS)
+        participant D as Destination
+        C->>R1: Probe TTL=1
+        R1->>C: ICMP Time Exceeded (hop 1 IP + RTT)
+        C->>R2: Probe TTL=2
+        R2->>C: ICMP Time Exceeded (hop 2 IP + RTT)
+        C->>R3: Probe TTL=3
+        R3->>C: ICMP Time Exceeded (hop 3 IP + RTT)
+        C->>D: Probe TTL=4
+        D->>C: ICMP Port Unreachable (destination reached!)
+      ```
 
       ```bash
-      # 1. Check local interface
+      ping 8.8.8.8                   # continuous ping to Google DNS
+      ping -c 4 google.com           # send exactly 4 ICMP Echo Requests
+      ping6 ::1                      # ICMPv6 ping to IPv6 loopback
+      traceroute 8.8.8.8             # trace path with UDP probes
+      traceroute -I 8.8.8.8          # trace path with ICMP Echo
+      traceroute -n 8.8.8.8          # skip DNS resolution of hop IPs
+      tracepath 8.8.8.8              # trace path + path MTU discovery
+      mtr 8.8.8.8                    # combined ping+traceroute, live view
+      ```
+
+      If `ping` to an IP succeeds but `ping hostname` fails, the problem is DNS resolution, not
+      network connectivity. This distinction is one of the key diagnostic steps in the OSI
+      troubleshooting methodology covered in the final section of this lesson.
+    interactive: terminal
+
+  - heading: "DNS Resolution Tools"
+    content: |
+      The Domain Name System (DNS, RFC 1034/1035) translates human-readable hostnames
+      (e.g., `www.example.com`) into IP addresses. Linux provides several DNS query tools, each
+      with different levels of detail. Understanding these tools and the related configuration
+      files is essential for diagnosing DNS-related connectivity problems.
+
+      **`/etc/hosts` -- Static Name Resolution.** Before querying DNS, the system checks
+      `/etc/hosts` for a matching entry. The format is `IP hostname [alias...]`. You can add
+      entries to override DNS for testing or to resolve internal hostnames without DNS:
+      `192.168.1.50  app-server app`. The order of name resolution methods is controlled by
+      `/etc/nsswitch.conf` (the `hosts:` line, typically `files dns`).
+
+      **`/etc/resolv.conf` -- DNS Resolver Configuration.** Specifies which DNS servers to
+      query and in what order:
+      ```
+      nameserver 8.8.8.8
+      nameserver 8.8.4.4
+      search example.com corp.local
+      options ndots:5
+      ```
+      `nameserver`: IP of DNS resolver to query (up to 3 listed). `search`: domain suffixes
+      appended for short hostnames. On systemd-based systems, `/etc/resolv.conf` is often a
+      symlink managed by `systemd-resolved`; check with `readlink /etc/resolv.conf`.
+
+      **`nslookup`** -- Basic DNS query tool (part of the bind-utils/dnsutils package). Simple
+      interface for interactive or one-shot lookups: `nslookup google.com` or
+      `nslookup google.com 1.1.1.1` (query specific server). Deprecated in favor of `dig`
+      for scripting but still common in documentation.
+
+      **`dig`** -- Domain Information Groper. The most feature-rich DNS query tool. Output
+      sections:
+
+      ```
+      ; <<>> DiG 9.18 <<>> google.com
+      ;; QUESTION SECTION:
+      ;google.com.           IN  A
+
+      ;; ANSWER SECTION:
+      google.com.    299    IN  A   142.250.80.46
+
+      ;; AUTHORITY SECTION:
+      google.com.    172799 IN  NS  ns1.google.com.
+
+      ;; ADDITIONAL SECTION:
+      ns1.google.com. 172799 IN  A  216.239.32.10
+
+      ;; Query time: 12 msec
+      ;; SERVER: 8.8.8.8#53(8.8.8.8)
+      ```
+
+      - **QUESTION**: what was queried (name, class IN=Internet, type A=IPv4 address)
+      - **ANSWER**: the DNS records returned (TTL in seconds before cache expires)
+      - **AUTHORITY**: the authoritative name servers for this domain
+      - **ADDITIONAL**: A records for the name servers listed in AUTHORITY
+
+      ```bash
+      nslookup google.com             # basic A record lookup
+      nslookup google.com 1.1.1.1     # query Cloudflare DNS specifically
+
+      dig google.com                  # full A record lookup with all sections
+      dig google.com MX               # mail exchanger records
+      dig google.com AAAA             # IPv6 (quad-A) records
+      dig -x 8.8.8.8                  # reverse DNS (PTR record) lookup
+      dig +short google.com           # print only the answer IP addresses
+      dig @1.1.1.1 google.com         # query specific DNS server
+
+      host google.com                 # concise A/MX/AAAA lookup
+      host -t MX gmail.com            # specific record type lookup
+      ```
+
+      **DNS Troubleshooting Sequence:** (1) Check `/etc/resolv.conf` for a valid nameserver.
+      (2) Test direct DNS query: `dig @8.8.8.8 google.com` -- if this works but `dig google.com`
+      fails, your configured nameserver is unreachable. (3) Check if DNS traffic is allowed:
+      `nc -zv 8.8.8.8 53`. (4) On systemd systems: `systemctl status systemd-resolved` and
+      `resolvectl status`.
+
+  - heading: "Socket Statistics with ss"
+    content: |
+      `ss` (Socket Statistics) is the modern replacement for `netstat`, part of the iproute2
+      package. It queries socket information directly from the kernel via netlink, making it
+      faster than `netstat` on systems with many connections. `ss` shows all active TCP, UDP,
+      Unix domain, and ICMP sockets on the system.
+
+      **The Critical `ss -tulnp` Combination.** This is the single most useful `ss` invocation
+      for system administration. Each flag:
+
+      | Flag | Meaning                                                 |
+      |------|---------------------------------------------------------|
+      | `-t` | Show TCP sockets                                        |
+      | `-u` | Show UDP sockets                                        |
+      | `-l` | Show only LISTENING sockets (not established)           |
+      | `-n` | Numeric -- do not resolve IPs or port names to names    |
+      | `-p` | Show the process (PID and name) owning each socket      |
+
+      Example `ss -tulnp` output:
+
+      ```
+      Netid  State   Recv-Q Send-Q  Local Address:Port  Peer Address:Port  Process
+      tcp    LISTEN  0      128     0.0.0.0:22           0.0.0.0:*         users:(("sshd",pid=1234,fd=3))
+      tcp    LISTEN  0      511     0.0.0.0:80           0.0.0.0:*         users:(("nginx",pid=5678,fd=7))
+      tcp    LISTEN  0      511     0.0.0.0:443          0.0.0.0:*         users:(("nginx",pid=5678,fd=8))
+      udp    UNCONN  0      0       0.0.0.0:68           0.0.0.0:*         users:(("dhclient",pid=789,fd=5))
+      ```
+
+      **TCP Socket States.** The `State` column reflects the TCP state machine (RFC 793):
+
+      | State         | Meaning                                                        |
+      |---------------|----------------------------------------------------------------|
+      | `LISTEN`      | Server waiting for incoming connections                         |
+      | `ESTABLISHED` | Active connection -- data transfer in progress                  |
+      | `TIME_WAIT`   | Connection closed locally, waiting 2*MSL for stray packets      |
+      | `CLOSE_WAIT`  | Remote end closed; local application has not yet closed         |
+      | `SYN_SENT`    | Client sent SYN, waiting for SYN-ACK (connection pending)       |
+      | `FIN_WAIT2`   | Local end closed; waiting for remote FIN                        |
+
+      **Comparison: `ss -tulnp` vs. `netstat -tulnp`:**
+
+      | Feature                | ss (iproute2)         | netstat (net-tools)        |
+      |------------------------|-----------------------|----------------------------|
+      | Speed on many sockets  | Fast (netlink kernel) | Slow (reads /proc/net/)    |
+      | Active maintenance     | Yes                   | Deprecated                 |
+      | IPv6 support           | Full                  | Partial                    |
+      | Output format          | Slightly different    | More familiar to old admins|
+      | Installed by default   | Yes (modern distros)  | No (must install manually) |
+
+      ```bash
+      ss -tulnp                    # listening TCP and UDP with process info
+      ss -an                       # all sockets, numeric, no DNS
+      ss -tn state ESTABLISHED     # show only established TCP connections
+      ss -tn dst 192.168.1.100     # connections to a specific remote host
+      ss -tp src :80               # TCP connections on local port 80
+      ss -o state TIME-WAIT        # show TIME_WAIT sockets
+      ss -s                        # summary statistics per protocol
+      ```
+
+  - heading: "Packet Capture with tcpdump and Port Testing with nc"
+    content: |
+      When higher-level tools fail to diagnose a network problem, packet capture provides the
+      ground truth: raw network traffic as seen at the kernel level. **`tcpdump`** is the
+      standard command-line packet capture tool, capturing packets from a network interface and
+      printing or saving them for analysis. **`nc`** (netcat) is the "Swiss Army knife" of
+      networking -- a simple tool for testing TCP/UDP connectivity and doing basic socket
+      operations.
+
+      **`tcpdump` -- Packet Capture.** Requires root or `CAP_NET_RAW` capability.
+
+      | Flag / Filter | Meaning                                              |
+      |---------------|------------------------------------------------------|
+      | `-i eth0`     | Capture on interface eth0 (use `-i any` for all)     |
+      | `-n`          | Do not resolve IPs or port numbers to names          |
+      | `-v` / `-vv`  | Verbose / very verbose output                        |
+      | `port 80`     | Capture only packets with source or destination port 80 |
+      | `host 1.2.3.4`| Capture only packets to/from this IP address         |
+      | `net 10.0.0.0/8` | Capture only packets in this subnet              |
+      | `-w file.pcap`| Write captured packets to a pcap file (for Wireshark)|
+      | `-r file.pcap`| Read and display a previously captured pcap file     |
+      | `-c 100`      | Stop after capturing 100 packets                     |
+
+      **Capture examples:**
+
+      ```bash
+      sudo tcpdump -i eth0 -n port 80           # HTTP traffic, no DNS
+      sudo tcpdump -i eth0 -n host 192.168.1.50 # all traffic to/from this host
+      sudo tcpdump -i eth0 -n "port 80 or port 443"  # HTTP and HTTPS
+      sudo tcpdump -i eth0 -w /var/captures/debug.pcap  # save to file
+      tcpdump -r /var/captures/debug.pcap       # read saved capture
+      sudo tcpdump -i any -n -c 50 port 53      # first 50 DNS packets
+      ```
+
+      **`nc` (netcat) -- Port Testing and Banner Grabbing.** The `-z` flag enables zero-I/O
+      mode (just test if the port is open), and `-v` gives verbose output. This is the fastest
+      way to verify that a service is accepting connections on a specific port:
+
+      ```bash
+      nc -zv 192.168.1.10 22         # test if SSH port 22 is open
+      nc -zv 10.0.0.1 80             # test HTTP connectivity
+      nc -zv -u 10.0.0.1 53          # test UDP port 53 (DNS)
+      nc 192.168.1.10 80             # connect and type HTTP manually
+      nc -l 8080                     # listen on port 8080 (simple server)
+      echo "GET / HTTP/1.0" | nc 192.168.1.10 80  # grab HTTP banner
+      ```
+
+      **When to Use Each Tool:**
+      - `ping`: Layer 3 reachability (is the host alive?)
+      - `nc -zv host port`: Layer 4 reachability (is the specific port open?)
+      - `ss -tulnp`: Local socket inspection (what is listening locally?)
+      - `tcpdump`: Packet-level investigation (what is actually being sent/received?)
+      - `dig`: Application-layer DNS testing (is name resolution working?)
+
+  - heading: "Secure Shell (SSH)"
+    content: |
+      **SSH (Secure Shell)** is the standard protocol for remote encrypted login and file
+      transfer on Linux systems. Defined in RFC 4251-4254, SSH replaces the insecure `telnet`,
+      `rsh`, and `rlogin` commands by providing encryption, host authentication, and user
+      authentication over an untrusted network. For Linux system administrators, SSH proficiency
+      is non-negotiable.
+
+      **Basic SSH Connection.** `ssh username@hostname` connects to a remote host on the
+      default port 22. The first connection shows the host's public key fingerprint; you must
+      verify and accept it (the fingerprint is stored in `~/.ssh/known_hosts` to prevent
+      future man-in-the-middle attacks):
+
+      ```bash
+      ssh alice@192.168.1.50            # connect as user alice
+      ssh -p 2222 alice@server.com      # connect on non-standard port
+      ssh -i ~/.ssh/mykey alice@host    # use specific private key
+      ssh -v alice@host                 # verbose: debug connection problems
+      ssh -X alice@host                 # enable X11 forwarding (GUI apps)
+      ```
+
+      **Key-Based Authentication (Recommended over passwords).** Generate an Ed25519 key pair
+      (Ed25519 is preferred over RSA per current NIST and security community guidance):
+
+      ```bash
+      ssh-keygen -t ed25519 -C "admin@company.com"
+      # Generates: ~/.ssh/id_ed25519 (private) and ~/.ssh/id_ed25519.pub (public)
+
+      # Copy public key to remote server's authorized_keys
+      ssh-copy-id alice@server.com
+      # Equivalent manual step: cat ~/.ssh/id_ed25519.pub | ssh alice@server "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+
+      # Set correct permissions (SSH refuses keys with wrong permissions)
+      chmod 700 ~/.ssh
+      chmod 600 ~/.ssh/id_ed25519
+      chmod 644 ~/.ssh/id_ed25519.pub
+      ```
+
+      **`~/.ssh/config` -- SSH Client Configuration File.** Define connection shortcuts for
+      frequently accessed hosts, avoiding long command lines:
+
+      ```
+      Host prod-web
+          HostName 203.0.113.10
+          User deploy
+          Port 2222
+          IdentityFile ~/.ssh/prod_ed25519
+
+      Host jump
+          HostName bastion.company.com
+          User ops
+          ForwardAgent yes
+      ```
+
+      With this config, `ssh prod-web` uses all configured parameters automatically.
+
+      **Port Forwarding.** SSH can tunnel TCP traffic securely:
+
+      ```bash
+      # Local port forwarding: access remote DB on local port 5433
+      ssh -L 5433:db-server:5432 alice@bastion.company.com
+
+      # Remote port forwarding: expose local port 8080 on remote server
+      ssh -R 9090:localhost:8080 alice@server.com
+
+      # SOCKS proxy (dynamic forwarding): route browser traffic through SSH
+      ssh -D 1080 alice@server.com
+      ```
+
+      **`/etc/ssh/sshd_config` -- Server Configuration.** Critical security settings:
+      `PermitRootLogin no` (disable direct root login), `PasswordAuthentication no` (require
+      key-based auth), `AllowUsers alice bob` (restrict which users can log in), `Port 2222`
+      (non-standard port reduces log noise from automated scanners). After editing, reload
+      with `sudo systemctl reload sshd` -- never restart sshd while connected over SSH without
+      testing the new config first in a separate session.
+
+  - heading: "Network Troubleshooting Methodology"
+    content: |
+      Effective network troubleshooting follows the **OSI model** layer by layer, starting from
+      the physical layer and working up to the application layer. This systematic approach
+      prevents the common mistake of jumping directly to complex software diagnoses when the
+      problem is actually a disconnected cable or a misconfigured IP address.
+
+      The OSI model (IEEE 802, ISO/IEC 7498) defines seven layers. For practical Linux
+      troubleshooting, we focus on Layers 1-4 and Layer 7, as these cover the vast majority
+      of real-world problems:
+
+      | OSI Layer | Name         | Linux Tool(s)                          |
+      |-----------|--------------|----------------------------------------|
+      | 1         | Physical     | `ip link show`, `ethtool`, check cables |
+      | 2         | Data Link    | `ip link show`, `ip neigh` (ARP table) |
+      | 3         | Network      | `ip addr`, `ip route`, `ping`          |
+      | 4         | Transport    | `ss -tulnp`, `nc -zv`, `traceroute`    |
+      | 7         | Application  | `curl`, `dig`, service-specific logs   |
+
+      **Step-by-Step Troubleshooting Workflow:**
+
+      ```mermaid
+      flowchart TD
+        START([Cannot reach destination]) --> L1
+        L1{"Layer 1: Is interface UP?\nip link show eth0"}
+        L1 -- No, flags show DOWN --> FIX1["ip link set eth0 up\nCheck physical cable"]
+        L1 -- Yes, UP and LOWER_UP --> L2
+        L2{"Layer 2: ARP working?\nip neigh show"}
+        L2 -- No neighbor entry --> FIX2["Check same subnet?\narping -I eth0 gateway"]
+        L2 -- Yes, gateway in ARP table --> L3
+        L3{"Layer 3: IP configured?\nip addr show"}
+        L3 -- No IP address --> FIX3["sudo dhclient eth0\nor set static IP manually"]
+        L3 -- IP assigned --> L3B{"Ping default gateway?\nping -c2 gateway_ip"}
+        L3B -- 100% packet loss --> FIX3B["Check ip route show\nVerify gateway is correct"]
+        L3B -- Gateway responds --> L4{"Ping public IP?\nping -c2 8.8.8.8"}
+        L4 -- No response --> FIX4["Check iptables/nftables rules\nISP connectivity issue?"]
+        L4 -- Responds --> L5{"DNS resolves?\ndig +short google.com"}
+        L5 -- No answer --> FIX5["Check /etc/resolv.conf\ndig @8.8.8.8 google.com"]
+        L5 -- Resolves OK --> L7{"Service port open?\nss -tulnp or nc -zv"}
+        L7 -- Port not open --> FIX7["Start service\nCheck firewall rules"]
+        L7 -- Port open --> DONE([Check application logs\nand service config])
+      ```
+
+      **Practical Troubleshooting Examples:**
+
+      ```bash
+      # Step 1: Is the interface up and does it have a carrier?
+      ip link show eth0
+
+      # Step 2: Is an IP address configured?
       ip addr show eth0
 
-      # 2. Check local gateway reachability
-      ping -c 2 $(ip route | grep default | awk '{print $3}')
+      # Step 3: Can we reach the default gateway?
+      ip route show
+      ping -c 3 192.168.1.1
 
-      # 3. Check DNS resolution
-      dig google.com +short
+      # Step 4: Can we reach a known external IP (bypasses DNS)?
+      ping -c 3 8.8.8.8
 
-      # 4. Check internet connectivity
-      ping -c 2 8.8.8.8
+      # Step 5: Does DNS resolution work?
+      dig +short google.com
+      cat /etc/resolv.conf
 
-      # 5. Trace the path
-      traceroute 8.8.8.8
+      # Step 6: Is the specific service port open on the target?
+      nc -zv webserver.example.com 443
 
-      # 6. Check local firewall
-      iptables -L -n
-      ufw status
+      # Step 7: Capture actual traffic to see what is happening
+      sudo tcpdump -i eth0 -n host webserver.example.com
       ```
 
-quiz:
-  - question: "Which modern command replaces 'ifconfig' for showing network interfaces on Linux?"
-    options: ["networkctl", "ip addr show", "netstat -i", "route -n"]
-    answer: 1
-    explanation: "'ip addr show' is part of the iproute2 package and is the modern replacement for ifconfig."
+      **Common Problems at Each Layer:**
 
-  - question: "Which command would you use to show all listening TCP/UDP ports on a Linux system?"
-    options: ["netstat -an", "ss -tuln", "iptables -L", "route -n"]
+      - **Layer 1/2**: Wrong cable, wrong switch port, `ip link` shows no-carrier, VLAN
+        misconfiguration, MAC address conflict
+      - **Layer 3**: Wrong subnet mask (CIDR), missing or wrong default gateway, IP address
+        conflict (`arping` detects this), routing table errors
+      - **Layer 4**: Service not started, service bound to wrong interface (127.0.0.1 instead
+        of 0.0.0.0), firewall blocking the port (`iptables -L` or `nft list ruleset`)
+      - **Layer 7**: TLS certificate errors, application misconfiguration, authentication
+        failures -- visible in `/var/log/` files and `journalctl -u servicename`
+
+      This methodology is consistent with the CompTIA Network+ troubleshooting model and the
+      approach described in *TCP/IP Illustrated* (Stevens, Vol. 1). Always document each step
+      and its result; this creates a diagnostic trail that helps both immediate resolution and
+      post-incident review.
+
+quiz:
+  - question: "Which iproute2 command is the modern replacement for the deprecated ifconfig utility?"
+    options:
+      - "A) ip route show"
+      - "B) ip addr show"
+      - "C) ss -tulnp"
+      - "D) ip neigh show"
     answer: 1
-    explanation: "'ss -tuln' shows all listening (-l) TCP (-t) and UDP (-u) sockets with port numbers (-n)."
+    explanation: "ip addr show (from the iproute2 suite) replaces ifconfig for displaying interface IP addresses and configuration. ip route show replaces the route command, ss replaces netstat, and ip neigh show replaces arp -n. The iproute2 suite uses the modern netlink kernel interface and is actively maintained."
+
+  - question: "In ss -tulnp output, what does the LISTEN state indicate?"
+    options:
+      - "A) The socket is actively transferring data to a remote host"
+      - "B) The connection is half-closed, waiting for the remote end to close"
+      - "C) The server is bound to a port and waiting to accept incoming connections"
+      - "D) The connection is in the process of being established (SYN sent)"
+    answer: 2
+    explanation: "LISTEN means the socket is bound to a local address and port, and the server application is waiting to accept() incoming connection requests. ESTABLISHED indicates an active data connection, TIME_WAIT is a connection closing state, and SYN_SENT indicates a connection attempt in progress."
+
+  - question: "Which protocol does the ping command use, and at which OSI layer does it operate?"
+    options:
+      - "A) TCP at OSI Layer 4 (Transport)"
+      - "B) UDP at OSI Layer 4 (Transport)"
+      - "C) ICMP at OSI Layer 3 (Network)"
+      - "D) ARP at OSI Layer 2 (Data Link)"
+    answer: 2
+    explanation: "ping uses ICMP (Internet Control Message Protocol, RFC 792), specifically ICMP Echo Request and Echo Reply messages. ICMP operates at OSI Layer 3 (Network layer), alongside IP. It does not use TCP or UDP port numbers. ICMPv6 (RFC 4443) provides the same function for IPv6 networks."
+
+  - question: "Which configuration file specifies the DNS nameserver addresses used by the Linux resolver library?"
+    options:
+      - "A) /etc/hosts"
+      - "B) /etc/nsswitch.conf"
+      - "C) /etc/resolv.conf"
+      - "D) /etc/network/interfaces"
+    answer: 2
+    explanation: "/etc/resolv.conf specifies the nameserver IP addresses (up to 3), the search domain list, and resolver options. /etc/hosts provides static name-to-IP mappings (checked before DNS). /etc/nsswitch.conf controls the order of resolution methods (files vs. dns). /etc/network/interfaces configures network interfaces on older Debian systems."

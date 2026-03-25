@@ -1,98 +1,293 @@
-title: "TCP/IP and IP Addressing"
+title: "TCP/IP and IPv4 Addressing"
 order: 2
-summary: "TCP/IP is the foundational protocol suite of the internet. Understanding IP addressing is essential for any networking professional."
+summary: "A thorough study of the TCP/IP protocol suite covering IPv4 addressing, TCP and UDP transport, the three-way handshake, port numbers, NAT, and an introduction to IPv6."
+learning_objectives:
+  - "Identify the structure of a 32-bit IPv4 address and convert between dotted-decimal and binary notation."
+  - "Explain the TCP three-way handshake and four-step connection teardown using RFC 793 terminology."
+  - "Demonstrate live TCP and UDP socket inspection using ss, tcpdump, and ip addr on Linux."
+  - "Analyze the differences between TCP and UDP and justify protocol selection for given applications."
+  - "Apply knowledge of RFC 1918 private address ranges, NAT/PAT, and port numbering to real network designs."
+builds_on:
+  - "OSI model layers (Lesson 1 of this course — especially Layer 3 and Layer 4)"
+  - "Linux ip addr and ss commands (SYS 202)"
 sections:
-  - heading: "What is TCP/IP?"
+  - heading: "Historical Context: RFC 791, RFC 793, RFC 768"
     content: |
-      **TCP/IP** (Transmission Control Protocol/Internet Protocol) is the communication protocol suite that powers the internet and most modern networks. While the OSI model has 7 layers, TCP/IP uses a simplified **4-layer model**:
+      ## Historical Context: RFC 791, RFC 793, RFC 768
 
-      | TCP/IP Layer | OSI Equivalent | Examples |
-      |---|---|---|
-      | Application | Layers 5-7 | HTTP, DNS, FTP |
-      | Transport | Layer 4 | TCP, UDP |
-      | Internet | Layer 3 | IP, ICMP |
-      | Network Access | Layers 1-2 | Ethernet, Wi-Fi |
+      The protocols that form the backbone of the modern Internet were designed and published in a
+      remarkably short window in the early 1980s. **RFC 768** (UDP, August 1980, Jon Postel) is
+      just 3 pages long — a testament to the protocol's minimalist philosophy. **RFC 791** (IPv4,
+      September 1981, Jon Postel) and **RFC 793** (TCP, September 1981, Vint Cerf and colleagues)
+      were published simultaneously, defining the two halves of the transport/network stack that
+      still carry the vast majority of Internet traffic today, over four decades later. The
+      longevity of these protocols is remarkable: a TCP segment from 1983 remains valid and
+      parseable by a 2024 Linux kernel. Understanding these RFCs is not merely academic — they
+      are the authoritative specification for every implementation, and Tanenbaum (*Computer
+      Networks*, 6th ed., §6.3 and §6.5) devotes entire chapters to their mechanisms.
 
-  - heading: "IPv4 Addresses"
+      The design philosophy was deliberately simple: the network (IP) provides **best-effort**,
+      **unreliable**, **connectionless** packet delivery. Reliability, ordering, and flow control
+      are pushed up to the Transport layer (TCP) in a principle now called the **end-to-end
+      argument** (Saltzer, Reed & Clark, 1984). UDP embraces this philosophy fully — it adds
+      almost nothing to IP, just source/destination ports and a length/checksum. TCP, by contrast,
+      layers a complete reliability mechanism on top of IP's best-effort service. Both choices
+      have proven correct: TCP is ideal for data integrity (HTTP, SSH, email) while UDP is ideal
+      for latency-sensitive applications (DNS, VoIP, video streaming, online gaming).
+
+      Lammle (*Network+ Study Guide*, 4th ed., Chapter 3) frames the TCP/IP protocol suite as a
+      four-layer model: Application, Transport, Internet (Network), and Network Access. This
+      aligns with the original DARPA model that predates the OSI model. Production network
+      engineers use both models interchangeably: TCP/IP for understanding actual protocol
+      behaviour, OSI for structured troubleshooting methodology. When you run `ss -tulnp` and see
+      `tcp LISTEN 0 128 0.0.0.0:22` you are observing RFC 793 TCP in action — the kernel is
+      maintaining a listen socket per the three-way handshake state machine defined in that RFC.
+
+      The Internet Assigned Numbers Authority (IANA) maintains the authoritative registry of
+      protocol numbers, port assignments, and address blocks that build on these foundational
+      RFCs. When RFC 791 assigned protocol number 6 to TCP and protocol number 17 to UDP (in the
+      IP header's Protocol field), those assignments remain unchanged today and are visible in
+      `/etc/protocols` on every Linux system. Run `cat /etc/protocols | grep -E 'tcp|udp'` to see
+      the current kernel mapping.
+
+  - heading: "IPv4 Address Structure and Address Classes"
     content: |
-      An **IPv4 address** is a 32-bit number written in dotted decimal notation:
+      ## IPv4 Address Structure and Address Classes
 
-      ```
-      192.168.1.100
-      ```
+      An IPv4 address is a **32-bit unsigned integer**, conventionally written as four
+      **octets** (8-bit groups) in dotted-decimal notation. The address `192.168.1.100` represents
+      the binary value `11000000.10101000.00000001.01100100`. Each octet ranges from 0 to 255.
+      The **CIDR prefix length** (e.g., `/24`) specifies how many leading bits constitute the
+      **network portion**; the remaining bits form the **host portion**. So `192.168.1.100/24`
+      means the network is `192.168.1.0` and the host identifier within that network is `100`.
+      This notation was standardised by RFC 4632 (CIDR), superseding the older classful system.
 
-      Each section (octet) is 8 bits, ranging from 0–255.
+      The historical **classful** address system (predating CIDR, relevant for certification exams
+      and legacy understanding) divided the IPv4 space into fixed classes based on the leading
+      bits of the first octet. **Class A** (first bit 0): first octet 1–126, default mask /8,
+      supports ~16.7 million hosts per network. **Class B** (first two bits 10): first octet
+      128–191, default mask /16, supports ~65,534 hosts. **Class C** (first three bits 110): first
+      octet 192–223, default mask /24, supports 254 hosts. Classful routing was abandoned in 1993
+      with the introduction of CIDR (Classless Inter-Domain Routing) because it wasted enormous
+      amounts of address space — a Class A allocation to a company needing 1,000 hosts wastes over
+      16 million addresses.
 
-      **Classes of IPv4 addresses:**
-      | Class | Range | Default Mask | Use |
-      |---|---|---|---|
-      | A | 1.0.0.0 – 126.x.x.x | /8 | Large networks |
-      | B | 128.0.0.0 – 191.255.x.x | /16 | Medium networks |
-      | C | 192.0.0.0 – 223.255.255.x | /24 | Small networks |
+      **RFC 1918** (Address Allocation for Private Internets, February 1996) reserved three
+      address blocks for use in private networks that will not be directly routed on the public
+      Internet. Every network engineer must memorise these ranges: **10.0.0.0/8** (Class A
+      private, ~16.7M addresses), **172.16.0.0/12** (Class B private range, 172.16.0.0 –
+      172.31.255.255, ~1M addresses), and **192.168.0.0/16** (Class C private, ~65,534 addresses).
+      Additional special ranges include the **loopback** range **127.0.0.0/8** (127.0.0.1 is the
+      standard loopback address, used to test the local TCP/IP stack), and **169.254.0.0/16**
+      (APIPA — Automatic Private IP Addressing), assigned by a host when DHCP fails. The
+      **0.0.0.0/0** default route and **255.255.255.255** limited broadcast address are also
+      reserved. Run `ip addr show` on any Linux host; you will almost certainly see a 192.168.x.x
+      or 10.x.x.x address — RFC 1918 at work.
 
-  - heading: "Private vs Public IP Ranges"
+      **Linux observation:** Run `ip addr show` to view all assigned IPv4 (and IPv6) addresses with
+      their prefix lengths. Run `ip route show` to see the routing table, including the default
+      route (`default via <gateway>`). Run `cat /proc/net/fib_trie | head -40` for a low-level
+      view of the kernel's forwarding information base. Use `ipcalc 192.168.1.100/24` (install
+      with `apt install ipcalc`) to compute network address, broadcast, first/last host, and
+      number of hosts automatically.
+
+  - heading: "TCP: Three-Way Handshake, Header, and Teardown"
     content: |
-      **Private IP addresses** are used inside local networks and are not routable on the internet:
+      ## TCP: Three-Way Handshake, Header, and Teardown
 
-      | Range | CIDR | Common Use |
-      |---|---|---|
-      | 10.0.0.0 – 10.255.255.255 | 10.0.0.0/8 | Large enterprises |
-      | 172.16.0.0 – 172.31.255.255 | 172.16.0.0/12 | Medium networks |
-      | 192.168.0.0 – 192.168.255.255 | 192.168.0.0/16 | Home/small office |
+      TCP (RFC 793) is a **connection-oriented**, **reliable**, **ordered**, **full-duplex**
+      transport protocol. Before any application data is exchanged, TCP establishes a connection
+      through the **three-way handshake**. The client initiates by sending a **SYN** segment
+      (SYNchronise sequence numbers) with a randomly chosen **Initial Sequence Number (ISN)**, for
+      example ISN=1000. The server responds with a **SYN-ACK** segment, acknowledging the
+      client's ISN (ACK=1001, meaning "I received up to 1000, next send me 1001") and announcing
+      its own ISN (for example ISN=5000). Finally, the client sends an **ACK** acknowledging the
+      server's ISN (ACK=5001). After this three-step exchange, both sides have synchronised
+      sequence numbers and the connection is ESTABLISHED. TCP's connection teardown uses a
+      four-step **FIN** exchange, as each direction of data flow is closed independently.
 
-      **NAT (Network Address Translation)** translates private IPs to public IPs for internet access.
+      ```mermaid
+      sequenceDiagram
+          participant C as Client (192.168.1.5:49200)
+          participant S as Server (93.184.216.34:80)
 
-  - heading: "Subnet Masks"
+          Note over C,S: Connection Establishment (Three-Way Handshake)
+          C->>S: SYN  seq=1000, ack=0, SYN=1
+          S->>C: SYN-ACK  seq=5000, ack=1001, SYN=1 ACK=1
+          C->>S: ACK  seq=1001, ack=5001, ACK=1
+          Note over C,S: Connection ESTABLISHED — data transfer begins
+
+          C->>S: HTTP GET /  seq=1001, len=80
+          S->>C: ACK  ack=1081
+          S->>C: HTTP 200 OK  seq=5001, len=1400
+          C->>S: ACK  ack=6401
+
+          Note over C,S: Connection Teardown (Four-Way FIN)
+          C->>S: FIN  seq=1081, FIN=1
+          S->>C: ACK  ack=1082
+          S->>C: FIN  seq=6401, FIN=1
+          C->>S: ACK  ack=6402
+          Note over C,S: Connection CLOSED (Client enters TIME_WAIT 2×MSL)
+      ```
+
+      The **TCP segment header** carries all the control information needed for reliable delivery.
+      The minimum header size is 20 bytes (no options). Key fields defined in RFC 793:
+
+      ```mermaid
+      block-beta
+          columns 4
+          A["Source Port (16 bits)"]:2
+          B["Destination Port (16 bits)"]:2
+          C["Sequence Number (32 bits)"]:4
+          D["Acknowledgement Number (32 bits)"]:4
+          E["Data Offset (4b)"]:1
+          F["Reserved (3b)"]:1
+          G["Control Flags: URG ACK PSH RST SYN FIN (6b)"]:1
+          H["Window Size (16 bits)"]:1
+          I["Checksum (16 bits)"]:2
+          J["Urgent Pointer (16 bits)"]:2
+          K["Options (0–40 bytes, variable)"]:4
+          L["Data / Payload"]:4
+      ```
+
+      Key flag meanings: **SYN** initiates connection; **ACK** acknowledges received data;
+      **FIN** initiates graceful close; **RST** abruptly resets a connection (used when a port
+      is closed or a connection is stale); **PSH** tells the receiver to push data to the
+      application immediately without buffering. The **Window Size** field implements
+      **flow control** — the receiver advertises how many bytes it can accept before the sender
+      must pause, preventing buffer overflow. **Linux observation:** Capture the three-way
+      handshake with `tcpdump -i eth0 -n 'tcp[tcpflags] & (tcp-syn|tcp-ack) != 0'`. Watch
+      connection states with `watch -n1 'ss -tn'`.
+
+  - heading: "UDP, Port Numbers, and Protocol Comparison"
     content: |
-      A **subnet mask** defines the network and host portions of an IP address.
+      ## UDP, Port Numbers, and Protocol Comparison
 
-      ```
-      IP Address:   192.168.1.100   = 11000000.10101000.00000001.01100100
-      Subnet Mask:  255.255.255.0   = 11111111.11111111.11111111.00000000
-      Network:      192.168.1.0
-      Host Range:   192.168.1.1 – 192.168.1.254
-      Broadcast:    192.168.1.255
-      ```
+      **UDP (RFC 768)** provides a minimal transport service: it takes an application message,
+      prepends an 8-byte header (source port, destination port, length, checksum), and passes it
+      to IP for delivery. There is no handshake, no acknowledgement, no retransmission, no
+      ordering guarantee. The application must handle reliability itself if required. This
+      simplicity makes UDP ideal for applications where **latency matters more than perfect
+      delivery**: DNS queries (a lost query is simply retried by the resolver), VoIP (a lost
+      voice packet is better skipped than retransmitted late), video streaming (buffered), and
+      online gaming. DNS uses UDP port 53 for queries but falls back to TCP for responses over
+      512 bytes (EDNS0 extends this). DHCP uses UDP (ports 67/68). NTP uses UDP port 123.
 
-      In CIDR notation, `255.255.255.0` is written as `/24` (24 bits for the network).
+      | Feature               | TCP (RFC 793)               | UDP (RFC 768)              |
+      |-----------------------|-----------------------------|----------------------------|
+      | Connection model      | Connection-oriented         | Connectionless             |
+      | Reliability           | Guaranteed (retransmit)     | Best-effort (none)         |
+      | Ordering              | Ordered delivery            | No ordering guarantee      |
+      | Flow control          | Yes (window size)           | No                         |
+      | Congestion control    | Yes (AIMD, CUBIC, BBR)      | No                         |
+      | Header size           | 20 bytes minimum            | 8 bytes                    |
+      | Handshake             | 3-way (SYN/SYN-ACK/ACK)     | None                       |
+      | Use cases             | HTTP, SSH, SMTP, FTP        | DNS, VoIP, DHCP, NTP, QUIC |
+      | PDU name              | Segment                     | Datagram                   |
 
-  - heading: "Common Subnet Masks"
+      **Port numbers** are 16-bit unsigned integers (range 0–65535) that demultiplex traffic to
+      the correct application process. IANA divides them into three ranges: **Well-Known Ports**
+      (0–1023) are reserved for privileged system services and require root to bind on Linux;
+      **Registered Ports** (1024–49151) are assigned to specific applications by IANA but do not
+      require root; **Ephemeral Ports** (49152–65535) are dynamically assigned by the OS to
+      client sockets for each outgoing connection.
+
+      | Port | Protocol | Service                         |
+      |------|----------|---------------------------------|
+      | 20   | TCP      | FTP Data                        |
+      | 21   | TCP      | FTP Control                     |
+      | 22   | TCP      | SSH                             |
+      | 23   | TCP      | Telnet (insecure, avoid)        |
+      | 25   | TCP      | SMTP (email sending)            |
+      | 53   | UDP/TCP  | DNS                             |
+      | 67/68| UDP      | DHCP (server/client)            |
+      | 80   | TCP      | HTTP                            |
+      | 110  | TCP      | POP3                            |
+      | 143  | TCP      | IMAP                            |
+      | 443  | TCP      | HTTPS (HTTP over TLS)           |
+      | 3389 | TCP      | RDP (Windows Remote Desktop)    |
+      | 8080 | TCP      | HTTP alternate / proxies        |
+
+      **Linux observation:** Run `ss -tulnp` to list all listening sockets. The output columns
+      show protocol, recv-Q, send-Q, local address:port, peer address:port, and process. Run
+      `cat /etc/services | head -30` to see IANA port-to-service mappings as stored by the OS.
+      To filter only TCP connections to port 443: `ss -tn dst :443`.
+
+  - heading: "NAT, PAT, and IPv6 Introduction"
     content: |
-      | CIDR | Subnet Mask | # of Hosts |
-      |---|---|---|
-      | /8 | 255.0.0.0 | 16,777,214 |
-      | /16 | 255.255.0.0 | 65,534 |
-      | /24 | 255.255.255.0 | 254 |
-      | /25 | 255.255.255.128 | 126 |
-      | /26 | 255.255.255.192 | 62 |
-      | /27 | 255.255.255.224 | 30 |
-      | /28 | 255.255.255.240 | 14 |
-      | /30 | 255.255.255.252 | 2 |
+      ## NAT, PAT, and IPv6 Introduction
 
-      > **/30 subnets** are commonly used for point-to-point links between routers.
+      **Network Address Translation (NAT)** is the mechanism that allows private RFC 1918
+      addresses to communicate with the public Internet. Because RFC 1918 addresses are
+      non-routable on the Internet (ISPs drop packets sourced from 10.x.x.x or 192.168.x.x),
+      a border router or firewall must translate them to a public IP address before forwarding.
+      **Port Address Translation (PAT)**, also called **NAT Overload** or **NAPT**, extends
+      basic NAT by using the TCP/UDP port number to multiplex many private hosts onto a single
+      public IP address. The NAT device maintains a **translation table**: when `192.168.1.5:49200`
+      sends a packet to `8.8.8.8:53`, the router rewrites the source to `203.0.113.1:32001`
+      (the public IP + a unique port) and records the mapping. The reverse translation is applied
+      to the DNS response. This is why your entire home network can share a single public IP.
 
-  - heading: "IPv6 Basics"
-    content: |
-      **IPv6** uses 128-bit addresses, providing a virtually unlimited address space.
+      NAT was conceived as a temporary workaround for IPv4 exhaustion, but it became deeply
+      embedded in network design. It provides a degree of **implicit security** (hosts behind NAT
+      are not directly reachable from the Internet unless a port-forward rule exists), though
+      security professionals note this is not a substitute for a proper stateful firewall.
+      NAT complicates protocols that embed IP addresses in their payload (FTP active mode,
+      SIP/VoIP) and breaks the Internet's original end-to-end transparency principle. These
+      limitations are among the key motivations for IPv6 adoption.
 
-      ```
-      IPv6 Example: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
-      Shortened:    2001:db8:85a3::8a2e:370:7334
-      ```
+      **IPv6** (RFC 2460, superseded by RFC 8200) was developed to address IPv4 exhaustion.
+      An IPv6 address is **128 bits** wide, written as eight groups of four hexadecimal digits
+      separated by colons: `2001:0db8:85a3:0000:0000:8a2e:0370:7334`. Two abbreviation rules
+      apply: leading zeros within a group may be omitted (`0db8` → `db8`), and one contiguous
+      run of all-zero groups may be replaced with `::` (`0000:0000` → `::`), but only once per
+      address. The loopback address is `::1` (equivalent to IPv4's `127.0.0.1`). Link-local
+      addresses (`fe80::/10`) are automatically configured on every interface and are used for
+      neighbour discovery (NDP, replacing ARP). The total IPv6 space is 2^128 ≈ 3.4×10^38
+      addresses — enough to assign millions of addresses to every atom on Earth's surface.
 
-      Key differences from IPv4:
-      - No broadcast (uses multicast instead)
-      - Built-in IPsec support
-      - Link-local address: `fe80::/10`
-      - Loopback: `::1`
+      Key IPv6 differences from IPv4 include: no broadcast (replaced by multicast), no header
+      checksum (removed for efficiency — handled by upper layers), fixed 40-byte base header
+      (versus IPv4's variable-length header), built-in IPsec support, and Stateless Address
+      Autoconfiguration (SLAAC, RFC 4862) that eliminates the need for DHCP in many deployments.
+      **Linux observation:** Run `ip -6 addr show` to see IPv6 addresses. Run
+      `ping6 ::1` to test the IPv6 loopback. Run `ip -6 route show` for the IPv6 routing table.
+      Use `tcpdump -i eth0 ip6` to capture IPv6 traffic. Most modern Linux systems have IPv6
+      enabled by default; check with `sysctl net.ipv6.conf.all.disable_ipv6`.
 
 quiz:
-  - question: "What is the default subnet mask for a Class C network?"
-    options: ["255.0.0.0", "255.255.0.0", "255.255.255.0", "255.255.255.255"]
-    answer: 2
-    explanation: "Class C networks use a /24 mask (255.255.255.0), which allows for 254 usable hosts."
+  - question: "A host is assigned the address 172.20.5.10/16. According to RFC 1918, is this a private address, and to which RFC 1918 block does it belong?"
+    options:
+      - "Public address — 172.20.0.0 is not in RFC 1918"
+      - "Private — 172.16.0.0/12 block (covers 172.16.0.0 – 172.31.255.255)"
+      - "Private — 10.0.0.0/8 block"
+      - "Private — 192.168.0.0/16 block"
+    answer: 1
+    explanation: "RFC 1918 reserves 172.16.0.0/12, which covers 172.16.0.0 through 172.31.255.255. Since 172.20.5.10 falls within this range, it is a private address from the /12 block. The /16 mask shown is the subnet mask applied within the organisation, not the RFC 1918 block boundary."
 
-  - question: "Which IP range is reserved for private use in home networks?"
-    options: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16"]
+  - question: "During a TCP three-way handshake, the client sends SYN with seq=2000. What are the correct seq and ack numbers in the server's SYN-ACK response?"
+    options:
+      - "seq=2001, ack=2000"
+      - "seq=0, ack=2001"
+      - "seq=<server_ISN>, ack=2001"
+      - "seq=2000, ack=2001"
     answer: 2
-    explanation: "192.168.0.0/16 is the private range most commonly used in home and small office networks."
+    explanation: "The server generates its own random Initial Sequence Number (ISN) for the seq field. The ack field is the client's ISN + 1 = 2001, meaning 'I received byte 2000, send me 2001 next.' This is defined in RFC 793 Section 3.4."
+
+  - question: "Which Linux command shows all listening TCP and UDP sockets along with the process that owns them?"
+    options:
+      - "ip addr show"
+      - "tcpdump -i eth0 -n"
+      - "ss -tulnp"
+      - "netstat -rn"
+    answer: 2
+    explanation: "`ss -tulnp` displays TCP (-t) and UDP (-u) listening (-l) sockets with numeric addresses (-n) and the owning process (-p). `ip addr show` shows Layer 3 addresses. `tcpdump` captures live traffic. `netstat -rn` shows the routing table."
+
+  - question: "A home router uses PAT (Port Address Translation) to allow 50 internal devices to share one public IP. Which fields in the outgoing packet does PAT modify?"
+    options:
+      - "Destination IP address and destination port only"
+      - "Source IP address and source port number"
+      - "TTL field and IP checksum only"
+      - "MAC addresses and IP addresses"
+    answer: 1
+    explanation: "PAT rewrites the source IP address (from private RFC 1918 to the public IP) and the source port number (to a unique port that identifies the internal host in the NAT translation table). The destination IP and port are left unchanged. This allows the router to demultiplex returning traffic to the correct internal host."

@@ -14,10 +14,11 @@
             </a>
             <div class="nav-links">
                 <a href="{{ url_for('index') }}">Home</a>
+                <a href="{{ url_for('learning_path') }}">🗺 Path</a>
+                <a href="{{ url_for('category', category='linux') }}">Linux</a>
                 <a href="{{ url_for('category', category='networking') }}">Networking</a>
                 <a href="{{ url_for('category', category='cisco') }}">Cisco</a>
                 <a href="{{ url_for('category', category='python') }}">Python</a>
-                <a href="{{ url_for('category', category='linux') }}">Linux</a>
                 <a href="{{ url_for('assignments_home') }}" class="btn-assignments">📝 Assignments</a>
                 <a href="{{ url_for('instructor') }}" class="btn-ai">🎓 Instructor</a>
                 <a href="{{ url_for('chat') }}" class="btn-ai">💬 AI Chat</a>
