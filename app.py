@@ -80,30 +80,184 @@ CATEGORIES = {
         "icon": "🌐",
         "description": "Learn fundamental and advanced networking concepts including OSI model, TCP/IP, subnetting, and more.",
         "color": "blue",
+        "course_number": "NET 201",
+        "credits": 3,
+        "lab_credits": 1,
+        "department": "Department of Computer Science & Network Engineering",
+        "prerequisites": ["Introduction to Computing (CS 101)", "College Mathematics (MATH 110)"],
+        "catalog_description": (
+            "A rigorous introduction to data communications and computer networking. "
+            "Topics include the OSI and TCP/IP reference models, IPv4/IPv6 addressing and "
+            "subnetting, transport-layer protocols (TCP and UDP), DNS, and network "
+            "troubleshooting methodologies. Laboratory sessions provide hands-on packet "
+            "analysis using Wireshark and topology simulation in Cisco Packet Tracer. "
+            "Prepares students for the CompTIA Network+ and Cisco CCNA examinations."
+        ),
+        "textbooks": [
+            {
+                "title": "Computer Networks",
+                "authors": "Andrew S. Tanenbaum & David J. Wetherall",
+                "edition": "6th ed., Pearson, 2021",
+                "isbn": "978-0-13-468286-5",
+            },
+            {
+                "title": "CompTIA Network+ Study Guide",
+                "authors": "Todd Lammle",
+                "edition": "4th ed., Sybex, 2022",
+                "isbn": "978-1-119-81239-4",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by faculty of the Department of Computer Science & Network Engineering.",
+        },
     },
     "cisco": {
         "title": "Cisco",
         "icon": "🔧",
         "description": "Master Cisco IOS, VLANs, routing protocols, switching, and enterprise networking.",
         "color": "teal",
+        "course_number": "NET 310",
+        "credits": 3,
+        "lab_credits": 2,
+        "department": "Department of Computer Science & Network Engineering",
+        "prerequisites": ["Networking Fundamentals (NET 201)", "Introduction to Linux (SYS 202)"],
+        "catalog_description": (
+            "An advanced course in enterprise networking using Cisco IOS. "
+            "Students configure and troubleshoot routers, switches, VLANs, inter-VLAN routing, "
+            "Spanning Tree Protocol (STP), static and dynamic routing (OSPF, EIGRP), "
+            "access control lists (ACLs), and Network Address Translation (NAT). "
+            "Extensive laboratory work in a simulated Cisco environment. "
+            "This course prepares students for the Cisco Certified Network Associate (CCNA 200-301) examination."
+        ),
+        "textbooks": [
+            {
+                "title": "CCNA 200-301 Official Cert Guide, Volume 1",
+                "authors": "Wendell Odom",
+                "edition": "Cisco Press, 2020",
+                "isbn": "978-0-13-523792-5",
+            },
+            {
+                "title": "CCNA 200-301 Official Cert Guide, Volume 2",
+                "authors": "Wendell Odom",
+                "edition": "Cisco Press, 2020",
+                "isbn": "978-0-13-523796-3",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by Cisco Certified faculty (CCNP/CCIE) of the Department of Computer Science & Network Engineering.",
+        },
     },
     "python": {
         "title": "Python",
         "icon": "🐍",
         "description": "Learn Python programming from basics to advanced topics including network automation.",
         "color": "green",
+        "course_number": "CS 215",
+        "credits": 3,
+        "lab_credits": 1,
+        "department": "Department of Computer Science & Software Engineering",
+        "prerequisites": ["Introduction to Programming (CS 101)"],
+        "catalog_description": (
+            "An intermediate course in Python programming with emphasis on practical "
+            "applications in systems administration and network automation. "
+            "Topics include data structures, file I/O, regular expressions, object-oriented "
+            "programming, exception handling, and the use of third-party libraries including "
+            "Netmiko, Paramiko, NAPALM, and Nornir for network device automation. "
+            "Students complete a capstone project automating a multi-device network configuration task."
+        ),
+        "textbooks": [
+            {
+                "title": "Python Crash Course",
+                "authors": "Eric Matthes",
+                "edition": "3rd ed., No Starch Press, 2023",
+                "isbn": "978-1-7185-0270-4",
+            },
+            {
+                "title": "Network Programmability and Automation",
+                "authors": "Jason Edelman, Scott S. Lowe & Matt Oswalt",
+                "edition": "2nd ed., O'Reilly, 2023",
+                "isbn": "978-1-098-11083-3",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by faculty of the Department of Computer Science & Software Engineering.",
+        },
     },
     "linux": {
         "title": "Linux",
         "icon": "🐧",
         "description": "Master Linux commands, file system management, shell scripting, and system administration.",
         "color": "orange",
+        "course_number": "SYS 202",
+        "credits": 3,
+        "lab_credits": 1,
+        "department": "Department of Systems Administration & Cybersecurity",
+        "prerequisites": ["Introduction to Computing (CS 101)"],
+        "catalog_description": (
+            "A comprehensive introduction to Linux system administration. "
+            "Students develop proficiency with the Bash shell, the Filesystem Hierarchy Standard (FHS), "
+            "file permissions and ownership, process management, package management, networking tools, "
+            "and shell scripting. Laboratory sessions are conducted on live Ubuntu/Debian virtual machines. "
+            "Successful students earn the Linux Foundation Certified System Administrator (LFCS) skill set "
+            "and are prepared for the CompTIA Linux+ examination."
+        ),
+        "textbooks": [
+            {
+                "title": "The Linux Command Line",
+                "authors": "William E. Shotts Jr.",
+                "edition": "2nd ed., No Starch Press, 2019",
+                "isbn": "978-1-59327-952-9",
+            },
+            {
+                "title": "UNIX and Linux System Administration Handbook",
+                "authors": "Evi Nemeth, Garth Snyder, Trent R. Hein & Ben Whaley",
+                "edition": "5th ed., Pearson, 2017",
+                "isbn": "978-0-13-468733-4",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by Linux Foundation Certified faculty of the Department of Systems Administration & Cybersecurity.",
+        },
     },
     "jetson": {
         "title": "Jetson AI",
         "icon": "🤖",
         "description": "Build practical edge AI workflows on NVIDIA Jetson Orin Nano 8GB: setup, media generation, and computer vision.",
         "color": "purple",
+        "course_number": "AI 340",
+        "credits": 3,
+        "lab_credits": 2,
+        "department": "Department of Artificial Intelligence & Robotics",
+        "prerequisites": ["Python Programming (CS 215)", "Introduction to Machine Learning (AI 201)"],
+        "catalog_description": (
+            "A hands-on course in edge AI deployment using the NVIDIA Jetson Orin Nano 8 GB. "
+            "Students configure the Jetson platform, optimize deep learning models with TensorRT, "
+            "build computer vision pipelines using OpenCV and PyTorch, and deploy production-grade "
+            "AI inference workloads at the network edge. Topics include JetPack SDK, CUDA acceleration, "
+            "generative media pipelines, and thermal/power management for sustained deployment."
+        ),
+        "textbooks": [
+            {
+                "title": "Programming PyTorch for Deep Learning",
+                "authors": "Ian Pointer",
+                "edition": "O'Reilly, 2019",
+                "isbn": "978-1-492-04553-9",
+            },
+            {
+                "title": "NVIDIA Jetson Orin Developer Guide",
+                "authors": "NVIDIA Corporation",
+                "edition": "docs.nvidia.com/jetson, current edition",
+                "isbn": "N/A (online documentation)",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by NVIDIA Deep Learning Institute (DLI) Certified faculty of the Department of Artificial Intelligence & Robotics.",
+        },
     },
 }
 

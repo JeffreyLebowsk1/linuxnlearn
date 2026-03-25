@@ -17,7 +17,67 @@
         </div>
     </div>
 
+    {# ── Official Course Syllabus Card ── #}
+    {% if meta.course_number %}
+    <div class="syllabus-card">
+        <div class="syllabus-header">
+            <div class="syllabus-title-block">
+                <span class="syllabus-course-number">{{ meta.course_number }}</span>
+                <h2 class="syllabus-course-title">{{ meta.title }}</h2>
+            </div>
+            <div class="syllabus-credits">
+                <span class="credits-badge">{{ meta.credits }} Credit{{ 's' if meta.credits != 1 else '' }}</span>
+                {% if meta.lab_credits %}<span class="credits-badge credits-lab">+ {{ meta.lab_credits }} Lab Credit{{ 's' if meta.lab_credits != 1 else '' }}</span>{% endif %}
+            </div>
+        </div>
+
+        {% if meta.department %}
+        <p class="syllabus-dept">📐 {{ meta.department }}</p>
+        {% endif %}
+
+        {% if meta.faculty %}
+        <p class="syllabus-faculty">🎓 {{ meta.faculty.note }}</p>
+        {% endif %}
+
+        {% if meta.catalog_description %}
+        <div class="syllabus-section">
+            <h3>Course Description</h3>
+            <p>{{ meta.catalog_description }}</p>
+        </div>
+        {% endif %}
+
+        {% if meta.prerequisites %}
+        <div class="syllabus-section">
+            <h3>Prerequisites</h3>
+            <ul class="syllabus-list">
+                {% for prereq in meta.prerequisites %}
+                <li>{{ prereq }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        {% if meta.textbooks %}
+        <div class="syllabus-section">
+            <h3>Required Texts</h3>
+            <ul class="syllabus-list">
+                {% for book in meta.textbooks %}
+                <li>
+                    <strong>{{ book.title }}</strong> — {{ book.authors }}.
+                    {{ book.edition }}.
+                    {% if book.isbn and book.isbn != 'N/A (online documentation)' %}
+                    <span class="syllabus-isbn">ISBN {{ book.isbn }}</span>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {% if lessons %}
+    <h2 class="lessons-heading">Course Modules</h2>
     <div class="lessons-list">
         {% for lesson in lessons %}
         <a href="{{ url_for('lesson', category=category, slug=lesson.slug) }}" class="lesson-item">
