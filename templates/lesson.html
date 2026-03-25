@@ -15,6 +15,18 @@
         <span class="lesson-badge category-{{ meta.color }}">{{ meta.icon }} {{ meta.title }}</span>
         <h1>{{ lesson.title }}</h1>
         <p class="lesson-summary">{{ lesson.summary }}</p>
+
+        {% if lesson.learning_objectives %}
+        <div class="learning-objectives">
+            <h3>🎯 Learning Objectives</h3>
+            <p>By the end of this lesson you will be able to:</p>
+            <ul>
+                {% for obj in lesson.learning_objectives %}
+                <li>{{ obj }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
     </div>
 
     <div class="lesson-body">
@@ -22,6 +34,17 @@
         <div class="lesson-section">
             <h2>{{ section.heading }}</h2>
             <div class="section-content">{{ section.content_html | safe }}</div>
+            {% if section.interactive == 'terminal' %}
+            <div class="interactive-widget" data-widget="terminal"></div>
+            {% elif section.interactive == 'subnet_calc' %}
+            <div class="interactive-widget" data-widget="subnet_calc"></div>
+            {% elif section.interactive == 'chmod_calc' %}
+            <div class="interactive-widget" data-widget="chmod_calc"></div>
+            {% elif section.interactive == 'python_sandbox' %}
+            <div class="interactive-widget" data-widget="python_sandbox" data-code="{{ section.sandbox_code | default('') | e }}"></div>
+            {% elif section.interactive == 'ios_terminal' %}
+            <div class="interactive-widget" data-widget="ios_terminal"></div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
