@@ -1,60 +1,418 @@
-title: "Linux File System"
-description: "Understand the Linux directory hierarchy and how the file system is organized."
+title: "The Linux Filesystem Hierarchy"
+order: 2
+summary: "Examines the Filesystem Hierarchy Standard (FHS 3.0), inode internals, mounting, special virtual filesystems, and disk management commands used in Linux system administration."
+learning_objectives:
+  - "Identify the historical origins of the Unix filesystem design and the role of the FHS standard."
+  - "Explain the purpose of every major FHS directory and locate configuration, log, and binary files by convention."
+  - "Demonstrate the use of ls -i, stat, ln, and ln -s to inspect and create hard links and symbolic links."
+  - "Analyze the fields of /etc/fstab to determine how filesystems are mounted at boot time."
+  - "Construct disk inspection workflows using lsblk, blkid, df -h, and du -sh to assess storage utilization."
+builds_on:
+  - "Navigation commands from Lesson 1 of this course: pwd, ls, cd, and absolute vs. relative paths"
+  - "File operations from Lesson 1: stat, file, touch, and understanding of file metadata"
 sections:
-  - heading: "The Filesystem Hierarchy Standard (FHS)"
-    text: >
-      Linux follows the Filesystem Hierarchy Standard (FHS). All files hang off a single
-      root directory (/). Key directories each serve a specific purpose.
-    table:
-      headers: ["Directory", "Purpose"]
-      rows:
-        - ["/",        "Root of the entire filesystem"]
-        - ["/bin",     "Essential user binaries (ls, cat, cp)"]
-        - ["/sbin",    "System binaries (ifconfig, reboot)"]
-        - ["/etc",     "System-wide configuration files"]
-        - ["/home",    "User home directories (/home/alice)"]
-        - ["/root",    "Home directory for the root user"]
-        - ["/var",     "Variable data: logs, mail, spool files"]
-        - ["/tmp",     "Temporary files (cleared on reboot)"]
-        - ["/usr",     "User utilities and applications"]
-        - ["/opt",     "Optional/third-party software"]
-        - ["/dev",     "Device files (disks, terminals, etc.)"]
-        - ["/proc",    "Virtual filesystem — kernel and process info"]
-        - ["/sys",     "Virtual filesystem — hardware/driver info"]
-        - ["/mnt",     "Temporary mount point"]
-        - ["/media",   "Removable media mount points (USB, CD)"]
+  - heading: "History and Design Philosophy of the Unix Filesystem"
+    content: |
+      The Linux filesystem hierarchy is not arbitrary. It descends directly from the original
+      UNIX filesystem designed at Bell Labs in the late 1960s and early 1970s by Ken Thompson
+      and Dennis Ritchie. Two foundational design decisions made then still shape every Linux
+      system today: the **single rooted tree** and the **everything-is-a-file** philosophy.
 
-  - heading: "Mounting Filesystems"
-    code: |
-      # Show mounted filesystems
-      mount
-      df -h
+      **Single Rooted Tree.** UNIX rejected the Windows/DOS model of per-drive namespaces (C:,
+      D:) in favor of a single tree anchored at `/` (root). All storage devices -- hard drives,
+      SSDs, USB sticks, network shares, even RAM-backed virtual filesystems -- are *mounted* at
+      points within this tree. A user navigating the filesystem never needs to know which physical
+      device holds which directory; the abstraction is seamless.
 
-      # Mount a USB drive
-      sudo mount /dev/sdb1 /mnt/usb
+      **Everything is a File.** In UNIX, devices, sockets, pipes, and kernel data structures
+      are all accessible as entries in the filesystem tree. `/dev/sda` represents a hard disk.
+      `/proc/cpuinfo` exposes CPU information as a readable text file. This uniformity means
+      that the same tools (`cat`, `read`, `write`) work across radically different underlying
+      resources, greatly simplifying both programming and administration.
 
-      # Unmount
-      sudo umount /mnt/usb
+      **The Filesystem Hierarchy Standard (FHS).** By the early 1990s, different Linux
+      distributions placed files in inconsistent locations, making it difficult to write portable
+      software and administration scripts. The FHS was created to solve this problem. Maintained
+      by the Linux Foundation, FHS 3.0 (released 2015) is the current version. It defines the
+      purpose and expected contents of every top-level directory. Compliance is required for the
+      Linux Standard Base (LSB) certification and is followed by Debian, Ubuntu, Fedora, RHEL,
+      and SUSE, among others.
 
-      # Persistent mounts — edit /etc/fstab
-      cat /etc/fstab
+      **Inodes and Directory Entries.** At the lowest level, a Linux filesystem (ext4, XFS,
+      btrfs, etc.) stores data in two structures: *inodes* (metadata records) and *data blocks*
+      (file content). A directory is simply a special file that maps human-readable names to
+      inode numbers. This separation of name from metadata enables hard links and is a key part
+      of the POSIX file model defined in IEEE Std 1003.1-2017.
 
-  - heading: "Inodes and Hard vs Soft Links"
-    points:
-      - "Every file has an inode — a data structure storing metadata (permissions, owner, timestamps, data pointers)."
-      - "Hard link: another directory entry pointing to the same inode. Deleting the original doesn't remove data."
-      - "Soft link (symlink): a pointer to another file path. Breaks if the target is deleted."
-    code: |
+      **Filesystem Types.** Linux supports dozens of filesystem types. Common ones:
+      `ext4` (standard for Linux root partitions), `xfs` (high-performance, default on RHEL 7+),
+      `btrfs` (copy-on-write, snapshots), `vfat/exfat` (USB compatibility), `tmpfs`
+      (RAM-backed, for `/tmp` and `/run`), `nfs` (network filesystem), and `proc`/`sysfs`
+      (virtual kernel interfaces). The Virtual Filesystem Switch (VFS) in the Linux kernel
+      provides a unified interface so that all of these look the same to user-space programs.
+
+  - heading: "FHS Directory Reference"
+    content: |
+      FHS 3.0 defines the following top-level directories. Every Linux administrator must know
+      what belongs in each directory and where to look when troubleshooting. The table below
+      provides the authoritative reference for this course:
+
+      | Directory     | Purpose and Key Contents                                             |
+      |---------------|----------------------------------------------------------------------|
+      | `/`           | Root of the entire filesystem tree; must contain enough to boot     |
+      | `/bin`        | Essential user binaries needed before /usr mounts (ls, cp, bash)    |
+      | `/sbin`       | Essential system binaries for root (fdisk, mount, iptables)         |
+      | `/usr`        | Secondary hierarchy: read-only user data, most installed software   |
+      | `/usr/bin`    | Non-essential user binaries (python3, git, vim, curl)               |
+      | `/usr/sbin`   | Non-essential system binaries (apache2, sshd, useradd)              |
+      | `/usr/local`  | Locally compiled software, overrides /usr packages                  |
+      | `/etc`        | System-wide configuration files (text, editable by root)            |
+      | `/home`       | User home directories (/home/alice, /home/bob)                      |
+      | `/root`       | Home directory for the root superuser account                       |
+      | `/var`        | Variable data that changes during runtime                           |
+      | `/var/log`    | System and application log files (syslog, auth.log, nginx/)        |
+      | `/var/spool`  | Spooled data: print jobs, mail queue, cron jobs                     |
+      | `/tmp`        | Temporary files, cleared at reboot (world-writable)                 |
+      | `/dev`        | Device files: /dev/sda (disk), /dev/tty (terminal), /dev/null       |
+      | `/proc`       | Virtual: process info and kernel parameters as pseudo-files          |
+      | `/sys`        | Virtual: sysfs -- kernel hardware and driver parameters              |
+      | `/opt`        | Optional add-on application packages (Google Chrome, Oracle)        |
+      | `/mnt`        | Temporary manual mount point for sysadmin use                       |
+      | `/media`      | Auto-mounted removable media (USB drives, DVDs)                     |
+      | `/lib`        | Shared libraries needed by /bin and /sbin                           |
+      | `/boot`       | Bootloader files, kernel image (vmlinuz), initrd                    |
+      | `/srv`        | Data served by the system (web files, FTP data)                     |
+      | `/run`        | Runtime data since last boot (PID files, sockets) -- tmpfs          |
+
+      ```mermaid
+      graph TD
+        ROOT["/"] --> BIN["/bin\nessential user cmds"]
+        ROOT --> SBIN["/sbin\nessential sys cmds"]
+        ROOT --> USR["/usr"]
+        ROOT --> ETC["/etc\nconfig files"]
+        ROOT --> HOME["/home\nuser dirs"]
+        ROOT --> VAR["/var\nvariable data"]
+        ROOT --> TMP["/tmp\ntemporary files"]
+        ROOT --> DEV["/dev\ndevice files"]
+        ROOT --> PROC["/proc\nprocess virtual fs"]
+        ROOT --> SYS["/sys\nkernel sysfs"]
+        ROOT --> OPT["/opt\nadd-on packages"]
+        ROOT --> BOOT["/boot\nkernel + bootloader"]
+        ROOT --> RUN["/run\nruntime tmpfs"]
+        USR --> USRBIN["/usr/bin\nnon-essential bins"]
+        USR --> USRSBIN["/usr/sbin\nnon-essential sys bins"]
+        USR --> USRLOCAL["/usr/local"]
+        USR --> USRLIB["/usr/lib\nshared libraries"]
+        USRLOCAL --> ULBIN["/usr/local/bin"]
+        USRLOCAL --> ULETC["/usr/local/etc"]
+        VAR --> VARLOG["/var/log\nlog files"]
+        VAR --> VARSPOOL["/var/spool\nprint and mail queues"]
+        HOME --> HOMEALICE["/home/alice"]
+        HOME --> HOMEBOB["/home/bob"]
+        style ROOT fill:#f96,stroke:#333,color:#000
+        style ETC fill:#9cf,stroke:#333,color:#000
+        style VARLOG fill:#fc9,stroke:#333,color:#000
+      ```
+
+      **Important Notes.** On modern systemd-based distributions (Ubuntu 20.04+, RHEL 7+), `/bin`,
+      `/sbin`, and `/lib` are symbolic links to their counterparts under `/usr` (`/usr/bin`,
+      `/usr/sbin`, `/usr/lib`). This "UsrMerge" simplifies package management and is documented
+      in the Freedesktop.org UsrMerge specification. Always check with `ls -la /bin` to see
+      whether it is a symlink on your system.
+
+      **Key `/etc` Files Every Admin Must Know:**
+
+      ```bash
+      /etc/passwd        # user account database (username, UID, home, shell)
+      /etc/shadow        # hashed passwords (root-readable only, mode 640)
+      /etc/group         # group definitions
+      /etc/hostname      # system hostname
+      /etc/hosts         # static hostname-to-IP mappings
+      /etc/resolv.conf   # DNS resolver configuration
+      /etc/fstab         # filesystem mount table (covered in the Mounting section)
+      /etc/ssh/sshd_config   # SSH daemon configuration
+      /etc/sudoers           # sudo privilege rules (edit only with visudo)
+      /etc/crontab           # system-wide scheduled jobs
+      ```
+
+  - heading: "Inodes and Links"
+    content: |
+      Understanding inodes is essential for understanding how the Linux filesystem works at a
+      deeper level -- it explains phenomena such as why `mv` within a filesystem is instantaneous,
+      why deleting a file does not immediately free space if it is open by a process, and what the
+      "link count" in `ls -l` output means.
+
+      **What is an Inode?** An *inode* (index node) is a fixed-size data structure stored in the
+      filesystem's inode table. Every file and directory has exactly one inode. The inode stores
+      the file's *metadata* but crucially does **not** store the filename. The inode contains:
+
+      | Inode Field         | Description                                              |
+      |---------------------|----------------------------------------------------------|
+      | File type           | Regular file, directory, symlink, device, etc.           |
+      | Permissions         | The 9-bit rwxrwxrwx permission mask                      |
+      | Owner UID / GID     | Numeric user and group IDs                               |
+      | File size           | In bytes                                                 |
+      | Timestamps          | atime (last access), mtime (last modify), ctime (change) |
+      | Link count          | Number of directory entries pointing to this inode       |
+      | Data block pointers | Addresses of the disk blocks holding the file content    |
+
+      The filename lives in a *directory entry* (dentry), which is simply a mapping of name to
+      inode number. A directory file contains a list of these name-to-inode pairs.
+
+      **Hard Links.** A hard link is an additional directory entry that points to the *same*
+      inode as the original file. Both names refer to the identical data and metadata. The
+      inode's link count increments with each additional hard link. The file's data is only
+      freed when the link count reaches zero AND no process has the file open. Hard links
+      cannot cross filesystem boundaries and cannot point to directories (with rare exceptions
+      for `.` and `..`).
+
+      **Symbolic Links (Soft Links).** A symbolic link is a separate file with its own inode
+      whose *data content* is the path to the target file. When the kernel resolves a symlink,
+      it reads that path and follows it. Symlinks can cross filesystem boundaries and can
+      point to directories. If the target is deleted, the symlink becomes *dangling* (broken).
+
+      ```mermaid
+      graph LR
+        subgraph "Hard Links -- same inode"
+          HLA["file_a\n(dir entry)"] --> INODE["Inode 1042\nsize: 4096\nperms: 644\nblocks: 8"]
+          HLB["file_b\n(dir entry)"] --> INODE
+        end
+        subgraph "Symbolic Link -- separate inode"
+          ORIG["original.txt\n(dir entry)"] --> INODE2["Inode 1099\nactual file data"]
+          SYMLINK["link.txt\n(dir entry)"] --> INODE3["Inode 1100\nsymlink\npoints to: original.txt"]
+          INODE3 -.->|"kernel resolves"| INODE2
+        end
+      ```
+
+      **Commands for Inodes and Links:**
+
+      ```bash
+      ls -li /etc/passwd          # -i shows inode number as first column
+      stat /etc/passwd            # detailed inode info including link count
+
       # Create a hard link
-      ln original.txt hardlink.txt
+      ln /etc/passwd /tmp/pw_hardlink
+      ls -li /etc/passwd /tmp/pw_hardlink   # same inode number shown
 
       # Create a symbolic link
       ln -s /etc/nginx/nginx.conf ~/nginx.conf
+      ls -la ~/nginx.conf         # shows: nginx.conf -> /etc/nginx/nginx.conf
+      readlink ~/nginx.conf       # prints the target path
+      file ~/nginx.conf           # reports: symbolic link to /etc/nginx/nginx.conf
 
-      # Show inode numbers
-      ls -li
+      # Find all files with the same inode (hard links)
+      find / -inum 1042 2>/dev/null
+      ```
 
-key_takeaways:
-  - "/etc holds configuration; /var holds logs and variable data; /tmp is temporary."
-  - "Use df -h to check disk space and mount to see mounted filesystems."
-  - "Symbolic links are flexible; hard links share the same inode."
+  - heading: "Mounting Filesystems"
+    content: |
+      **Mounting** is the process of attaching a filesystem (on a device or network share) to a
+      directory in the running filesystem tree. That attachment point is called the *mount point*.
+      After mounting, the contents of the device appear as if they were files and directories
+      under that mount point. The Linux kernel tracks all active mounts in an internal table
+      that is exposed as `/proc/mounts` and summarized by the `df` command.
+
+      **The `mount` Command.** In its simplest form: `sudo mount /dev/sdb1 /mnt/usb`.
+      The kernel reads the device's superblock to detect the filesystem type automatically.
+      To unmount: `sudo umount /mnt/usb`. The device must not be "busy" (no process has an
+      open file or current directory on it). Use `lsof /mnt/usb` or `fuser -m /mnt/usb` to
+      identify blocking processes. Common mount options: `ro` (read-only), `noexec` (prevent
+      execution), `nosuid` (ignore SUID bits), `defaults` (rw, suid, exec, auto, nouser, async).
+
+      **`df -h` -- Disk Free.** Reports mounted filesystem usage in human-readable format:
+
+      ```
+      Filesystem      Size  Used Avail Use% Mounted on
+      /dev/sda1        50G   18G   30G  38% /
+      tmpfs           2.0G  1.2M  2.0G   1% /run
+      /dev/sda2       200G   45G  145G  24% /home
+      tmpfs           2.0G     0  2.0G   0% /dev/shm
+      ```
+
+      Columns: `Filesystem` (device or type), `Size` (total), `Used`, `Avail` (free),
+      `Use%` (percentage used), `Mounted on` (mount point). Monitor `Use%` -- when it approaches
+      100%, write operations fail, which can crash daemons and corrupt data.
+
+      **`/etc/fstab` -- Filesystem Table.** Defines which filesystems are mounted automatically
+      at boot and how. Each non-comment line has exactly six fields:
+
+      ```
+      # device          mountpoint   fstype   options        dump  pass
+      UUID=a1b2-c3d4   /            ext4     defaults        0     1
+      UUID=e5f6-a7b8   /home        ext4     defaults        0     2
+      UUID=ff00-1122   /boot/efi    vfat     umask=0077      0     1
+      tmpfs            /tmp         tmpfs    defaults,nosuid 0     0
+      //server/share   /mnt/nas     cifs     credentials=/etc/cifs.cred,uid=1000 0 0
+      ```
+
+      Field meanings:
+
+      | Field       | Description                                                       |
+      |-------------|-------------------------------------------------------------------|
+      | Device      | Block device path, UUID (preferred), or LABEL                    |
+      | Mount Point | Directory where the filesystem will appear                        |
+      | FS Type     | ext4, xfs, vfat, tmpfs, nfs, cifs, etc.                          |
+      | Options     | Mount options: defaults, ro, noexec, nosuid, uid=N               |
+      | Dump        | 0 = ignore; 1 = include in `dump` backup utility                 |
+      | Pass        | `fsck` order at boot: 0=skip, 1=root first, 2=others in parallel |
+
+      Using UUIDs (not device names) is strongly recommended because device names like `/dev/sda`
+      can change between reboots if drives are added or rearranged. Find UUIDs with `blkid`.
+      After editing `/etc/fstab`, test with `sudo mount -a` before rebooting -- a syntax error
+      can prevent the system from booting normally.
+
+  - heading: "Special and Virtual Filesystems"
+    content: |
+      Linux exposes kernel data structures as pseudo-filesystems that look like ordinary
+      directories and files but contain no data on disk. These virtual filesystems are mounted
+      automatically at boot and provide a text-based interface for reading and writing kernel
+      state. Understanding them is essential for advanced system monitoring and tuning.
+
+      **/proc -- Process Information Virtual Filesystem.** Mounted at `/proc`, `procfs` exposes
+      every running process as a directory named by PID: `/proc/1234/` contains files describing
+      process 1234's memory map (`maps`), open file descriptors (`fd/`), command line
+      (`cmdline`), and environment (`environ`). System-wide pseudo-files include:
+
+      - `/proc/cpuinfo`: detailed information about each CPU core (model, MHz, flags, cache)
+      - `/proc/meminfo`: memory statistics (MemTotal, MemFree, Buffers, Cached, SwapTotal)
+      - `/proc/loadavg`: system load average (1, 5, 15 minute windows)
+      - `/proc/uptime`: seconds since boot
+      - `/proc/net/dev`: network interface statistics (bytes/packets sent and received)
+      - `/proc/sys/`: kernel tunable parameters, writable via `sysctl`
+
+      **Reading proc files:**
+
+      ```bash
+      cat /proc/cpuinfo | grep "model name" | head -1   # CPU model
+      cat /proc/meminfo | grep -E "MemTotal|MemFree"    # RAM totals
+      cat /proc/loadavg                                  # load average
+      cat /proc/uptime                                   # uptime in seconds
+      ls /proc/1/fd/                                     # open file descriptors of PID 1
+      cat /proc/sys/net/ipv4/ip_forward                  # is IP forwarding enabled?
+      ```
+
+      **/sys -- sysfs Kernel Parameter Interface.** Mounted at `/sys`, `sysfs` exposes the
+      kernel's device model. Unlike `/proc` (which is relatively unstructured), `sysfs` has
+      a hierarchical structure mirroring the kernel's internal object hierarchy. Subdirectories:
+      `/sys/class/` (devices by class), `/sys/bus/` (buses), `/sys/block/` (block devices),
+      `/sys/kernel/` (core kernel parameters). Many files are writable, allowing runtime
+      modification of kernel behavior without rebooting: writing `1` to
+      `/sys/block/sda/queue/rotational` would mark sda as an SSD.
+
+      **tmpfs -- RAM-backed Temporary Filesystem.** `tmpfs` stores files entirely in RAM (and
+      optionally swap). It is automatically sized to a percentage of RAM. Files are lost on
+      reboot. Common uses:
+
+      | Mount Point  | Purpose                                              |
+      |--------------|------------------------------------------------------|
+      | `/tmp`       | Temporary files for applications                     |
+      | `/run`       | Runtime data: PID files, sockets, systemd unit state |
+      | `/dev/shm`   | POSIX shared memory segments between processes       |
+
+      Because `tmpfs` access is orders of magnitude faster than disk I/O, it is used for
+      high-frequency temporary data. However, its contents vanish on reboot, so it must never
+      be used for persistent data. Check tmpfs mounts and usage with `df -h | grep tmpfs`.
+
+  - heading: "Disk Management Commands"
+    content: |
+      Linux provides a set of low-level disk management commands for inspecting block devices,
+      partition tables, filesystem usage, and directory sizes. These commands are used during
+      installation, capacity planning, forensics, and routine maintenance. Most require either
+      root privileges or membership in the `disk` group.
+
+      **`lsblk` -- List Block Devices.** Displays all block devices in a tree format showing
+      their names, sizes, types, and mount points. It reads from `/sys/class/block/` without
+      requiring root. The `TYPE` column distinguishes `disk` (whole device), `part` (partition),
+      `lvm` (logical volume), `rom` (optical), and `loop` (loop device for snap packages).
+
+      ```bash
+      lsblk                         # tree view of all block devices
+      lsblk -f                      # include filesystem type and UUID
+      lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT   # custom columns
+      ```
+
+      Example output:
+      ```
+      NAME   MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+      sda      8:0    0   50G  0 disk
+      sda1     8:1    0   49G  0 part /
+      sda2     8:2    0    1G  0 part [SWAP]
+      sdb      8:16   1   16G  0 disk
+      sdb1     8:17   1   16G  0 part /media/usb
+      ```
+
+      **`fdisk -l` -- List Partition Tables.** Prints detailed partition information including
+      start/end sectors, sizes, and partition types. Requires root. For GPT disks, prefer
+      `gdisk -l` or `parted -l`. Modern systems increasingly use GUID Partition Tables (GPT)
+      rather than the legacy MBR format, which supports a maximum of 4 primary partitions and
+      disks up to 2 TB.
+
+      ```bash
+      sudo fdisk -l                 # list all disk partition tables
+      sudo fdisk -l /dev/sda        # partition table for one specific disk
+      sudo parted /dev/sda print    # GPT-aware partition listing
+      ```
+
+      **`blkid` -- Block Device Attributes.** Prints the UUID, filesystem type (TYPE), and
+      label (LABEL) of each block device. UUIDs are used in `/etc/fstab` to ensure stable
+      device identification regardless of device enumeration order:
+
+      ```bash
+      sudo blkid                    # all block devices with UUIDs
+      sudo blkid /dev/sda1          # specific partition UUID
+      ```
+
+      **`df -h` -- Disk Free.** Shows used and available space on mounted filesystems in
+      human-readable units. Add `-T` to include the filesystem type column. Use `-x tmpfs` to
+      exclude virtual filesystems from the output for a cleaner view of real disk usage.
+
+      **`du -sh` -- Disk Usage.** Reports the total disk space consumed by a directory and all
+      its contents. The `-s` flag summarizes (prints only the total, not every subdirectory),
+      and `-h` makes output human-readable. Essential for finding large directories:
+
+      ```bash
+      du -sh /var/log               # total size of /var/log
+      du -sh /home/*                # size of each user home directory
+      du -sh /* 2>/dev/null | sort -h   # find largest top-level directories
+      du -sh /var/log/* | sort -rh | head -10   # 10 largest items in /var/log
+      df -h                         # filesystem usage summary
+      df -hT                        # include filesystem type
+      df -h -x tmpfs                # exclude RAM-backed filesystems
+      ```
+
+quiz:
+  - question: "According to FHS 3.0, which directory is the correct location for system-wide configuration files?"
+    options:
+      - "A) /usr/local"
+      - "B) /var"
+      - "C) /etc"
+      - "D) /opt"
+    answer: 2
+    explanation: "/etc contains system-wide configuration files in editable text format (sshd_config, fstab, passwd, etc.). /usr/local is for locally compiled software, /var holds variable runtime data like logs, and /opt is for add-on application packages."
+
+  - question: "Which special filesystem stores its contents entirely in RAM and loses all data on reboot?"
+    options:
+      - "A) ext4"
+      - "B) procfs"
+      - "C) sysfs"
+      - "D) tmpfs"
+    answer: 3
+    explanation: "tmpfs is a RAM-backed filesystem. Its contents are stored in physical memory (and optionally swap) and are lost when the system is powered off or rebooted. It is used for /tmp, /run, and /dev/shm. procfs and sysfs are also virtual but expose kernel data structures rather than user files."
+
+  - question: "What piece of information does an inode explicitly NOT store about a file?"
+    options:
+      - "A) File permissions (rwx bits)"
+      - "B) Owner user ID (UID)"
+      - "C) The filename"
+      - "D) File size in bytes"
+    answer: 2
+    explanation: "An inode stores permissions, UID/GID, size, timestamps, link count, and data block pointers -- but not the filename. The filename is stored in the parent directory's data, which maps names to inode numbers. This design enables hard links: multiple names (directory entries) pointing to the same inode."
+
+  - question: "What does the sixth field (pass) in /etc/fstab control?"
+    options:
+      - "A) The order in which mount options are applied"
+      - "B) The fsck filesystem check order at boot (0=skip, 1=root, 2=others)"
+      - "C) The number of times the filesystem can be mounted before requiring a check"
+      - "D) Whether the dump backup utility should back up the filesystem"
+    answer: 1
+    explanation: "The sixth field (pass) controls the order in which fsck checks filesystems at boot. 0 means skip fsck entirely, 1 is reserved for the root filesystem (checked first), and 2 means check after root (other filesystems, checked in parallel if possible). The fifth field (dump) controls the dump backup utility."

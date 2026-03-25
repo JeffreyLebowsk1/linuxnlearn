@@ -1,95 +1,548 @@
 title: "Essential Linux Commands"
 order: 1
-summary: "Master the most important Linux commands for navigation, file management, and system administration."
+summary: "Introduces the Bash shell and core Linux commands for navigation, file operations, permissions, and process management, forming the essential toolkit for Linux system administration."
+learning_objectives:
+  - "Identify the advantages of the command-line interface over graphical interfaces in system administration contexts."
+  - "Explain the anatomy of a Linux command, including command name, short/long options, and arguments, and demonstrate use of man pages."
+  - "Demonstrate navigation of the Linux filesystem using pwd, ls, and cd with multiple flag combinations."
+  - "Analyze file permission strings and octal notation to determine effective access rights for owner, group, and others."
+  - "Construct process-control workflows using ps, jobs, fg, bg, and nohup to manage foreground and background processes."
+builds_on:
+  - "Basic computer literacy: understanding of files, folders, and operating system concepts"
+  - "Ability to launch a terminal emulator or connect to a Linux host via SSH"
 sections:
-  - heading: "Navigation Commands"
+  - heading: "Why the Command-Line Interface?"
     content: |
+      The **command-line interface (CLI)** has been the primary interface for Unix and Linux system
+      administration since the early 1970s. While modern desktop environments offer graphical tools,
+      professional administrators rely on the CLI for its unmatched power, flexibility, and
+      reproducibility. Understanding why the CLI remains dominant is the first step toward becoming
+      a proficient Linux system administrator in the industry.
+
+      **Power and Expressiveness.** A single shell command can accomplish tasks that would require
+      dozens of mouse clicks in a GUI. Tools are chained with pipes (`|`) to form pipelines that
+      process data in sophisticated ways. For example, `ps aux | grep nginx | awk '{print $2}'`
+      extracts all nginx process IDs in one line. This composability -- combining small, focused
+      tools -- is a core Unix design principle described by Doug McIlroy and documented in *The Art
+      of Unix Programming* (Raymond, 2003). Each tool does one thing well; the shell orchestrates.
+
+      **Reproducibility and Automation.** Every action taken at the CLI can be recorded as a shell
+      script, making complex multi-step procedures repeatable and auditable. Configuration management
+      tools such as Ansible, Puppet, and Chef all rely on shell commands under the hood. In regulated
+      environments -- healthcare, finance, government -- the ability to produce an exact log of
+      administrative actions is often a compliance requirement, making the CLI indispensable.
+
+      **Remote Administration.** Most production Linux servers run without any graphical desktop
+      environment to conserve resources. The Secure Shell protocol (SSH, RFC 4251) allows
+      administrators to manage servers anywhere in the world over an encrypted terminal session.
+      GUI-based remote desktop solutions introduce significant overhead and expand the attack surface.
+      A command-line connection requires only TCP port 22 and a few kilobits of bandwidth.
+
+      **Speed and Efficiency.** Typing a command is often faster than navigating menus, especially
+      for experienced administrators who use tab completion, command history (`Ctrl+R`), and shell
+      aliases. Repetitive tasks that would take minutes via GUI menus can be batched into a
+      for-loop that processes hundreds of files in seconds.
+
+      **Resource Efficiency.** A minimal Linux server without a graphical environment can run in
+      as little as 128 MB of RAM. Adding a full desktop environment increases memory consumption by
+      500 MB or more. For virtual machines, containers, and embedded systems, this difference is
+      significant. The POSIX standard (IEEE Std 1003.1) defines a portable command-line environment
+      that works consistently across all compliant Unix-like systems, ensuring skills learned on one
+      distribution transfer broadly across the industry.
+
+  - heading: "Anatomy of a Linux Command"
+    content: |
+      Every Linux command follows a predictable structure: `command [options] [arguments]`.
+      Understanding this structure allows you to decode any command you encounter, even unfamiliar
+      ones, by consulting the documentation. This section covers how to interpret commands and
+      access help resources effectively.
+
+      **Command Name.** The executable or shell builtin to invoke. When you type a command name,
+      the shell searches each directory listed in the `$PATH` environment variable in order, running
+      the first match found. Use `which ls` to find the full path of an external command, or
+      `type cd` to determine whether it is a shell builtin (built into Bash itself, such as `cd`,
+      `echo`, `export`, `source`). Builtins are faster because no child process is forked.
+
+      **Options (Flags).** Options modify command behavior. *Short options* use a single hyphen
+      and a single letter: `-l`, `-a`, `-v`. Multiple short options can usually be combined into
+      one token: `ls -la` is equivalent to `ls -l -a`. *Long options* use double hyphens and a
+      descriptive word: `--all`, `--verbose`, `--human-readable`. Long options improve the
+      readability of shell scripts and are preferred in documentation. The GNU coding standards
+      (gnu.org) define conventions for both forms. POSIX mandates that `--` ends option processing,
+      so `rm -- -file` safely deletes a file whose name begins with a hyphen.
+
+      **Arguments.** Arguments are the targets the command operates on -- typically file paths,
+      hostnames, or strings. Some commands accept multiple arguments: `cp source1 source2 dest/`.
+      Arguments are positional, meaning their order matters. Standard streams (stdin, stdout,
+      stderr) allow commands to be connected in pipelines even without file arguments.
+
+      **Reading Man Pages.** The `man` command opens the manual page for any system command.
+      Man pages are organized into numbered sections: Section 1 (user commands), Section 2 (system
+      calls), Section 3 (library functions), Section 5 (file formats), Section 8 (admin commands).
+      The SYNOPSIS line uses a formal grammar: items in `[brackets]` are optional, `<angle>` are
+      required, `...` means repeatable. Use `/keyword` to search, `n` for next match, `q` to quit.
+      *The Linux Command Line* (Shotts, 2019) dedicates a full chapter to navigating man pages
+      effectively, and it is the authoritative beginner reference for this course.
+
+      **Quick Help.** Most GNU commands support `--help` for a concise usage summary. The `apropos`
+      command searches man page descriptions: `apropos "copy file"` lists commands related to
+      copying files. The `info` command provides hyperlinked documentation for GNU tools.
+
       ```bash
-      pwd               # Print working directory
-      ls                # List directory contents
-      ls -la            # Long listing with hidden files
-      cd /etc           # Change directory
-      cd ..             # Go up one level
-      cd ~              # Go to home directory
-      cd -              # Go to previous directory
+      ls -lah /home             # command: ls, options: -l -a -h, argument: /home
+      cp -r src/ dest/          # command: cp, option: -r (recursive), args: src/ dest/
+      grep -in "error" app.log  # options: -i (case-insensitive), -n (line numbers)
+      man 5 fstab               # open section 5 man page for fstab
+      man -k "disk usage"       # search man page descriptions (same as apropos)
+      type cd                   # shows: cd is a shell builtin
+      which python3             # shows: /usr/bin/python3
       ```
 
-  - heading: "File and Directory Operations"
+  - heading: "Filesystem Navigation"
     content: |
+      Linux uses a single unified filesystem tree rooted at `/`. Unlike Windows, which uses
+      separate drive letters (C:, D:), all storage devices are *mounted* at subdirectories within
+      this single tree. Navigating this hierarchy efficiently is the most fundamental daily skill
+      for any system administrator working with Linux servers.
+
+      **`pwd` -- Print Working Directory.** Always know where you are. `pwd` prints the absolute
+      path of your current directory. The shell prompt often shows a shortened form, but `pwd`
+      gives the unambiguous full path and is essential in scripts where the working directory
+      context must be verified before running operations.
+
+      **`ls` -- List Directory Contents.** `ls` is the most frequently used command in day-to-day
+      administration. Understanding its flags is essential:
+
+      | Flag   | Meaning                                                     |
+      |--------|-------------------------------------------------------------|
+      | `-l`   | Long format: permissions, links, owner, group, size, date   |
+      | `-a`   | All files, including hidden dot-files (`.bashrc`, `.ssh/`)  |
+      | `-h`   | Human-readable sizes (KB, MB, GB) -- requires `-l`          |
+      | `-t`   | Sort by modification time, newest first                     |
+      | `-R`   | Recursive: list all subdirectory contents                   |
+      | `-S`   | Sort by file size, largest first                            |
+      | `-la`  | Combine long format with all files                          |
+      | `-lah` | Long + all + human-readable sizes (most useful combination) |
+
+      **`cd` -- Change Directory.** Navigate to a different directory. Path types:
+
+      - *Absolute path*: always starts from root `/`, e.g., `cd /etc/nginx`
+      - *Relative path*: relative to your current location, e.g., `cd ../config`
+      - `cd ~` or just `cd`: go to your home directory (value of `$HOME`)
+      - `cd -`: toggle back to the previous directory (stored in `$OLDPWD`)
+      - `cd ..`: move up one level to the parent directory
+      - `cd ../..`: move up two levels at once
+
       ```bash
-      mkdir -p /opt/myapp/config    # Create directories (including parents)
-      touch file.txt                 # Create empty file
-      cp file.txt backup.txt         # Copy file
-      cp -r dir1/ dir2/              # Copy directory recursively
-      mv old.txt new.txt             # Move/rename file
-      rm file.txt                    # Remove file
-      rm -rf directory/              # Remove directory recursively ⚠️
+      pwd                      # /home/student
+      ls -lah                  # list current dir, all files, human-readable
+      ls -lt /var/log          # list /var/log sorted by modification time
+      ls -lS /usr/bin          # list /usr/bin sorted by file size
+      cd /etc                  # navigate to /etc (absolute path)
+      cd nginx                 # navigate into nginx/ (relative to /etc)
+      cd ../apache2            # go up one level, then into apache2/
+      cd ~                     # return to home directory
+      cd -                     # toggle back to previous directory
+      ls -R /etc/ssh           # recursively list /etc/ssh contents
+      ls -la | head -20        # list current dir, show first 20 entries
+      ```
+
+      ```mermaid
+      graph TD
+        ROOT["/ (root)"] --> HOME["/home"]
+        ROOT --> ETC["/etc"]
+        ROOT --> VAR["/var"]
+        HOME --> STUDENT["/home/student"]
+        HOME --> UBUNTU["/home/ubuntu"]
+        STUDENT --> DOCS["/home/student/documents"]
+        STUDENT --> SCRIPTS["/home/student/scripts"]
+        style ROOT fill:#f96,stroke:#333,color:#000
+        style STUDENT fill:#9cf,stroke:#333,color:#000
+        ROOT -- "cd /home/student" --> STUDENT
+        STUDENT -- "cd ../.." --> ROOT
+        STUDENT -- "cd documents" --> DOCS
+        DOCS -- "cd -" --> STUDENT
+      ```
+
+      **Tab Completion.** Press `Tab` once to complete a unique path; twice to show all matches
+      when ambiguous. This is faster than typing full paths and eliminates spelling errors.
+      The shell reads the filesystem to provide completions in real time.
+
+      **Command History.** Use arrow keys to recall previous commands. `Ctrl+R` opens reverse
+      incremental search through your history. The history file is stored in `~/.bash_history`.
+      The `history` command lists stored commands; `!n` re-runs command number `n`; `!!` re-runs
+      the last command. This speeds up repetitive administrative workflows dramatically.
+    interactive: terminal
+
+  - heading: "File Operations"
+    content: |
+      Managing files is at the heart of Linux administration. The commands in this section
+      create, copy, move, delete, and inspect files and directories. Many are defined by the
+      POSIX standard (IEEE Std 1003.1-2017), ensuring portability across all Unix-like systems.
+
+      **`touch`** creates an empty file if it does not exist, or updates a file's access and
+      modification timestamps if it does. It is commonly used in scripts to create placeholder
+      lock files or to trigger `make` dependency re-evaluation. The `-t` flag sets a specific
+      timestamp: `touch -t 202301011200 file.txt`.
+
+      **`mkdir`** creates directories. The critical `-p` flag creates all intermediate parent
+      directories in one command without raising an error if they already exist:
+      `mkdir -p /opt/app/config/ssl` creates all four directory levels at once. Without `-p`,
+      every intermediate parent must already exist. The `-v` flag prints each directory created.
+
+      **`cp`** copies files and directories. Use `-r` or `-R` (recursive) to copy entire directory
+      trees. Use `-p` (preserve) to retain timestamps, ownership, and permissions. Use `-v` for
+      verbose output showing each copied item. The `-i` flag prompts before overwriting an
+      existing file, providing a safety net in interactive sessions.
+
+      **`mv`** moves or renames files. Moving within the same filesystem is instantaneous -- it
+      merely updates the directory entry without copying data. Moving across filesystems copies
+      the data and then deletes the source. Use `-i` to prompt before overwriting, or `-n` to
+      never overwrite an existing destination file.
+
+      **`rm`** removes files permanently. Unlike graphical desktops, Linux has no Recycle Bin.
+      `rm -r` removes directories recursively. `rm -f` suppresses error messages and prompts.
+
+      > **Warning:** `rm -rf path` is instantaneous and irreversible. The infamous command
+      > `rm -rf /` attempts to destroy the entire system. Modern distributions protect against
+      > this specific case with `--preserve-root` (the default), but `rm -rf /opt/myapp` or
+      > `rm -rf ~/important/` still carry serious risk. Always double-check the path. Use
+      > `echo rm -rf path` first to preview, or install `trash-cli` for a recoverable
+      > alternative to permanent deletion.
+
+      **`stat`** displays detailed metadata: inode number, permissions in both octal and symbolic,
+      hard link count, owner UID/GID, size in bytes and blocks, and three timestamps (Access,
+      Modify, Change). More informative than `ls -l` for scripting and forensic investigation.
+
+      **`file`** determines a file's type by examining its content (magic bytes), not its
+      extension. Linux does not rely on file extensions for execution decisions. `file /bin/bash`
+      reports "ELF 64-bit LSB pie executable"; `file image.jpg` reports "JPEG image data".
+
+      ```bash
+      touch notes.txt                      # create empty file / update timestamp
+      touch -t 202301011200 archive.txt    # set explicit timestamp
+      mkdir -p projects/web/css            # create nested directories
+      cp -rp /etc/nginx /backup/nginx      # copy directory, preserve attributes
+      mv old_name.txt new_name.txt         # rename a file in place
+      mv *.log /var/log/archive/           # move all .log files to archive
+      rm -i sensitive.txt                  # prompt before delete (interactive)
+      rm -rf ./old_project/               # remove entire directory tree (CAUTION)
+      stat /etc/passwd                     # detailed file metadata
+      file /usr/bin/python3               # determine actual file type
       ```
 
   - heading: "Viewing File Contents"
     content: |
+      Linux provides several tools for reading file contents, each optimized for different use
+      cases: small complete files, large paginated files, live-streaming data, and quick
+      statistical summaries. Choosing the right tool prevents accidents (such as `cat`-ing a
+      1 GB binary to the terminal) and improves workflow efficiency considerably.
+
+      **`cat`** (concatenate) reads one or more files and writes their contents to standard
+      output. Ideal for small config files and for combining files: `cat header footer > page.html`.
+      The `-n` flag numbers each output line (useful for code review line references), and `-A`
+      reveals non-printing characters such as carriage returns (`^M`) that cause subtle bugs in
+      scripts copied from Windows systems.
+
+      **`less`** is a *pager* that displays one screen at a time and allows both forward and
+      backward navigation -- a critical advantage over the older `more` command. It is the
+      preferred tool for reading large log files and man pages. `less` does not load the entire
+      file into memory before displaying, making it fast even on gigabyte-sized log files.
+
+      Key `less` navigation keys:
+
+      | Key          | Action                        |
+      |--------------|-------------------------------|
+      | `j` / Down   | Scroll down one line           |
+      | `k` / Up     | Scroll up one line             |
+      | `Ctrl+F`     | Forward one page               |
+      | `Ctrl+B`     | Backward one page              |
+      | `g` / `G`    | Jump to beginning / end        |
+      | `/pattern`   | Search forward                 |
+      | `?pattern`   | Search backward                |
+      | `n` / `N`    | Next / previous search match   |
+      | `q`          | Quit                           |
+
+      **`head`** outputs the first lines of a file. Default is 10 lines; use `-n N` for N lines:
+      `head -n 25 /etc/passwd`. Use `-c N` for the first N bytes. Essential for quickly
+      inspecting a file's format -- for example, checking the header row of a CSV before
+      processing with a script.
+
+      **`tail`** outputs the last lines of a file. Default is 10 lines; `-n N` specifies count.
+      The most critical flag for system administrators is **`-f` (follow)**: `tail -f /var/log/syslog`
+      continuously outputs new lines as they are appended, enabling real-time log monitoring.
+      Press `Ctrl+C` to stop. The `-F` variant additionally handles log rotation by reopening
+      the file if it is renamed or replaced by the log daemon -- essential for production systems.
+
+      **`wc`** (word count) counts lines, words, and bytes. Flags: `-l` lines only, `-w` words,
+      `-c` bytes. Indispensable in pipelines: `grep "ERROR" /var/log/app.log | wc -l` counts
+      error occurrences; `ls /etc | wc -l` counts entries in a directory.
+
       ```bash
-      cat /etc/hosts                 # Print entire file
-      head -20 /var/log/syslog       # First 20 lines
-      tail -f /var/log/syslog        # Follow log in real-time
-      less /etc/passwd               # Page through a file
-      grep "error" /var/log/syslog   # Search for pattern
-      grep -r "192.168" /etc/        # Recursive search
+      cat /etc/hostname                      # display short single-line file
+      cat -n /etc/hosts                      # display with line numbers
+      less /var/log/syslog                   # page through large log file
+      head /etc/passwd                       # first 10 lines (default)
+      head -n 5 /etc/passwd                  # first 5 lines
+      tail /var/log/auth.log                 # last 10 lines (default)
+      tail -n 50 /var/log/nginx/error.log    # last 50 lines
+      tail -f /var/log/syslog                # live log monitoring (Ctrl+C to stop)
+      tail -F /var/log/nginx/access.log      # follow with log-rotation handling
+      wc -l /etc/passwd                      # count number of user accounts
+      cat /var/log/syslog | wc -l            # count total log lines
       ```
+
+      For structured formats, pipe through specialized tools: `python3 -m json.tool` for JSON,
+      `xmllint --format -` for XML, `column -t` for tab-separated data. These preserve the Unix
+      philosophy of composable single-purpose tools described in *The Unix Programming Environment*
+      (Kernighan and Pike, 1984).
+
+  - heading: "Searching Text with grep"
+    content: |
+      `grep` (Global Regular Expression Print) searches for patterns in text and is one of the
+      most powerful Unix tools, originating from the `ed` text editor's `g/re/p` command
+      (Kernighan and Pike, *The Unix Programming Environment*, 1984). `grep` reads files or
+      standard input and prints every line matching the given pattern.
+
+      The basic syntax is `grep [options] pattern [file...]`. The pattern is a POSIX Basic
+      Regular Expression (BRE) by default. Use `-E` for Extended Regular Expressions (ERE, same
+      as `egrep`), or `-P` for Perl-compatible regular expressions (PCRE). For literal fixed-string
+      matching without regex interpretation, use `-F` (equivalent to `fgrep`) for better
+      performance on large files.
+
+      **Key Options:**
+
+      | Flag    | Meaning                                          | Example                               |
+      |---------|--------------------------------------------------|---------------------------------------|
+      | `-i`    | Case-insensitive matching                        | `grep -i "error" syslog`             |
+      | `-r`    | Recursive search through directory tree          | `grep -r "PermitRoot" /etc/ssh/`     |
+      | `-n`    | Print line numbers alongside matches             | `grep -n "FAILED" auth.log`          |
+      | `-v`    | Invert match -- print NON-matching lines         | `grep -v "^#" /etc/hosts`            |
+      | `-l`    | List only filenames containing a match           | `grep -rl "TODO" ./src/`             |
+      | `-c`    | Count matching lines per file                    | `grep -c "404" access.log`           |
+      | `-w`    | Match whole words only                           | `grep -w "root" /etc/passwd`         |
+      | `-A N`  | Print N lines After each match (context)         | `grep -A 3 "ERROR" app.log`          |
+      | `-B N`  | Print N lines Before each match (context)        | `grep -B 2 "panic" kern.log`         |
+      | `-C N`  | Print N lines before And after (context)         | `grep -C 2 "OOM" kern.log`           |
+
+      ```bash
+      # Find all error mentions in system logs (case-insensitive, with line numbers)
+      grep -rni "error" /var/log/
+
+      # Show non-comment, non-blank lines from a config file
+      grep -v "^#" /etc/ssh/sshd_config | grep -v "^$"
+
+      # Find all files containing "password" under /etc
+      grep -rl "password" /etc/
+
+      # Count 404 responses in Nginx access log
+      grep -c " 404 " /var/log/nginx/access.log
+
+      # Show 3 lines of context around each CRITICAL event
+      grep -C 3 "CRITICAL" /var/log/app.log
+
+      # Find lines starting with a digit (BRE anchor)
+      grep "^[0-9]" /etc/hosts
+      ```
+
+      **Regular Expressions.** Common metacharacters: `.` matches any single character, `*`
+      repeats the previous element zero or more times, `^` anchors to line start, `$` anchors to
+      line end, `[abc]` matches a character class, `[^abc]` negates the class. For example,
+      `grep "^[0-9]"` matches lines starting with a digit, and `grep "\.conf$"` matches lines
+      ending in `.conf`. Extended regex (`-E`) adds `+` (one or more), `?` (zero or one), and
+      `|` (alternation): `grep -E "error|warning|critical" /var/log/syslog`.
+
+      According to *The Linux Command Line* (Shotts, 2019, Ch. 19), `grep` is often the first
+      tool administrators reach for when diagnosing system problems, because log files contain the
+      ground truth about system activity. Mastering `grep` with regular expressions is one of the
+      highest-leverage skills in Linux administration -- it underpins log analysis, security
+      auditing, and automated configuration verification across the entire career.
 
   - heading: "File Permissions"
     content: |
-      ```bash
-      ls -l file.txt
-      # -rw-r--r-- 1 user group 1234 Jan 1 12:00 file.txt
-      # Type | User | Group | Others
+      Linux implements a **discretionary access control (DAC)** model based on three permission
+      classes (owner, group, others) and three permission types (read, write, execute). This model,
+      inherited from UNIX, is defined in the POSIX standard (IEEE Std 1003.1) and governs access
+      to every file and directory on the system. Understanding permissions is mandatory for
+      securing a Linux server.
 
-      chmod 755 script.sh            # rwxr-xr-x
-      chmod +x script.sh             # Add execute permission
-      chmod 600 private.key          # rw------- (SSH keys)
-      chown user:group file.txt      # Change owner
+      **Reading a Permission String.** The output of `ls -l` begins with a 10-character string.
+      Example: `drwxr-xr-x`. Decode it character by character:
+
+      | Position | Example | Meaning                                                              |
+      |----------|---------|----------------------------------------------------------------------|
+      | 1        | `d`     | File type: `d`=dir, `-`=regular file, `l`=symlink, `c`=char device |
+      | 2-4      | `rwx`   | **Owner** permissions: read (r), write (w), execute (x)             |
+      | 5-7      | `r-x`   | **Group** permissions: read, no-write (-), execute                   |
+      | 8-10     | `r-x`   | **Others** permissions: read, no-write, execute                     |
+
+      For directories, `x` means the ability to enter (traverse) with `cd`. `r` on a directory
+      means the ability to list its contents with `ls`. `w` on a directory means the ability to
+      create, rename, or delete files within it.
+
+      ```mermaid
+      graph LR
+        subgraph "Bit 1: File Type"
+          FT["d=directory / -=file / l=symlink"]
+        end
+        subgraph "Bits 2-4: Owner u"
+          OR["r = 4 read"]
+          OW["w = 2 write"]
+          OX["x = 1 execute"]
+        end
+        subgraph "Bits 5-7: Group g"
+          GR["r = 4 read"]
+          GW["- = 0 no-write"]
+          GX["x = 1 execute"]
+        end
+        subgraph "Bits 8-10: Others o"
+          WR["r = 4 read"]
+          WW["- = 0 no-write"]
+          WX["x = 1 execute"]
+        end
+        FT --> OR --> OW --> OX
+        OX --> GR --> GW --> GX
+        GX --> WR --> WW --> WX
       ```
 
-      | Number | Permission |
-      |---|---|
-      | 7 | rwx (read+write+execute) |
-      | 6 | rw- (read+write) |
-      | 5 | r-x (read+execute) |
-      | 4 | r-- (read only) |
-      | 0 | --- (no permission) |
+      **Octal Notation.** Each permission class is a single octal digit: `r=4`, `w=2`, `x=1`.
+      Sum the values for each class: `rwx = 7`, `r-x = 5`, `rw- = 6`, `r-- = 4`, `--- = 0`.
+      Common permission sets for system administration:
 
-  - heading: "Finding Files"
-    content: |
+      | Octal | Symbolic     | Typical Use Case                        |
+      |-------|--------------|-----------------------------------------|
+      | `755` | `rwxr-xr-x`  | Executables, public directories         |
+      | `644` | `rw-r--r--`  | Regular configuration and data files    |
+      | `600` | `rw-------`  | Private SSH keys, credential files      |
+      | `700` | `rwx------`  | Private script directories              |
+
+      **`chmod`** changes file permissions in both *symbolic* and *octal* modes:
+
       ```bash
-      find / -name "*.conf" 2>/dev/null     # Find all .conf files
-      find /etc -type f -name "ssh*"         # Find SSH config files
-      find /var/log -mtime -7                # Files modified in last 7 days
-      which python3                          # Find executable location
-      whereis nginx                          # Find binary, source, manual
-      locate filename                        # Quick search (needs updatedb)
+      chmod 755 script.sh           # octal: rwxr-xr-x
+      chmod 644 config.txt          # octal: rw-r--r--
+      chmod u+x deploy.sh           # symbolic: add execute for owner
+      chmod g-w shared.txt          # symbolic: remove write from group
+      chmod o=r public.html         # symbolic: set others to read-only
+      chmod a+r announcement.txt    # symbolic: add read for all (ugo)
+      chmod -R 755 /var/www/html    # recursive: apply to entire directory tree
       ```
+
+      **`chown`** changes file ownership: `chown user:group file`. The `-R` flag applies
+      recursively. Requires root or `sudo`. **`chgrp`** changes group ownership only:
+      `chgrp www-data /var/www/html`.
+
+      **`umask`** defines the *default permission mask* subtracted from 666 (files) or 777
+      (directories) when new files are created. A umask of `022` produces `644` for files
+      and `755` for directories. Run `umask` to view; `umask 027` to set it for the session.
+      Set it persistently in `/etc/profile` or `~/.bashrc`.
+    interactive: chmod_calc
 
   - heading: "Process Management"
     content: |
+      Every running program in Linux is a **process** -- an instance of a program in execution,
+      with its own virtual memory address space, open file descriptors, signal handlers, and
+      scheduling state. The Linux kernel assigns each process a unique **PID** (Process ID) and
+      manages CPU time through the Completely Fair Scheduler (CFS), described in Love,
+      *Linux Kernel Development* (3rd ed., 2010).
+
+      **`ps` -- Process Snapshot.** `ps aux` lists all processes on the system in BSD-style
+      format. The columns have the following meanings:
+
+      | Column    | Meaning                                                        |
+      |-----------|----------------------------------------------------------------|
+      | `USER`    | Process owner username                                         |
+      | `PID`     | Process ID -- unique identifier assigned by the kernel         |
+      | `%CPU`    | Percentage of CPU time used since the process started          |
+      | `%MEM`    | Percentage of physical RAM consumed                            |
+      | `VSZ`     | Virtual memory size in kilobytes (includes shared libraries)   |
+      | `RSS`     | Resident Set Size -- actual physical RAM used (kilobytes)      |
+      | `TTY`     | Controlling terminal (`?` = no terminal, i.e., a daemon)       |
+      | `STAT`    | State: `R`=running, `S`=sleeping, `Z`=zombie, `T`=stopped      |
+      | `START`   | Time or date the process started                               |
+      | `TIME`    | Accumulated CPU time consumed                                  |
+      | `COMMAND` | Full command with arguments (`[name]` = kernel thread)         |
+
+      **`top` and `htop`.** `top` provides a dynamic real-time view of system processes, CPU and
+      memory usage, load averages, and uptime. Interactive keys: `q` to quit, `k` to act on a
+      process by PID, `M` to sort by memory, `P` to sort by CPU usage, `1` to toggle per-CPU
+      breakdown. `htop` is an enhanced color-coded version with mouse support and a more intuitive
+      interface (install with `sudo apt install htop`). Both read process info from `/proc`.
+
+      **Sending Signals to Processes.** The `signal(7)` man page defines all UNIX signals.
+      Use the `kill` utility to send a signal to a process by its numeric PID. Key signals:
+
+      - **SIGTERM (15)**: Requests graceful termination; the process can catch this, finish
+        pending work, and clean up. This is the default signal sent when you run `kill PID`.
+        Always attempt this before escalating.
+      - **SIGKILL (9)**: Forces immediate termination at the kernel level; cannot be caught,
+        blocked, or ignored by the process. Use as last resort with `kill -9 PID`.
+      - **SIGHUP (1)**: Historically "hangup"; many daemons reload their configuration on
+        receipt of this signal. First find the PID with `ps aux | grep nginx`, then send
+        the signal: `kill -1 1234`.
+
+      **Background Jobs.** Append `&` to run a command in the background immediately. Shell
+      commands for managing background jobs:
+
+      - `jobs`: list all active background and suspended jobs with their job numbers
+      - `fg %N`: bring job number N to the foreground
+      - `bg %N`: resume a stopped (Ctrl+Z) job in the background
+      - `Ctrl+Z`: suspend the foreground process (sends SIGTSTP signal)
+
+      **`nohup`** runs a command immune to the HUP signal, allowing it to continue running after
+      you log out: `nohup ./backup.sh > backup.log 2>&1 &`. Output goes to `nohup.out` by
+      default unless redirected. For long-running administrative tasks, `screen` or `tmux` are
+      more robust alternatives that provide full terminal session persistence.
+
       ```bash
-      ps aux                         # All running processes
-      ps aux | grep nginx            # Find specific process
-      top                            # Interactive process monitor
-      htop                           # Better interactive monitor (if installed)
-      kill 1234                      # Kill process by PID
-      kill -9 1234                   # Force kill
-      killall nginx                  # Kill by name
-      nohup command &                # Run in background, survive logout
-      jobs                           # List background jobs
+      ps aux                          # all processes, BSD format
+      ps aux | grep nginx             # find nginx processes
+      ps -ef --forest                 # show process hierarchy tree
+      top                             # interactive real-time monitor
+      htop                            # enhanced real-time monitor
+      kill 1234                       # send SIGTERM to PID 1234
+      kill -9 1234                    # SIGKILL -- force terminate PID 1234
+      kill -1 5678                    # SIGHUP -- signal process to reload config
+      sleep 200 &                     # run sleep in background
+      jobs                            # list background jobs
+      fg %1                           # bring job 1 to foreground
+      bg %1                           # resume suspended job 1 in background
+      nohup ./long_backup.sh > out.log 2>&1 &   # run immune to logout
       ```
 
 quiz:
-  - question: "Which command shows real-time updates to a log file?"
-    options: ["cat -f", "tail -f", "head -f", "less +F"]
+  - question: "What octal permission value represents the symbolic string rwxr-xr-x?"
+    options:
+      - "A) 644"
+      - "B) 755"
+      - "C) 777"
+      - "D) 700"
     answer: 1
-    explanation: "'tail -f' follows a file and shows new content as it is appended, perfect for monitoring logs."
+    explanation: "rwxr-xr-x decomposes as: owner=rwx (4+2+1=7), group=r-x (4+0+1=5), others=r-x (4+0+1=5), yielding octal 755. This is the standard permission for executable files and publicly accessible directories such as /var/www/html."
 
-  - question: "What permissions does chmod 755 set?"
-    options: ["rwxrwxrwx", "rwxr-xr-x", "rw-r--r--", "rwx------"]
+  - question: "Which command and flag combination monitors a log file in real time, displaying new lines as they are appended?"
+    options:
+      - "A) cat -f /var/log/syslog"
+      - "B) head -f /var/log/syslog"
+      - "C) tail -f /var/log/syslog"
+      - "D) less -f /var/log/syslog"
+    answer: 2
+    explanation: "tail -f (follow) keeps the file open and outputs new lines as they are written, making it the standard tool for real-time log monitoring. tail -F additionally handles log rotation by reopening the file if it is renamed. Neither cat, head, nor less provide this continuous-follow behavior."
+
+  - question: "Which ls flag reveals hidden files whose names begin with a dot (.bashrc, .ssh/, etc.)?"
+    options:
+      - "A) -h (human-readable sizes)"
+      - "B) -l (long format listing)"
+      - "C) -a (all files including hidden)"
+      - "D) -r (reverse sort order)"
+    answer: 2
+    explanation: "The -a (all) flag instructs ls to show all files including dot-files such as .bashrc, .profile, and .ssh/. These files are hidden by Unix convention -- the kernel does not treat them specially, but ls omits them by default. The -h flag makes sizes human-readable, and -l enables long-format output."
+
+  - question: "What is the signal number of SIGKILL, and what critically distinguishes it from SIGTERM?"
+    options:
+      - "A) Signal 1 -- can be caught and handled by the receiving process"
+      - "B) Signal 9 -- handled by the kernel; cannot be caught, blocked, or ignored"
+      - "C) Signal 15 -- cannot be caught, blocked, or ignored by any process"
+      - "D) Signal 9 -- can be caught by the process to allow graceful cleanup"
     answer: 1
-    explanation: "755 = 7(rwx) for owner, 5(r-x) for group, 5(r-x) for others = rwxr-xr-x."
+    explanation: "SIGKILL is signal number 9. It is unique because it is handled entirely by the Linux kernel -- the target process never receives it and has no opportunity to clean up temporary files or connections. SIGTERM (signal 15) is the polite request and can be caught by the process for graceful shutdown. Always try SIGTERM first."
