@@ -14,6 +14,16 @@
   --green-l: #dcfce7;
   --orange:  #ea580c;
   --orange-l:#ffedd5;
+  --purple:  #7c3aed;
+  --purple-l:#ede9fe;
+  --amber:   #d97706;
+  --amber-l: #fef3c7;
+  --red:     #dc2626;
+  --red-l:   #fee2e2;
+  --sky:     #0284c7;
+  --sky-l:   #e0f2fe;
+  --slate:   #475569;
+  --slate-l: #f1f5f9;
   --gray-50: #f9fafb;
   --gray-100:#f3f4f6;
   --gray-200:#e5e7eb;
@@ -97,6 +107,51 @@ code, pre { font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace; 
 }
 .btn-assignments:hover { background: #92400e !important; }
 
+/* ---- Nav dropdown ---- */
+.nav-dropdown { position: relative; display: inline-flex; align-items: center; }
+.nav-dropdown-btn {
+  color: #d1d5db;
+  padding: .35rem .65rem;
+  border-radius: var(--radius);
+  font-size: .9rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  transition: background .15s, color .15s;
+}
+.nav-dropdown-btn:hover { background: #374151; color: #fff; }
+.nav-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: var(--radius);
+  min-width: 220px;
+  z-index: 200;
+  box-shadow: var(--shadow-lg);
+  padding: .4rem 0;
+}
+.nav-dropdown:hover .nav-dropdown-menu,
+.nav-dropdown:focus-within .nav-dropdown-menu { display: block; }
+.nav-dropdown-menu a {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem 1rem;
+  color: #d1d5db;
+  font-size: .88rem;
+  border-radius: 0;
+}
+.nav-dropdown-menu a:hover { background: #374151; color: #fff; text-decoration: none; }
+.nav-dropdown-divider { font-size: .72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: #6b7280; padding: .5rem 1rem .2rem; }
+.nav-caret { font-size: .7rem; opacity: .7; }
+
 /* ---- Main layout ---- */
 .main-content { flex: 1; }
 .page-container {
@@ -179,6 +234,11 @@ code, pre { font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace; 
 .category-teal   { border-top: 4px solid var(--teal); }
 .category-green  { border-top: 4px solid var(--green); }
 .category-orange { border-top: 4px solid var(--orange); }
+.category-purple { border-top: 4px solid var(--purple); }
+.category-amber  { border-top: 4px solid var(--amber); }
+.category-red    { border-top: 4px solid var(--red); }
+.category-sky    { border-top: 4px solid var(--sky); }
+.category-slate  { border-top: 4px solid var(--slate); }
 
 /* ---- Features ---- */
 .features-section { background: var(--gray-100); padding: 3rem 0; }
@@ -255,6 +315,11 @@ code, pre { font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace; 
 .category-teal   .lesson-badge, .lesson-badge.category-teal   { background: var(--teal-l);   color: var(--teal); }
 .category-green  .lesson-badge, .lesson-badge.category-green  { background: var(--green-l);  color: var(--green); }
 .category-orange .lesson-badge, .lesson-badge.category-orange { background: var(--orange-l); color: var(--orange); }
+.category-purple .lesson-badge, .lesson-badge.category-purple { background: var(--purple-l); color: var(--purple); }
+.category-amber  .lesson-badge, .lesson-badge.category-amber  { background: var(--amber-l);  color: var(--amber); }
+.category-red    .lesson-badge, .lesson-badge.category-red    { background: var(--red-l);    color: var(--red); }
+.category-sky    .lesson-badge, .lesson-badge.category-sky    { background: var(--sky-l);    color: var(--sky); }
+.category-slate  .lesson-badge, .lesson-badge.category-slate  { background: var(--slate-l);  color: var(--slate); }
 .lesson-header h1 { font-size: 2rem; font-weight: 800; }
 .lesson-summary { color: var(--gray-600); font-size: 1.05rem; margin-top: .4rem; }
 
@@ -829,6 +894,11 @@ textarea.open-answer:disabled { background: var(--gray-100); color: var(--gray-6
   --teal-l: #0f2c2a;
   --green-l: #0f2d1d;
   --orange-l: #3a210f;
+  --purple-l: #2e1065;
+  --amber-l:  #3b2003;
+  --red-l:    #3c0a0a;
+  --sky-l:    #082f49;
+  --slate-l:  #1e293b;
 }
 
 body {
@@ -1059,6 +1129,23 @@ textarea.open-answer {
 .roadmap-note { text-align: center; font-size: .85rem; color: var(--gray-600); }
 .category-course-num { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .75; margin-bottom: .2rem; display: block; }
 
+/* Degree year groups (home + learning path) */
+.degree-years { display: flex; flex-direction: column; gap: 2rem; margin-top: 1.5rem; }
+.degree-year-group { border: 1px solid var(--gray-200); border-radius: var(--radius); background: #fff; box-shadow: var(--shadow); overflow: hidden; }
+.degree-year-header { background: var(--gray-900); color: #fff; padding: .6rem 1.2rem; font-weight: 700; font-size: .95rem; display: flex; align-items: center; gap: .5rem; }
+.degree-year-header .year-credits { margin-left: auto; font-size: .8rem; font-weight: 400; opacity: .7; }
+.degree-year-courses { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0; }
+.degree-year-card { position: relative; display: flex; flex-direction: column; padding: 1rem 1.1rem; border-right: 1px solid var(--gray-200); border-top: 1px solid var(--gray-200); transition: background .15s; }
+.degree-year-card:last-child { border-right: none; }
+.degree-year-card:first-child { border-top: none; }
+.degree-year-card:hover { background: var(--gray-50); }
+.degree-year-card-link { position: absolute; inset: 0; }
+.degree-year-icon { font-size: 1.5rem; margin-bottom: .3rem; }
+.degree-year-num { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--gray-600); margin-bottom: .15rem; }
+.degree-year-title { font-size: .95rem; font-weight: 700; }
+.degree-year-desc { font-size: .8rem; color: var(--gray-600); margin-top: .2rem; flex: 1; }
+.degree-year-credits { font-size: .72rem; color: var(--gray-400); margin-top: .5rem; }
+
 /* ---- Learning Path page ---- */
 .lp-hero { text-align: center; margin: 1.5rem 0 2rem; }
 .lp-hero h1 { font-size: 2rem; margin-bottom: .5rem; }
@@ -1184,3 +1271,9 @@ textarea.open-answer {
 .chmod-table td { border-top-color: #253044; }
 .lp-hero p { color: #94a3b8; }
 .lp-leads-to { background: #0a1f18; border-color: #064e3b; color: #6ee7b7; }
+.degree-year-group { background: #11161f; border-color: #253044; }
+.degree-year-card { border-color: #253044; }
+.degree-year-card:hover { background: #1a2234; }
+.degree-year-num { color: #94a3b8; }
+.degree-year-desc { color: #94a3b8; }
+.degree-year-credits { color: #64748b; }

@@ -3,7 +3,7 @@ order: 3
 summary: "A comprehensive examination of NoSQL database paradigms including the CAP theorem, document stores (MongoDB), key-value stores (Redis), columnar databases, and graph databases — with practical shell examples and guidance on selecting the right database for a given workload."
 learning_objectives:
   - "Articulate the trade-offs between relational and NoSQL databases and apply the CAP theorem to classify NoSQL systems."
-  - "Perform CRUD operations, aggregation pipeline queries, and index creation in MongoDB using the mongo shell."
+  - "Perform CRUD operations, aggregation pipeline queries, and index creation in MongoDB using mongosh (the MongoDB Shell)."
   - "Use Redis data structures (strings, hashes, lists, sets, sorted sets) and features (TTL, pub/sub) from the redis-cli."
   - "Describe the conceptual architecture of columnar (wide-column) and graph databases and identify appropriate use cases."
   - "Choose the right database type for a given application workload, justifying the decision with reference to CAP, data model, and access patterns."
@@ -19,7 +19,7 @@ sections:
       The term **NoSQL** (originally "No SQL", now often interpreted as "Not Only SQL") emerged
       around 2009 to describe a generation of database systems designed to address limitations
       of relational databases at **web-scale workloads**. Companies like Google (Bigtable, 2006),
-      Amazon (Dynamo, 2007), and Facebook (Cassandra, 2008) encountered problems that traditional
+      Amazon (Dynamo, 2007), and Facebook (Cassandra, developed 2007; open-sourced 2008) encountered problems that traditional
       RDBMS systems struggled to solve: horizontal scalability across thousands of commodity
       servers, flexible schemas for rapidly evolving data models, and extremely high throughput
       for simple access patterns (key lookups, range scans).

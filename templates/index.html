@@ -1,44 +1,64 @@
 {% extends "base.html" %}
-{% block title %}LinuxNLearn — AI-Assisted IT Education{% endblock %}
+{% block title %}LinuxNLearn — AI-Assisted Bachelor's Degree Program{% endblock %}
 
 {% block content %}
 <section class="hero">
     <div class="hero-content">
-        <h1>Learn IT with AI Assistance</h1>
+        <h1>Bachelor's Degree in Information Technology</h1>
         <p class="hero-subtitle">
-            Accredited college-level courses in Linux, Networking, Cisco, Python, and Edge AI —
-            each course building directly on the one before it, with interactive labs and AI tutoring.
+            Nine college-level courses — Linux · Python · Networking · Databases · Software Engineering ·
+            Cisco · Cybersecurity · Cloud &amp; DevOps · Edge AI — delivered by an AI Professor that
+            teaches, quizzes, and grades you at every step.
         </p>
         <div class="hero-actions">
-            <a href="{{ url_for('category', category='linux') }}" class="btn btn-primary">Start with Linux →</a>
-            <a href="{{ url_for('learning_path') }}" class="btn btn-secondary">🗺 View Learning Path</a>
-            <a href="{{ url_for('assistant') }}" class="btn btn-secondary">🤖 Ask AI</a>
+            <a href="{{ url_for('category', category='linux') }}" class="btn btn-primary">Start Year 1 →</a>
+            <a href="{{ url_for('learning_path') }}" class="btn btn-secondary">🗺 Full Degree Plan</a>
+            <a href="{{ url_for('instructor') }}" class="btn btn-secondary">🎓 AI Professor</a>
         </div>
     </div>
 </section>
 
-{# ── Degree Pathway Roadmap ── #}
+{# ── 4-Year Degree Pathway ── #}
 <section class="roadmap-section">
     <div class="section-container">
-        <h2 class="section-title">🎓 Degree Pathway</h2>
-        <p class="section-subtitle">Complete courses in sequence — each one builds on the previous and unlocks the next.</p>
-        <div class="roadmap-track">
-            {% for course in ordered_courses %}
-            <div class="roadmap-step category-{{ course.color }}">
-                <div class="roadmap-step-icon">{{ course.icon }}</div>
-                <div class="roadmap-step-body">
-                    <span class="roadmap-course-num">{{ course.course_number }}</span>
-                    <strong>{{ course.title }}</strong>
-                    <span class="roadmap-credits">{{ course.credits }} cr{% if course.lab_credits %} + {{ course.lab_credits }} lab{% endif %}</span>
+        <h2 class="section-title">🎓 4-Year Degree Pathway</h2>
+        <p class="section-subtitle">Complete courses in sequence — each year builds on the last, and every course unlocks the next.</p>
+
+        <div class="degree-years">
+            {% set years = [
+                (1, "Year 1 — Foundations", "Systems & Programming essentials"),
+                (2, "Year 2 — Core", "Networks, Data, and Engineering practice"),
+                (3, "Year 3 — Advanced", "Enterprise networking and security"),
+                (4, "Year 4 — Specialisation", "Cloud infrastructure and AI at the edge"),
+            ] %}
+            {% for yr_num, yr_label, yr_desc in years %}
+            {% set year_courses = ordered_courses | selectattr("year", "equalto", yr_num) | list %}
+            {% if year_courses %}
+            <div class="degree-year-group">
+                <div class="degree-year-header">
+                    <span>{{ yr_label }}</span>
+                    <span class="year-credits">{{ yr_desc }}</span>
                 </div>
-                {% for key, cat in categories.items() %}{% if cat.course_number == course.course_number %}
-                <a href="{{ url_for('category', category=key) }}" class="roadmap-link" aria-label="{{ course.title }}"></a>
-                {% endif %}{% endfor %}
+                <div class="degree-year-courses">
+                    {% for course in year_courses %}
+                    {% for key, cat in categories.items() %}{% if cat.course_number == course.course_number %}
+                    <div class="degree-year-card category-{{ course.color }}">
+                        <a href="{{ url_for('category', category=key) }}" class="degree-year-card-link" aria-label="{{ course.title }}"></a>
+                        <div class="degree-year-icon">{{ course.icon }}</div>
+                        <div class="degree-year-num">{{ course.course_number }}</div>
+                        <div class="degree-year-title">{{ course.title }}</div>
+                        <div class="degree-year-desc">{{ course.description | truncate(80) }}</div>
+                        <div class="degree-year-credits">{{ course.credits }} cr{% if course.lab_credits %} + {{ course.lab_credits }} lab{% endif %}</div>
+                    </div>
+                    {% endif %}{% endfor %}
+                    {% endfor %}
+                </div>
             </div>
-            {% if not loop.last %}<div class="roadmap-arrow">→</div>{% endif %}
+            {% endif %}
             {% endfor %}
         </div>
-        <p class="roadmap-note"><a href="{{ url_for('learning_path') }}">View full course descriptions and prerequisites →</a></p>
+
+        <p class="roadmap-note" style="margin-top:1rem"><a href="{{ url_for('learning_path') }}">View full syllabi, prerequisites, and textbooks →</a></p>
     </div>
 </section>
 
@@ -46,7 +66,7 @@
     <div class="section-container">
         <h2 class="section-title">Course Catalog</h2>
         <div class="categories-grid">
-            {% for key, cat in categories.items() %}
+            {% for key, cat in categories.items() | sort(attribute='1.sequence') %}
             <a href="{{ url_for('category', category=key) }}" class="category-card category-{{ cat.color }}">
                 <div class="category-icon">{{ cat.icon }}</div>
                 <div class="category-course-num">{{ cat.course_number }}</div>
@@ -68,33 +88,33 @@
         <div class="features-grid">
             <div class="feature-card">
                 <div class="feature-icon">🎓</div>
-                <h3>Accredited Course Structure</h3>
-                <p>Full syllabi, Bloom's-taxonomy learning outcomes, academic integrity policies, and formal grading rubrics — as used in accredited university programs.</p>
+                <h3>Degree-Level Curriculum</h3>
+                <p>Full syllabi with official course numbers, Bloom's-taxonomy outcomes, real textbooks, and formal grading rubrics — as used in accredited university programs.</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🤖</div>
+                <h3>AI Professor</h3>
+                <p>Your AI Professor knows the entire 9-course curriculum. It assesses your level, teaches one concept at a time, checks understanding, and gives detailed feedback on every answer.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🔗</div>
                 <h3>Sequenced Progression</h3>
-                <p>Each course explicitly builds on the previous one. Linux → Networking → Cisco / Python → Edge AI forms a coherent degree pathway.</p>
+                <p>Linux → Python → Networking → Databases → Software Engineering → Cisco → Cybersecurity → Cloud → Edge AI. Every course explicitly builds on the previous one.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">🖼</div>
-                <h3>Illustrations &amp; Diagrams</h3>
-                <p>Every major concept includes Mermaid diagrams — OSI stacks, TCP handshakes, filesystem trees, VLAN topologies, and routing tables rendered inline.</p>
+                <h3>Diagrams &amp; Visualisations</h3>
+                <p>Every major concept includes Mermaid diagrams — OSI stacks, TCP handshakes, ER diagrams, Kubernetes architectures, threat models, and CI/CD pipelines rendered inline.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">⚡</div>
-                <h3>Interactive Examples</h3>
-                <p>Practice in your browser: simulated Linux terminal, subnet calculator, chmod calculator, Python sandbox, and Cisco IOS simulator — no install needed.</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🤖</div>
-                <h3>AI Instructor</h3>
-                <p>Ask the AI tutor any question mid-lesson. It knows the full curriculum context and calibrates answers to your current course level.</p>
+                <h3>Interactive Labs</h3>
+                <p>Practice in your browser: simulated Linux terminal, subnet calculator, Python sandbox, Cisco IOS simulator — no install needed.</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">📝</div>
                 <h3>AI-Graded Assignments</h3>
-                <p>Open-ended lab reports and problem sets are graded by AI with per-task feedback, ideal-answer reveals, and letter grades.</p>
+                <p>Open-ended lab reports and problem sets are graded by AI with per-task feedback, ideal-answer reveals, and letter grades — just like a real university course.</p>
             </div>
         </div>
     </div>

@@ -80,7 +80,8 @@ CATEGORIES = {
         "icon": "🌐",
         "description": "Learn fundamental and advanced networking concepts including OSI model, TCP/IP, subnetting, and more.",
         "color": "blue",
-        "sequence": 2,
+        "sequence": 3,
+        "year": 2,
         "prev_course": "linux",
         "next_course": "cisco",
         "builds_on": [
@@ -125,9 +126,10 @@ CATEGORIES = {
         "icon": "🔧",
         "description": "Master Cisco IOS, VLANs, routing protocols, switching, and enterprise networking.",
         "color": "teal",
-        "sequence": 3,
+        "sequence": 6,
+        "year": 3,
         "prev_course": "networking",
-        "next_course": "jetson",
+        "next_course": "cybersecurity",
         "builds_on": [
             "IP addressing and subnetting (NET 201) — every lab requires you to design and assign subnets",
             "OSI model layers (NET 201) — IOS show commands map directly to Layer 2 (MAC/VLAN) and Layer 3 (IP/routing) concepts",
@@ -171,9 +173,10 @@ CATEGORIES = {
         "icon": "🐍",
         "description": "Learn Python programming from basics to advanced topics including network automation.",
         "color": "green",
-        "sequence": 3,
+        "sequence": 2,
+        "year": 1,
         "prev_course": "linux",
-        "next_course": "jetson",
+        "next_course": "networking",
         "builds_on": [
             "Linux shell and file system (SYS 202) — Python scripts run from Bash and interact with the Linux filesystem daily",
             "File permissions and processes (SYS 202) — Python automation manages files, processes, and services",
@@ -218,8 +221,9 @@ CATEGORIES = {
         "description": "Master Linux commands, file system management, shell scripting, and system administration.",
         "color": "orange",
         "sequence": 1,
+        "year": 1,
         "prev_course": None,
-        "next_course": "networking",
+        "next_course": "python",
         "builds_on": [
             "Basic computer literacy — familiarity with files, folders, and operating systems at the end-user level",
         ],
@@ -261,8 +265,9 @@ CATEGORIES = {
         "icon": "🤖",
         "description": "Build practical edge AI workflows on NVIDIA Jetson Orin Nano 8GB: setup, media generation, and computer vision.",
         "color": "purple",
-        "sequence": 4,
-        "prev_course": "python",
+        "sequence": 9,
+        "year": 4,
+        "prev_course": "cloud",
         "next_course": None,
         "builds_on": [
             "Python programming (CS 215) — all inference pipelines, training scripts, and automation are written in Python",
@@ -299,6 +304,209 @@ CATEGORIES = {
         "faculty": {
             "role": "Course Coordinator",
             "note": "Instruction delivered by NVIDIA Deep Learning Institute (DLI) Certified faculty of the Department of Artificial Intelligence & Robotics.",
+        },
+    },
+    "databases": {
+        "title": "Database Systems",
+        "icon": "🗄️",
+        "description": "Design and query relational and NoSQL databases using SQL, PostgreSQL, and MongoDB.",
+        "color": "amber",
+        "sequence": 4,
+        "year": 2,
+        "prev_course": "python",
+        "next_course": "softeng",
+        "builds_on": [
+            "Python programming (CS 215) — database drivers, ORMs, and data-processing scripts are written in Python",
+            "Linux command-line (SYS 202) — database servers run on Linux; psql and mongosh CLI tools are used for admin",
+        ],
+        "leads_to": "Software Engineering (CS 320) and Cybersecurity (SEC 301), where data modeling and secure storage are central design concerns",
+        "course_number": "CS 310",
+        "credits": 3,
+        "lab_credits": 1,
+        "department": "Department of Computer Science & Software Engineering",
+        "prerequisites": ["Python Programming (CS 215)", "Introduction to Linux (SYS 202)"],
+        "catalog_description": (
+            "A rigorous introduction to database theory and practice. "
+            "Topics include the relational model, SQL (DDL, DML, DCL, TCL), "
+            "query optimization and indexing, normalization through BCNF, transaction management "
+            "(ACID properties), and NoSQL paradigms (document stores, key-value, columnar, graph). "
+            "Laboratory sessions use PostgreSQL, SQLite, and MongoDB. "
+            "Students design and implement a multi-table normalized schema and a Python-backed API "
+            "that serves data to a REST client."
+        ),
+        "textbooks": [
+            {
+                "title": "Database System Concepts",
+                "authors": "Abraham Silberschatz, Henry F. Korth & S. Sudarshan",
+                "edition": "7th ed., McGraw-Hill, 2020",
+                "isbn": "978-0-07-802215-9",
+            },
+            {
+                "title": "Learning SQL",
+                "authors": "Alan Beaulieu",
+                "edition": "3rd ed., O'Reilly, 2020",
+                "isbn": "978-1-492-05759-4",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by faculty of the Department of Computer Science & Software Engineering.",
+        },
+    },
+    "cybersecurity": {
+        "title": "Cybersecurity",
+        "icon": "🔐",
+        "description": "Master threat analysis, cryptography, network defence, penetration testing, and incident response.",
+        "color": "red",
+        "sequence": 7,
+        "year": 3,
+        "prev_course": "cisco",
+        "next_course": "cloud",
+        "builds_on": [
+            "Networking fundamentals (NET 201) — attack surfaces map directly to the OSI stack; TCP/IP knowledge is assumed in every lab",
+            "Linux system administration (SYS 202) — most offensive and defensive tools run on Linux",
+            "Python programming (CS 215) — exploit scripts, automation, and analysis tools are written in Python",
+        ],
+        "leads_to": "Cloud Computing & DevOps (CS 401), where secure-by-design infrastructure and zero-trust architecture are applied at scale",
+        "course_number": "SEC 301",
+        "credits": 3,
+        "lab_credits": 1,
+        "department": "Department of Cybersecurity & Information Assurance",
+        "prerequisites": [
+            "Networking Fundamentals (NET 201)",
+            "Introduction to Linux (SYS 202)",
+            "Python Programming (CS 215)",
+        ],
+        "catalog_description": (
+            "A comprehensive introduction to cybersecurity principles and practice. "
+            "Topics include the CIA triad, common attack vectors (OWASP Top 10, MITRE ATT&CK), "
+            "symmetric and asymmetric cryptography, PKI and TLS, network security controls "
+            "(firewalls, IDS/IPS, VPNs), ethical hacking methodology (reconnaissance, scanning, "
+            "exploitation, post-exploitation, reporting), and incident response procedures. "
+            "Laboratory sessions use Kali Linux, Wireshark, Metasploit, and Burp Suite in "
+            "isolated lab environments. This course prepares students for the CompTIA Security+ "
+            "and Certified Ethical Hacker (CEH) examinations."
+        ),
+        "textbooks": [
+            {
+                "title": "CompTIA Security+ Study Guide",
+                "authors": "Mike Chapple & David Seidl",
+                "edition": "9th ed., Sybex, 2023",
+                "isbn": "978-1-119-90671-7",
+            },
+            {
+                "title": "The Web Application Hacker's Handbook",
+                "authors": "Dafydd Stuttard & Marcus Pinto",
+                "edition": "2nd ed., Wiley, 2011",
+                "isbn": "978-1-118-02647-2",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by CompTIA Security+ and CEH Certified faculty of the Department of Cybersecurity & Information Assurance.",
+        },
+    },
+    "cloud": {
+        "title": "Cloud & DevOps",
+        "icon": "☁️",
+        "description": "Deploy scalable applications using AWS/GCP/Azure, Docker, Kubernetes, Terraform, and CI/CD pipelines.",
+        "color": "sky",
+        "sequence": 8,
+        "year": 4,
+        "prev_course": "cybersecurity",
+        "next_course": "jetson",
+        "builds_on": [
+            "Linux system administration (SYS 202) — every cloud instance, container, and serverless runtime runs Linux",
+            "Networking fundamentals (NET 201) — VPCs, subnets, security groups, and load balancers extend your subnetting and routing knowledge",
+            "Python programming (CS 215) — Terraform, Ansible, and SDK automation are written in Python or HCL",
+            "Cybersecurity (SEC 301) — IAM policies, TLS, and zero-trust principles are applied throughout every cloud deployment",
+        ],
+        "leads_to": "Edge AI Development (AI 340), where cloud infrastructure skills underpin model registries, remote inference endpoints, and fleet OTA updates",
+        "course_number": "CS 401",
+        "credits": 3,
+        "lab_credits": 2,
+        "department": "Department of Computer Science & Software Engineering",
+        "prerequisites": [
+            "Cybersecurity Fundamentals (SEC 301)",
+            "Networking Fundamentals (NET 201)",
+            "Python Programming (CS 215)",
+        ],
+        "catalog_description": (
+            "A hands-on course in cloud computing and modern DevOps engineering. "
+            "Students provision infrastructure on AWS, Azure, and GCP using the console, CLI, "
+            "and Terraform (Infrastructure as Code). Topics include compute (EC2, VMs, Cloud Run), "
+            "managed databases, object storage, IAM and least-privilege design, containerization "
+            "with Docker, container orchestration with Kubernetes, and CI/CD pipeline construction "
+            "with GitHub Actions. Students complete a capstone deploying a microservices application "
+            "through a full automated pipeline to a Kubernetes cluster. "
+            "Prepares students for the AWS Solutions Architect Associate and "
+            "Certified Kubernetes Administrator (CKA) examinations."
+        ),
+        "textbooks": [
+            {
+                "title": "Cloud Native Patterns",
+                "authors": "Cornelia Davis",
+                "edition": "Manning, 2019",
+                "isbn": "978-1-617-29451-5",
+            },
+            {
+                "title": "Kubernetes in Action",
+                "authors": "Marko Lukša",
+                "edition": "2nd ed., Manning, 2022",
+                "isbn": "978-1-617-29752-3",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by AWS Certified Solutions Architect and CKA Certified faculty of the Department of Computer Science & Software Engineering.",
+        },
+    },
+    "softeng": {
+        "title": "Software Engineering",
+        "icon": "⚙️",
+        "description": "Apply agile methodologies, design patterns, Git workflows, automated testing, and CI/CD to build production software.",
+        "color": "slate",
+        "sequence": 5,
+        "year": 2,
+        "prev_course": "databases",
+        "next_course": "cisco",
+        "builds_on": [
+            "Python programming (CS 215) — all examples use Python; students write unit tests and apply OOP design patterns in Python",
+            "Database systems (CS 310) — software systems persist state; you will apply schema design and ORM patterns here",
+        ],
+        "leads_to": "Cybersecurity (SEC 301) and Cloud & DevOps (CS 401), where software engineering practices — testing, CI/CD, code review — are prerequisites",
+        "course_number": "CS 320",
+        "credits": 3,
+        "lab_credits": 1,
+        "department": "Department of Computer Science & Software Engineering",
+        "prerequisites": ["Python Programming (CS 215)", "Database Systems (CS 310)"],
+        "catalog_description": (
+            "An intermediate course in software engineering principles and professional practice. "
+            "Topics include the software development lifecycle (SDLC), agile and Scrum methodology, "
+            "version control with Git and GitHub (branching strategies, pull requests, code review), "
+            "object-oriented design and SOLID principles, GoF design patterns (Creational, Structural, "
+            "Behavioural), automated testing (unit, integration, end-to-end), test-driven development (TDD), "
+            "static analysis and code quality tools, and CI/CD pipeline fundamentals. "
+            "Students complete a team project following an agile sprint cycle and submit a tested, "
+            "reviewed, and automatically deployed application."
+        ),
+        "textbooks": [
+            {
+                "title": "Clean Code: A Handbook of Agile Software Craftsmanship",
+                "authors": "Robert C. Martin",
+                "edition": "Prentice Hall, 2008",
+                "isbn": "978-0-13-235088-4",
+            },
+            {
+                "title": "Design Patterns: Elements of Reusable Object-Oriented Software",
+                "authors": "Gang of Four (Gamma, Helm, Johnson & Vlissides)",
+                "edition": "Addison-Wesley, 1994",
+                "isbn": "978-0-20-163361-5",
+            },
+        ],
+        "faculty": {
+            "role": "Course Coordinator",
+            "note": "Instruction delivered by industry-certified faculty of the Department of Computer Science & Software Engineering.",
         },
     },
 }
@@ -616,6 +824,220 @@ Before shipping on Jetson, confirm:
 - Reproducible setup instructions
 
 Deliver a one-page readiness note with risks and mitigations.
+""",
+            },
+        ],
+        "databases": [
+            {
+                "heading": "SQL Query Sprint",
+                "content": """
+Practice writing correct, efficient SQL under time pressure:
+
+```sql
+-- 1) Basic SELECT with filtering and ordering (3 min)
+SELECT customer_id, order_total
+FROM orders
+WHERE order_date >= '2024-01-01'
+ORDER BY order_total DESC
+LIMIT 10;
+
+-- 2) JOIN across three tables (5 min)
+SELECT c.name, COUNT(o.id) AS order_count, SUM(o.total) AS revenue
+FROM customers c
+JOIN orders o ON c.id = o.customer_id
+JOIN order_items oi ON o.id = oi.order_id
+GROUP BY c.id, c.name
+HAVING COUNT(o.id) > 2;
+
+-- 3) Subquery for relative analysis (5 min)
+SELECT product_name, price
+FROM products
+WHERE price > (SELECT AVG(price) FROM products);
+```
+
+Target: all three queries correct within 15 minutes.
+""",
+            },
+            {
+                "heading": "Schema Design Challenge",
+                "content": """
+Design a normalized database schema for the following scenario in 20 minutes:
+
+**E-commerce Order System:**
+- Customers place orders containing multiple products
+- Products belong to categories
+- Orders have statuses (pending, shipped, delivered, cancelled)
+- Each order line tracks quantity and unit price at time of purchase
+
+Deliverables:
+1. Entity-Relationship (ER) diagram using Crow's Foot notation
+2. DDL (`CREATE TABLE` statements) for all entities
+3. At least one index justified by a query pattern
+4. Explanation of normalization decisions (1NF → 3NF)
+""",
+            },
+        ],
+        "cybersecurity": [
+            {
+                "heading": "Threat Modelling Sprint",
+                "content": """
+Apply the STRIDE threat model to a simple web application in 20 minutes:
+
+```text
+STRIDE Categories:
+S — Spoofing identity
+T — Tampering with data
+R — Repudiation (denying actions)
+I — Information disclosure
+D — Denial of service
+E — Elevation of privilege
+```
+
+For each category:
+1. Identify one realistic threat to the system
+2. Rate likelihood (1-5) and impact (1-5)
+3. Propose one mitigation control
+
+Deliverable: a 6-row STRIDE table with threats and controls.
+""",
+            },
+            {
+                "heading": "Network Packet Analysis Lab",
+                "content": """
+Analyse a packet capture (PCAP) file to answer forensic questions:
+
+```bash
+# Filter for suspicious traffic patterns
+tcpdump -r capture.pcap -n 'tcp[tcpflags] & tcp-syn != 0'
+
+# Extract DNS queries
+tshark -r capture.pcap -Y "dns.flags.response == 0" -T fields -e dns.qry.name
+
+# Look for credentials in cleartext
+strings capture.pcap | grep -i "password\|passwd\|secret"
+```
+
+Analysis checklist:
+- Identify source/destination IP pairs with highest volume
+- Flag any unencrypted credential transmissions
+- Identify port scan patterns (SYN without ACK)
+- Document findings in a brief incident report
+""",
+            },
+        ],
+        "cloud": [
+            {
+                "heading": "Infrastructure as Code Sprint",
+                "content": """
+Provision a complete application stack using Terraform in 30 minutes:
+
+```hcl
+# main.tf — VPC + EC2 + Security Group skeleton
+provider "aws" {
+  region = "us-east-1"
+}
+
+resource "aws_vpc" "app_vpc" {
+  cidr_block = "10.0.0.0/16"
+  tags = { Name = "app-vpc" }
+}
+
+resource "aws_security_group" "web_sg" {
+  vpc_id = aws_vpc.app_vpc.id
+  ingress {
+    from_port = 443; to_port = 443; protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+```
+
+Objectives:
+1. Define a VPC with public and private subnets
+2. Add a security group allowing only HTTPS inbound
+3. Create an EC2 instance in the public subnet
+4. Output the public IP address
+5. `terraform plan` must show zero errors
+""",
+            },
+            {
+                "heading": "CI/CD Pipeline Lab",
+                "content": """
+Design a complete GitHub Actions pipeline for a Python application:
+
+```yaml
+name: CI/CD Pipeline
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - run: pytest tests/ -v --cov
+  build-and-push:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - run: docker build -t myapp:${{ github.sha }} .
+      - run: docker push registry/myapp:${{ github.sha }}
+```
+
+Complete the pipeline to:
+1. Run lint (flake8) before tests
+2. Build and push Docker image on main only
+3. Deploy to Kubernetes using kubectl rollout
+""",
+            },
+        ],
+        "softeng": [
+            {
+                "heading": "Code Review Sprint",
+                "content": """
+Review this Python function against SOLID principles and clean code standards:
+
+```python
+def process(d, t, s=True):
+    result = []
+    for item in d:
+        if s == True:
+            if item['status'] == 'active':
+                result.append({'id': item['id'], 'name': item['name'],
+                               'total': item['price'] * t})
+        else:
+            result.append({'id': item['id'], 'name': item['name'],
+                           'total': item['price'] * t})
+    return result
+```
+
+Identify issues in these categories:
+1. **Naming** — are names self-documenting?
+2. **Single Responsibility** — does the function do one thing?
+3. **DRY** — is there duplication?
+4. **Type Hints** — are inputs/outputs typed?
+5. **Tests** — write one unit test for the current version and one for your refactored version.
+
+Deliverable: refactored function + two tests.
+""",
+            },
+            {
+                "heading": "TDD Mini-Cycle",
+                "content": """
+Practice Red-Green-Refactor in 25 minutes:
+
+**Requirement:** Write a `BankAccount` class with:
+- `deposit(amount)` — adds to balance
+- `withdraw(amount)` — subtracts; raises `InsufficientFunds` if overdraft
+- `balance` property — returns current balance
+
+Cycle:
+1. **Red**: write a failing test for `deposit`
+2. **Green**: write minimum code to pass it
+3. **Refactor**: clean up
+4. Repeat for `withdraw` (happy path)
+5. Repeat for `withdraw` (overdraft raises exception)
+6. Achieve 100% branch coverage with `pytest --cov`
 """,
             },
         ],

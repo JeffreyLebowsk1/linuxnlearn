@@ -190,6 +190,8 @@ tasks:
       ```javascript
       db.posts.aggregate([
           // Stage 1: filter to posts created in the last 30 days
+          // Note: 30 * 24 * 60 * 60 * 1000 ms is an approximation; for calendar-month
+          // precision use $dateSubtract (MongoDB 5.0+) or compute the date in app code.
           {
               $match: {
                   created_at: {
