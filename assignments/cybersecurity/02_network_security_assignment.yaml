@@ -1,0 +1,349 @@
+title: "Network Security & Ethical Hacking Assignment"
+category: "cybersecurity"
+difficulty: "intermediate"
+estimated_minutes: 40
+related_lesson: "03_network_security"
+instructions: |
+  Demonstrate your mastery of network security controls and penetration testing methodology
+  by completing the tasks below.
+  Multiple-choice questions are graded instantly. Written and practical answers are graded
+  by AI and include detailed feedback explaining what you got right and what to improve.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 20
+    question: |
+      A security engineer runs the following nftables rule on a Linux gateway:
+
+      ```
+      chain input {
+          type filter hook input priority 0; policy drop;
+          ct state { established, related } accept
+          tcp dport 443 ct state new accept
+          tcp dport 22 ip saddr 10.0.0.0/8 ct state new accept
+      }
+      ```
+
+      An external attacker (IP: 203.0.113.50) attempts to connect to port 22 on this gateway.
+      A developer on the internal network (IP: 10.10.5.20) also attempts to connect to port 22.
+      Which of the following accurately describes the outcome?
+    options:
+      - "Both connections are allowed — port 22 is open to all because the policy is 'drop' which only affects outbound traffic"
+      - "The external attacker's connection is dropped; the internal developer's connection is accepted"
+      - "Both connections are dropped — the rule only allows established connections, not new ones on port 22"
+      - "The external attacker's connection is accepted on port 443; the developer's SSH attempt is also accepted"
+    answer: 1
+    explanation: "The chain policy is 'drop' — all unmatched packets are dropped. The rules explicitly: (1) allow packets belonging to established/related connections; (2) allow NEW TCP connections to port 443 from any source; (3) allow NEW TCP connections to port 22 ONLY from the 10.0.0.0/8 RFC-1918 range. The external attacker (203.0.113.50) does not match rule 3 (not in 10.0.0.0/8) and has no established connection, so their SSH attempt is dropped. The internal developer (10.10.5.20) is within 10.0.0.0/8, so their new SSH connection is accepted by rule 3."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 20
+    question: "An organisation deploys Suricata in IDS mode (passive, out-of-band via a SPAN port) rather than inline IPS mode. A known-bad HTTP request matching a Suricata rule hits the web server and a Suricata alert fires. What is the MOST significant limitation of this IDS deployment in this scenario compared to an inline IPS?"
+    options:
+      - "Suricata cannot detect HTTP-based attacks in IDS mode — only TCP/IP layer attacks"
+      - "The IDS generates an alert after the malicious packet has already reached the web server — it cannot block the attack in real-time"
+      - "SPAN port mirroring introduces so much latency that the alert arrives after the attack completes anyway"
+      - "Suricata requires root privileges to run in IDS mode, creating a security risk on the sensor itself"
+    answer: 1
+    explanation: "In IDS mode, traffic is passively mirrored (SPAN port or tap) — a copy of traffic flows to the sensor for analysis. The original traffic continues to the destination unimpeded. When a malicious packet matches a rule, the IDS fires an alert, but the original attack has already reached the web server. An inline IPS sits in the traffic path and can DROP the malicious packet before it reaches the server. The trade-off: IDS is fail-safe (traffic continues if the sensor fails) but cannot prevent attacks; IPS can prevent attacks but must be sized correctly to avoid becoming a bottleneck or single point of failure."
+
+  - id: 3
+    type: "short_answer"
+    points: 25
+    question: |
+      A penetration tester is contracted to assess a company's external web application.
+      During the assessment, the tester runs the following nmap command against the target:
+
+      ```bash
+      sudo nmap -sS -sV -O --script=http-headers,http-title,ssl-cert -p 80,443,8080,8443 10.20.30.40
+      ```
+
+      The abbreviated output is:
+      ```
+      PORT     STATE  SERVICE  VERSION
+      80/tcp   open   http     nginx 1.18.0
+      443/tcp  open   ssl/http nginx 1.18.0
+      8080/tcp open   http     Apache Tomcat 9.0.45
+      8443/tcp open   ssl/http Apache Tomcat 9.0.45
+
+      | ssl-cert: Subject: commonName=*.example.com/organizationName=Example Corp
+      | Not valid after:  2021-03-15T00:00:00
+
+      | http-headers (port 443):
+      |   Server: nginx/1.18.0
+      |   X-Powered-By: PHP/7.2.34
+      |   Content-Security-Policy: MISSING
+      |   X-Frame-Options: MISSING
+      |   Strict-Transport-Security: MISSING
+      ```
+
+      Identify THREE distinct security findings from this nmap output. For each finding:
+      (a) Name the finding and explain the security risk it presents
+      (b) Assign a CVSS v3.1 risk rating (Critical/High/Medium/Low/Informational) and justify it
+      (c) Provide a specific, actionable remediation recommendation
+    rubric: |
+      Award up to 25 points (approximately 8 pts per finding, with flexibility).
+      Expected findings (any 3 of the following):
+
+      Finding 1 (8 pts): Expired TLS Certificate (expired 2021-03-15)
+      - Risk: Browsers display certificate warnings, users may bypass them (trained to accept bad certs).
+        More critically, an expired cert may indicate the organisation has poor certificate lifecycle
+        management — they may also be using deprecated cipher suites or vulnerable TLS versions.
+      - CVSS: Medium (5.3 — AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N): exposed to phishing/MITM
+        because users may bypass warnings.
+      - Fix: Renew certificate immediately. Implement automated cert management (Let's Encrypt +
+        certbot with auto-renewal cron, or ACME protocol integration).
+
+      Finding 2 (8 pts): Missing Security Headers (CSP, X-Frame-Options, HSTS)
+      - Risk: Missing CSP enables XSS attacks (no script restriction). Missing X-Frame-Options
+        enables Clickjacking. Missing HSTS enables SSL stripping (MITM downgrades HTTPS to HTTP).
+      - CVSS: Medium (6.1 for XSS enablement)
+      - Fix: Add to nginx config:
+          add_header Content-Security-Policy "default-src 'self'; script-src 'self'";
+          add_header X-Frame-Options "SAMEORIGIN";
+          add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload";
+
+      Finding 3 (8 pts): PHP/7.2.34 version disclosure via X-Powered-By header
+      - Risk: PHP 7.2 reached End of Life in November 2020. Running EOL PHP means no security
+        patches — all subsequently discovered vulnerabilities are permanently unpatched.
+        Version disclosure also helps attackers identify specific exploits.
+      - CVSS: High (7.5 depending on specific PHP CVEs applicable to 7.2.34)
+      - Fix: Upgrade to PHP 8.2+ (current supported). Remove version disclosure:
+          `expose_php = Off` in php.ini and `fastcgi_hide_header X-Powered-By;` in nginx.
+
+      Finding 4 (bonus): Apache Tomcat 9.0.45 exposed on internet-accessible port 8080/8443
+      - Risk: Port 8080 suggests non-production or admin interface exposed publicly.
+        Tomcat 9.0.45 — check NVD for CVEs. The /manager/html admin panel may be accessible.
+      - Fix: Firewall port 8080/8443 to internal IPs only; update Tomcat to latest 9.x or 10.x.
+
+      Award full marks for any 3 well-argued findings. Award partial credit for incomplete answers.
+    sample_answer: |
+      **Finding 1: Expired TLS Certificate (Expired 2021-03-15)**
+
+      (a) Risk: The TLS certificate for *.example.com expired over three years ago. This causes
+      modern browsers to display a security warning ("Your connection is not private"), which
+      erodes user trust and trains users to click through certificate warnings — a dangerous habit.
+      Critically, an expired certificate may indicate poor security operations hygiene: if this
+      certificate went unnoticed for years, other security controls may be similarly neglected.
+      Depending on client TLS validation settings, this may enable MITM attacks.
+
+      (b) CVSS: **Medium (5.3)** — AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N. Network-accessible,
+      low complexity, no privileges needed, but requires user interaction (user must visit site
+      and accept the warning). Mainly affects confidentiality through potential MITM.
+
+      (c) Remediation: Renew the TLS certificate immediately from a trusted CA. Implement automated
+      certificate renewal using Let's Encrypt with certbot (`certbot renew --deploy-hook "systemctl
+      reload nginx"`) and a systemd timer or cron job. Set up monitoring alerts for certs expiring
+      within 30 days (Nagios, Datadog, or free services like cert-expiry-monitor).
+
+      ---
+
+      **Finding 2: Missing HTTP Security Headers (CSP, X-Frame-Options, HSTS)**
+
+      (a) Risk: Three critical security headers are absent:
+      - Missing Content-Security-Policy (CSP): No restriction on which scripts can execute,
+        enabling stored and reflected XSS attacks to load remote malicious scripts.
+      - Missing X-Frame-Options: The application can be embedded in iframes on attacker-controlled
+        sites, enabling clickjacking attacks where users are tricked into clicking hidden buttons.
+      - Missing Strict-Transport-Security (HSTS): Without HSTS, first-time visitors or those
+        typing the HTTP URL are vulnerable to SSL stripping (Moxie Marlinspike's sslstrip attack),
+        which downgrades HTTPS to HTTP, exposing credentials in cleartext.
+
+      (b) CVSS: **Medium (6.1)** for the combined header absence. XSS enablement alone can be
+      rated higher depending on application context.
+
+      (c) Remediation: Add to nginx server block:
+      ```nginx
+      add_header Content-Security-Policy "default-src 'self'; script-src 'self'; object-src 'none';" always;
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      ```
+      Test header implementation at securityheaders.com.
+
+      ---
+
+      **Finding 3: PHP 7.2.34 End-of-Life with Version Disclosure**
+
+      (a) Risk: PHP 7.2 reached End of Life (EOL) in November 2020 and no longer receives security
+      patches. Any PHP vulnerability discovered after that date is permanently unpatched in this
+      environment. Additionally, the `X-Powered-By: PHP/7.2.34` header discloses the exact PHP
+      version, allowing attackers to rapidly identify applicable CVEs from the NVD.
+
+      (b) CVSS: **High (7.5+)** — EOL software combined with version disclosure. Specific PHP 7.2
+      CVEs in the CVE database (e.g., type confusion, buffer overflow vulnerabilities) may score
+      even higher depending on their individual vectors.
+
+      (c) Remediation: Upgrade to PHP 8.2 (current supported branch with security updates until
+      December 2026). Remove version disclosure immediately regardless of upgrade timeline:
+      in /etc/php/7.2/fpm/php.ini set `expose_php = Off`.
+      Add to nginx: `fastcgi_hide_header X-Powered-By;`
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      Compare WireGuard and IPsec/IKEv2 as VPN solutions for the following two use cases.
+      For each use case, recommend ONE of the two technologies and provide a technically
+      justified argument (citing specific protocol features, key management differences,
+      or performance characteristics):
+
+      Use Case A: A startup with 15 remote employees needs a simple, easy-to-manage VPN
+      for secure remote access to internal resources. The team includes no dedicated
+      network security engineer.
+
+      Use Case B: A multinational bank needs a site-to-site VPN connecting 50 branch offices
+      to the head office. The solution must meet regulatory requirements for FIPS 140-2
+      validated cryptographic modules and integrate with existing Cisco network infrastructure.
+    rubric: |
+      Award up to 20 points (10 per use case).
+      Per use case (10 pts): 4 pts for correct recommendation + 6 pts for justified argument.
+
+      Use Case A — Expected answer: WireGuard
+      Key justifications (any 3): minimal configuration (adds VPN in ~10 lines of config),
+      no certificate infrastructure required (static Curve25519 key pairs), kernel-integrated
+      (Linux 5.6+, no user-space daemon), ~4,000 lines of code (easy to audit, small attack surface),
+      uses modern conservative algorithms (ChaCha20-Poly1305, Curve25519, BLAKE2),
+      excellent mobile roaming support, high performance.
+      Deduct 4 pts if OpenVPN is recommended without justification; award partial credit if
+      OpenVPN is recommended with reasonable arguments.
+
+      Use Case B — Expected answer: IPsec/IKEv2
+      Key justifications (any 3): FIPS 140-2 compliant implementations available (Cisco, StrongSwan
+      with NSS), wide Cisco interoperability (IKEv2 is natively supported on Cisco ASA/ISR),
+      supports the AES-256-GCM and SHA-384 cipher suites required by CNSA/Suite B, mature
+      enterprise key management (PKI with IKEv2), MOBIKE for resilient connectivity, extensive
+      audit logging for compliance, well-understood regulatory track record.
+    sample_answer: |
+      **Use Case A: Startup with 15 remote employees → Recommendation: WireGuard**
+
+      WireGuard is the clear choice for a small team without dedicated network security staff.
+      Its configuration is deliberately minimal — a WireGuard server requires approximately 10
+      lines of configuration versus hundreds of lines for OpenVPN or complex IKEv2 policy files.
+      Key advantages for this use case:
+
+      - **No PKI required:** WireGuard uses static Curve25519 public/private key pairs. Each peer
+        is configured by exchanging public keys — no certificate authority, no certificate lifecycle
+        management, no CRL/OCSP infrastructure.
+      - **Kernel integration:** Merged into the Linux kernel at 5.6, WireGuard runs entirely in
+        kernel space with no user-space daemon to manage or monitor.
+      - **Small codebase:** ~4,000 lines vs ~600,000 for OpenVPN/IPsec — dramatically easier to
+        audit and far fewer potential vulnerabilities.
+      - **Modern cryptography only:** ChaCha20-Poly1305 for symmetric encryption, X25519 for key
+        exchange, BLAKE2s for hashing — no weak algorithm fallbacks or "cryptographic agility"
+        that could be misconfigured to use weak settings.
+      - **Mobile roaming:** Excellent MOBIKE-equivalent behaviour — tunnels re-establish seamlessly
+        when employees switch from Wi-Fi to 4G.
+
+      **Use Case B: Multinational bank, 50 branch sites → Recommendation: IPsec/IKEv2**
+
+      IPsec/IKEv2 is required for this regulated environment:
+
+      - **FIPS 140-2 compliance:** Banks operating under GLBA, PCI-DSS, or government frameworks
+        must use FIPS 140-2 validated cryptographic modules. Cisco ASA and StrongSwan with NSS
+        provide validated IPsec implementations. WireGuard's ChaCha20 and Curve25519 are not
+        currently in FIPS 140-2 validated modules (FIPS 140-3 work is in progress).
+      - **Cisco ecosystem integration:** The existing Cisco infrastructure (ASA, ISR, Meraki)
+        natively supports IKEv2 with ISAKMP profiles, VRF-aware VPN, and integration with Cisco
+        ISE for certificate-based authentication — avoiding expensive replacement hardware.
+      - **AES-256-GCM + SHA-384 (Suite B / CNSA):** IKEv2 with AES-256-GCM-16 and PRF-HMAC-SHA-384
+        meets NSA's CNSA (Commercial National Security Algorithm) suite requirements for
+        unclassified/SECRET data.
+      - **Certificate-based authentication:** IKEv2 integrates with enterprise PKI (DigiCert,
+        Entrust), allowing each branch device to authenticate via machine certificate — enabling
+        per-branch accountability and rapid credential revocation via CRL/OCSP.
+
+  - id: 5
+    type: "practical"
+    points: 15
+    question: |
+      You are a junior penetration tester on your first authorised assessment. The client
+      has provided a signed Statement of Work and Rules of Engagement. The in-scope target
+      is a single Ubuntu 22.04 server at IP 192.168.100.50 in an isolated lab network.
+
+      Write the sequence of nmap commands you would run to:
+        (a) Confirm the host is alive (host discovery only, no port scanning)
+        (b) Perform a SYN scan of the top 1000 ports with service version detection
+        (c) Run the default NSE scripts AND check for SMB vulnerabilities specifically
+        (d) Perform a UDP scan of the top 20 UDP ports
+        (e) Save ALL scan results in all three output formats (normal, XML, grepable)
+
+      For EACH command, explain in one sentence what it does and WHY you would run it in
+      a real penetration test. Then explain what information you would extract from the
+      combined results to plan your next steps.
+    rubric: |
+      Award up to 15 points total.
+      Command accuracy and completeness (8 pts — ~1.5 pts per command a-e):
+        (a) nmap -sn 192.168.100.50 (0.5 pts deducted if -sn omitted but close)
+        (b) sudo nmap -sS -sV --top-ports 1000 192.168.100.50 (or -p- for all ports)
+        (c) sudo nmap -sS --script=default,smb-vuln* -p 445 192.168.100.50
+            (or --script vuln — accept reasonable variations)
+        (d) sudo nmap -sU --top-ports 20 192.168.100.50
+        (e) -oA scan_results (saves .nmap, .xml, .gnmap simultaneously)
+
+      Explanations quality (4 pts): Each explanation correctly states the purpose.
+      Next steps analysis (3 pts): Identifies how findings drive follow-on actions
+        (e.g., identified service versions → check NVD for CVEs; open port 445 → check
+        for EternalBlue; open port 6379 Redis → test for unauthenticated access).
+    sample_answer: |
+      **(a) Host Discovery — Confirm the target is alive**
+      ```bash
+      nmap -sn 192.168.100.50
+      ```
+      Sends ICMP echo, TCP SYN to port 443/80, and ARP (on local segments) to confirm the
+      host is online before investing time in full port scanning. If no response, verify scope
+      — the IP may be wrong, or ICMP may be firewalled (try with `-Pn` to skip host discovery).
+
+      **(b) SYN Scan with Version Detection**
+      ```bash
+      sudo nmap -sS -sV --top-ports 1000 192.168.100.50
+      ```
+      The SYN scan (-sS) sends a SYN packet and records SYN-ACK (open) or RST (closed) without
+      completing the TCP handshake — faster and less likely to fill the target's connection logs
+      than a full connect scan. Version detection (-sV) sends follow-up probes to identify the
+      exact service name and version number, essential for CVE matching.
+
+      **(c) Default Scripts + SMB Vulnerability Check**
+      ```bash
+      sudo nmap -sS --script=default,smb-vuln-ms17-010,smb-vuln-ms08-067 \
+          -p 22,80,139,443,445,8080 192.168.100.50
+      ```
+      The default NSE script category (-script=default) runs ~100 safe scripts that extract
+      HTTP titles, server headers, SSH algorithms, SSL certificate details, and FTP banners.
+      SMB vulnerability scripts specifically check for MS17-010 (EternalBlue — WannaCry /
+      NotPetya) and MS08-067 (Conficker) — two of the most critical and commonly unpatched
+      Windows vulnerabilities. Even though the target is Ubuntu, Samba may be installed.
+
+      **(d) UDP Scan — Top 20 Ports**
+      ```bash
+      sudo nmap -sU --top-ports 20 192.168.100.50
+      ```
+      UDP services (DNS:53, SNMP:161, TFTP:69, NTP:123, SSDP:1900) are frequently overlooked
+      in security assessments because UDP scans are slower and noisier. SNMP v1/v2c with default
+      community strings ('public') is a critical finding that allows reading the entire device
+      MIB tree, enumerating all running processes, interfaces, and routing tables.
+
+      **(e) Save All Output Formats**
+      ```bash
+      sudo nmap -sS -sV -O --script=default -p 1-65535 \
+          -oA lab_target_full 192.168.100.50
+      ```
+      The `-oA lab_target_full` flag simultaneously saves results in:
+      - `lab_target_full.nmap` — human-readable normal output (for reading)
+      - `lab_target_full.xml` — machine-readable XML (for import into Metasploit `db_import`,
+        Nessus, or custom reporting tools)
+      - `lab_target_full.gnmap` — grepable format (for fast command-line searching:
+        `grep "open" lab_target_full.gnmap`)
+      Always save scan output — it forms part of the timestamped evidence in the pentest report.
+
+      **Next Steps Analysis:**
+      From the combined scan results I would:
+      1. Cross-reference every identified service version against NVD/CVE (e.g., `searchsploit nginx 1.18`)
+      2. Inspect any identified database ports (3306, 5432, 27017, 6379) — these should not be
+         internet-accessible; attempt unauthenticated connection to assess default credential risk
+      3. Investigate web services (80, 443, 8080) with Nikto and manual browsing for OWASP issues
+      4. Check SSH version against known CVEs; test SSH key algorithm strength
+      5. If SNMP (161 UDP) is open, enumerate with `snmpwalk -v2c -c public 192.168.100.50`
+      6. Prioritise findings by CVSS score for the report; begin exploitation attempts on
+         Critical/High findings in the agreed lab scope

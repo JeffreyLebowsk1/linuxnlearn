@@ -1,0 +1,673 @@
+title: "Network Security & Defence"
+order: 3
+summary: "A practical deep-dive into network security controls on Linux: firewall architectures (iptables, nftables), IDS/IPS with Snort/Suricata, VPN technologies (IPsec, OpenVPN, WireGuard), network segmentation, DMZ design, 802.1X, VLAN security, Wireshark traffic analysis, and a comprehensive Linux server hardening checklist."
+learning_objectives:
+  - "Compare and contrast packet-filter, stateful, NGFW, and WAF firewall architectures."
+  - "Write and test iptables and nftables rules for common security policies on Linux."
+  - "Explain the operational difference between IDS and IPS and describe how Snort/Suricata are deployed."
+  - "Compare IPsec, OpenVPN, and WireGuard VPNs — protocol, key management, and use-case trade-offs."
+  - "Design a DMZ architecture with dual firewalls and explain the role of network segmentation."
+  - "Describe 802.1X port authentication and VLAN security best practices."
+  - "Use Wireshark capture filters and display filters to isolate and analyse security-relevant traffic."
+  - "Audit open ports and active connections with netstat/ss and implement fail2ban for brute-force prevention."
+  - "Apply the CIS Benchmark hardening checklist to a Linux server."
+builds_on:
+  - "Threat Landscape & Attack Vectors (SEC 301 Lesson 1) — DDoS, MITM, attack vectors"
+  - "Linux command-line fundamentals (SYS 202) — iptables, ss, systemctl used extensively"
+sections:
+  - heading: "Firewall Architectures"
+    content: |
+      ## Firewall Architectures
+
+      A **firewall** is a network security device or software that monitors and controls
+      incoming and outgoing network traffic based on predetermined security rules. The four
+      principal generations of firewall architecture represent increasing sophistication.
+
+      ### 1. Packet-Filter Firewall (Stateless)
+      A packet-filter firewall examines each packet in isolation — source IP, destination IP,
+      source port, destination port, and protocol — and applies ACL rules. It has no memory
+      of previous packets (stateless). This makes it fast but unable to track connection state.
+
+      **Limitation:** An attacker can craft packets with the ACK flag set (appearing to be a
+      reply to an established connection) to bypass rules that only block SYN packets. Packet
+      filters cannot distinguish legitimate replies from forged ones.
+
+      ### 2. Stateful Packet Inspection (SPI) Firewall
+      Stateful firewalls maintain a **connection tracking table** (conntrack in Linux) that
+      maps each active connection by 5-tuple (protocol, src IP, src port, dst IP, dst port)
+      plus connection state (SYN_SENT, ESTABLISHED, FIN_WAIT, etc.). This allows the firewall
+      to:
+      - Automatically allow reply traffic for established connections (no explicit inbound rule
+        needed for the return traffic).
+      - Detect and block out-of-state packets (e.g., ACK without a prior SYN).
+      - Identify half-open SYN flood attacks.
+
+      iptables and nftables (below) implement stateful inspection via the `conntrack` module.
+
+      ### 3. Next-Generation Firewall (NGFW)
+      NGFWs (Palo Alto, Fortinet FortiGate, Cisco Firepower) operate at Layer 7. Capabilities:
+      - **Deep Packet Inspection (DPI):** Identifies applications regardless of port
+        (e.g., blocks Tor traffic even if it tunnels on port 443).
+      - **SSL/TLS Inspection:** Decrypts TLS traffic (man-in-the-middle on behalf of the
+        organisation) to inspect encrypted payloads — requires deploying a root certificate
+        to endpoints.
+      - **Integrated IPS:** Inline signature-based threat detection.
+      - **User Identity Awareness:** Maps firewall rules to user identities via Active
+        Directory / LDAP integration, not just IP addresses.
+
+      ### 4. Web Application Firewall (WAF)
+      A WAF operates at the HTTP application layer (Layer 7) and is specifically designed
+      to protect web applications from OWASP Top 10 attacks: SQLi, XSS, CSRF, and others.
+      WAFs can be deployed in three modes:
+      - **Reverse proxy (inline):** All traffic passes through the WAF (AWS WAF, Cloudflare,
+        ModSecurity on Nginx/Apache).
+      - **Out-of-band (passive monitoring):** Traffic is mirrored for analysis.
+      - **Embedded (agent-based):** Agent deployed on the application server.
+
+      ```mermaid
+      graph LR
+          INET["Internet"]
+          WAF["WAF\nLayer 7 HTTP inspection\nOWASP rules"]
+          NGFW["NGFW\nLayer 7 App ID\nTLS Inspection · IPS"]
+          SFW["Stateful Firewall\nconntrack\nSPI"]
+          DMZ["DMZ\nWeb / App Servers"]
+          INT["Internal Network"]
+
+          INET --> WAF --> NGFW --> SFW --> DMZ
+          SFW --> INT
+
+          style INET fill:#C0392B,color:#fff
+          style WAF  fill:#8E44AD,color:#fff
+          style NGFW fill:#D35400,color:#fff
+          style SFW  fill:#2980B9,color:#fff
+          style DMZ  fill:#D4A017,color:#000
+          style INT  fill:#27AE60,color:#fff
+      ```
+
+  - heading: "iptables and nftables on Linux"
+    content: |
+      ## iptables and nftables on Linux
+
+      **iptables** is the classic Linux firewall tool (kernel Netfilter framework), present in
+      every Linux distribution since kernel 2.4. **nftables** is its modern replacement
+      (kernel 3.13+, `nft` CLI), consolidating iptables, ip6tables, arptables, and ebtables
+      into a unified framework with better performance and atomic rule updates.
+
+      ### iptables Fundamentals
+      iptables organises rules into **tables** (filter, nat, mangle, raw) and **chains**
+      within each table. The `filter` table has three built-in chains:
+      - **INPUT:** Packets destined for the local system.
+      - **FORWARD:** Packets routed *through* the system (firewall/router role).
+      - **OUTPUT:** Packets originating from the local system.
+
+      Default policies: `ACCEPT` (permissive) or `DROP` (deny-all, then whitelist).
+
+      ```bash
+      # ── Viewing current rules ──────────────────────────────────────────────
+      sudo iptables -L -n -v --line-numbers     # filter table, verbose, numeric
+      sudo iptables -t nat -L -n -v             # NAT table
+
+      # ── Setting a default DROP policy (deny-all baseline) ─────────────────
+      sudo iptables -P INPUT DROP
+      sudo iptables -P FORWARD DROP
+      sudo iptables -P OUTPUT ACCEPT            # Allow outbound by default
+
+      # ── Allow established/related connections (stateful — critical!) ───────
+      sudo iptables -A INPUT -m conntrack \
+          --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+      # ── Allow loopback (required for local processes) ──────────────────────
+      sudo iptables -A INPUT -i lo -j ACCEPT
+
+      # ── Allow inbound SSH (replace 203.0.113.0/24 with admin IP range) ─────
+      sudo iptables -A INPUT -p tcp --dport 22 \
+          -s 203.0.113.0/24 -m conntrack --ctstate NEW -j ACCEPT
+
+      # ── Allow inbound HTTPS ────────────────────────────────────────────────
+      sudo iptables -A INPUT -p tcp --dport 443 \
+          -m conntrack --ctstate NEW -j ACCEPT
+
+      # ── Allow inbound HTTP (redirect to HTTPS at application level) ────────
+      sudo iptables -A INPUT -p tcp --dport 80 \
+          -m conntrack --ctstate NEW -j ACCEPT
+
+      # ── Rate-limit new SSH connections (anti-brute-force) ─────────────────
+      sudo iptables -A INPUT -p tcp --dport 22 \
+          -m conntrack --ctstate NEW \
+          -m recent --name SSH --update --seconds 60 --hitcount 4 -j DROP
+      sudo iptables -A INPUT -p tcp --dport 22 \
+          -m conntrack --ctstate NEW \
+          -m recent --name SSH --set -j ACCEPT
+
+      # ── Log and DROP everything else ───────────────────────────────────────
+      sudo iptables -A INPUT -j LOG \
+          --log-prefix "iptables-DROP: " --log-level 4
+      sudo iptables -A INPUT -j DROP
+
+      # ── Persist rules across reboots (Debian/Ubuntu) ──────────────────────
+      sudo apt install iptables-persistent
+      sudo netfilter-persistent save
+
+      # ── Persist rules (RHEL/CentOS/Rocky) ────────────────────────────────
+      sudo service iptables save
+      ```
+
+      ### nftables — The Modern Approach
+      nftables uses a cleaner syntax and supports **sets**, **maps**, and **verdict maps**
+      for efficient multi-value matching (replacing iptables's need for multiple rules).
+      Atomic rule replacement (`nft -f ruleset.nft`) eliminates race conditions during rule
+      updates that existed with iptables.
+
+      ```bash
+      # Create a minimal nftables ruleset (/etc/nftables.conf)
+      sudo tee /etc/nftables.conf > /dev/null << 'NFTEOF'
+      #!/usr/sbin/nft -f
+      flush ruleset
+
+      table inet filter {
+          # Named set of trusted admin IPs for SSH
+          set trusted_ssh {
+              type ipv4_addr
+              flags interval
+              elements = { 203.0.113.0/24, 198.51.100.5 }
+          }
+
+          chain input {
+              type filter hook input priority 0; policy drop;
+
+              # Loopback
+              iif lo accept
+
+              # Established / related
+              ct state { established, related } accept
+
+              # SSH — only from trusted IPs
+              tcp dport 22 ip saddr @trusted_ssh ct state new accept
+
+              # HTTPS and HTTP
+              tcp dport { 80, 443 } ct state new accept
+
+              # ICMP (ping) — rate-limited
+              icmp type echo-request limit rate 5/second accept
+
+              # Log and drop everything else
+              log prefix "nft-DROP: " level warn drop
+          }
+
+          chain forward {
+              type filter hook forward priority 0; policy drop;
+          }
+
+          chain output {
+              type filter hook output priority 0; policy accept;
+          }
+      }
+      NFTEOF
+
+      sudo systemctl enable --now nftables
+      sudo nft list ruleset       # Verify loaded rules
+      ```
+
+  - heading: "Intrusion Detection & Prevention Systems — Snort and Suricata"
+    content: |
+      ## Intrusion Detection & Prevention Systems — Snort and Suricata
+
+      ### IDS vs IPS
+      | Feature | IDS (Intrusion Detection System) | IPS (Intrusion Prevention System) |
+      |---------|----------------------------------|-----------------------------------|
+      | **Deployment** | Passive — traffic copy via SPAN/tap | Inline — traffic passes through device |
+      | **Response** | Generates alerts only | Drops/rejects malicious packets in real-time |
+      | **Risk** | No impact if device fails (fail-open) | If device fails → possible traffic disruption |
+      | **Latency** | Zero added latency | Adds small latency (typically < 1ms) |
+      | **Use case** | Detection + forensics, low-risk deployment | Prevention in high-confidence environments |
+
+      ### Snort (Sourcefire / Cisco)
+      Snort is the original open-source NIDS. Snort 3 uses a multi-threaded architecture and
+      Lua-based configuration. Rules have the format:
+      `action proto src_ip src_port direction dst_ip dst_port (options)`
+
+      ```bash
+      # Install Snort 3 (Ubuntu 22.04)
+      sudo apt install snort3
+
+      # Example Snort 3 rule — detect HTTP traffic to known malicious domain
+      # File: /etc/snort/rules/local.rules
+      alert http any any -> any 80 (
+          msg:"Malicious Domain - example-c2.bad";
+          http_header;
+          content:"Host: example-c2.bad";
+          classtype:trojan-activity;
+          sid:9000001;
+          rev:1;
+      )
+
+      # Run Snort in IDS mode on interface eth0
+      sudo snort -c /etc/snort/snort.lua -i eth0 -A alert_fast
+
+      # Test rule against a PCAP file
+      sudo snort -c /etc/snort/snort.lua -r capture.pcap -A alert_fast
+      ```
+
+      ### Suricata (OISF)
+      Suricata is the modern, high-performance alternative to Snort. Key advantages: native
+      multi-threading, GPU acceleration, built-in TLS/HTTP/DNS/SMB protocol parsers, EVE
+      JSON logging (SIEM-friendly), and Lua scripting for complex detections. Suricata uses
+      Snort-compatible rules with extensions.
+
+      ```bash
+      # Install Suricata
+      sudo apt install suricata
+
+      # Update Emerging Threats ruleset (free, community-maintained)
+      sudo suricata-update
+
+      # Edit /etc/suricata/suricata.yaml — set HOME_NET to your network range
+      # HOME_NET: "[10.0.0.0/8,172.16.0.0/12,192.168.0.0/16]"
+
+      # Run in IDS mode (AF_PACKET, zero-copy)
+      sudo suricata -c /etc/suricata/suricata.yaml -i eth0
+
+      # Run in IPS mode (inline via NFQ — Netfilter Queue)
+      sudo iptables -I FORWARD -j NFQUEUE --queue-num 0
+      sudo suricata -c /etc/suricata/suricata.yaml -q 0
+
+      # Monitor EVE JSON logs in real-time
+      sudo tail -f /var/log/suricata/eve.json | python3 -m json.tool | \
+          grep -A5 '"event_type":"alert"'
+      ```
+
+  - heading: "VPNs — IPsec, OpenVPN, and WireGuard"
+    content: |
+      ## VPNs — IPsec, OpenVPN, and WireGuard
+
+      A **VPN (Virtual Private Network)** creates an encrypted tunnel between endpoints,
+      providing confidentiality and integrity for traffic traversing untrusted networks
+      (internet, shared Wi-Fi). VPNs are used for: remote access (employees connecting to
+      corporate resources), site-to-site connectivity (branch offices), and privacy.
+
+      ### IPsec (Internet Protocol Security)
+      IPsec is a suite of IETF standards (RFC 4301-4309) operating at Layer 3. It is the
+      foundation of most enterprise site-to-site VPNs. Two modes:
+      - **Transport mode:** Encrypts only the IP payload; the original IP header is preserved.
+          Used for host-to-host communications.
+      - **Tunnel mode:** Encrypts the entire original IP packet, encapsulating it in a new
+          IP packet. Used for site-to-site VPNs.
+
+      Two protocols:
+      - **AH (Authentication Header):** Integrity and authentication only — no encryption.
+      - **ESP (Encapsulating Security Payload):** Encryption + authentication (ESP-GCM, ESP-SHA256).
+
+      **IKEv2 (Internet Key Exchange v2)** is the key exchange and SA (Security Association)
+      negotiation protocol. IKEv2 uses Diffie-Hellman, supports MOBIKE (seamless roaming
+      across networks), and is widely used for mobile VPN clients. StrongSwan and libreswan
+      are the primary Linux IPsec implementations.
+
+      ### OpenVPN
+      OpenVPN is a user-space SSL/TLS-based VPN (Layer 2 or Layer 3 tunnel over UDP/TCP).
+      It uses OpenSSL/mbedTLS for all cryptographic operations, inheriting the full PKI model
+      (certificates, CAs). Key characteristics:
+      - Traverses NAT and firewalls easily (runs on UDP 1194 or TCP 443).
+      - Highly configurable; mature ecosystem with clients for all platforms.
+      - Slightly higher CPU overhead than WireGuard due to user-space operation.
+      - Used in corporate access (OpenVPN Access Server) and consumer VPNs (NordVPN, ExpressVPN).
+
+      ### WireGuard
+      WireGuard (merged into Linux kernel 5.6, 2020) is a modern, minimal VPN protocol
+      designed by Jason Donenfeld. Its entire implementation is ~4,000 lines of C (vs
+      ~600,000 for OpenVPN/IPsec stacks) — dramatically reducing attack surface.
+
+      | Feature | IPsec/IKEv2 | OpenVPN | WireGuard |
+      |---------|-------------|---------|-----------|
+      | Protocol | UDP (IKE 500/4500) | UDP 1194 / TCP 443 | UDP (any port, default 51820) |
+      | Crypto | AES-256-GCM, SHA-384 | AES-256-GCM (configurable) | ChaCha20-Poly1305, Curve25519 |
+      | Key Exchange | IKEv2 / DH | TLS / PKI | Noise Protocol (static Curve25519) |
+      | Config Complexity | High | Medium | Very Low |
+      | Performance | High (kernel) | Medium (user-space) | Very High (kernel) |
+      | Kernel Integration | Yes | No (tun device) | Yes (kernel 5.6+) |
+      | Mobile Roaming | Excellent (MOBIKE) | Good | Excellent (cryptokey routing) |
+
+      ```bash
+      # ── WireGuard server setup (server: 10.0.0.1) ──────────────────────────
+      sudo apt install wireguard
+
+      # Generate server key pair
+      wg genkey | sudo tee /etc/wireguard/server_private.key | \
+          wg pubkey | sudo tee /etc/wireguard/server_public.key
+
+      # Generate client key pair
+      wg genkey | tee client_private.key | wg pubkey > client_public.key
+
+      # Server config: /etc/wireguard/wg0.conf
+      sudo tee /etc/wireguard/wg0.conf > /dev/null << EOF
+      [Interface]
+      Address = 10.0.0.1/24
+      ListenPort = 51820
+      PrivateKey = $(sudo cat /etc/wireguard/server_private.key)
+      PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+      PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+      [Peer]
+      PublicKey = $(cat client_public.key)
+      AllowedIPs = 10.0.0.2/32
+      EOF
+
+      sudo systemctl enable --now wg-quick@wg0
+      sudo wg show          # Verify tunnel status, handshake time, transfer stats
+      ```
+
+  - heading: "Network Segmentation and DMZ Architecture"
+    content: |
+      ## Network Segmentation and DMZ Architecture
+
+      **Network segmentation** divides a network into isolated zones (segments), limiting
+      the blast radius of a compromise. A breach in one segment cannot directly spread to
+      others without traversing a firewall or other control point. This is the primary
+      architectural countermeasure against **lateral movement** (MITRE ATT&CK TA0008).
+
+      ### DMZ — De-Militarised Zone
+      A DMZ is a network segment that sits between the internet-facing perimeter firewall
+      and the internal corporate network. Internet-accessible servers (web, email, DNS,
+      reverse proxies) are placed in the DMZ. Even if a DMZ server is fully compromised,
+      the attacker must traverse a second firewall to reach internal systems.
+
+      ```mermaid
+      graph TD
+          INET["Internet\n(Untrusted)"]
+          FW1["Perimeter Firewall\nAllow: 80,443 inbound\nDrop: all else"]
+          DMZ["DMZ Zone\nWeb Server (nginx)\nMail Relay (postfix)\nReverse Proxy"]
+          FW2["Internal Firewall\nStrict rules: DMZ → Internal\nAllow: specific app ports only"]
+          DB["Database Zone\nPostgreSQL / MySQL\nNo direct internet access"]
+          CORP["Corporate LAN\nEndpoints · File Servers\nActive Directory"]
+          MGMT["Management Zone\nBastion Host\nLog Server (SIEM)\nMonitoring"]
+
+          INET --> FW1
+          FW1 --> DMZ
+          DMZ --> FW2
+          FW2 --> DB
+          FW2 --> CORP
+          FW2 --> MGMT
+
+          style INET fill:#C0392B,color:#fff
+          style FW1  fill:#D35400,color:#fff
+          style DMZ  fill:#D4A017,color:#000
+          style FW2  fill:#D35400,color:#fff
+          style DB   fill:#2980B9,color:#fff
+          style CORP fill:#27AE60,color:#fff
+          style MGMT fill:#8E44AD,color:#fff
+      ```
+
+      ### VLAN Security
+      VLANs (Virtual LANs, IEEE 802.1Q) implement Layer 2 segmentation within a switch
+      infrastructure. Security best practices:
+      - **VLAN 1 (native VLAN) must never carry user traffic.** Rename/disable or reassign
+        the native VLAN on all trunk ports to prevent VLAN hopping attacks.
+      - **VLAN Hopping (Double-Tagging Attack):** An attacker on VLAN 10 sends a frame with
+        *two* 802.1Q tags (VLAN 10 outer, target VLAN inner). The first switch strips the
+        outer tag; the inner tag causes the frame to be forwarded to the target VLAN.
+        **Mitigation:** Ensure the native VLAN on trunk links is not used by any access port.
+      - **Private VLANs (PVLANs):** Further isolate hosts *within* the same VLAN (e.g.,
+        hotel guests cannot ARP-scan each other).
+
+      ### 802.1X Port-Based Network Access Control
+      IEEE 802.1X is an authentication framework that authenticates devices (and optionally
+      users) *before* granting network access — at the switch port or wireless AP level.
+      Three entities:
+      - **Supplicant:** The client device (uses EAP over LAN — EAPOL).
+      - **Authenticator:** The switch or WAP, forwards EAP to the authentication server.
+      - **Authentication Server:** RADIUS server (FreeRADIUS, Cisco ISE) validates credentials.
+
+      Without 802.1X, any device plugged into a switch port joins the network immediately.
+      With 802.1X, the port is in an "unauthorised" state until authentication succeeds —
+      mitigating rogue device attacks and providing per-device network access control.
+
+  - heading: "Traffic Analysis with Wireshark"
+    content: |
+      ## Traffic Analysis with Wireshark
+
+      **Wireshark** is the world's most widely used network protocol analyser. It captures
+      raw network frames and provides deep protocol dissection and filtering capabilities.
+      Security analysts use Wireshark for: incident response (malware traffic analysis),
+      vulnerability research, IDS/IPS rule development, and protocol debugging.
+
+      ### Capture Filters (BPF syntax — applied at capture time, reduces overhead)
+      ```bash
+      # Capture only traffic to/from a specific host
+      sudo tcpdump -i eth0 host 10.0.0.5 -w capture.pcap
+
+      # Capture only TCP traffic on port 443
+      sudo tcpdump -i eth0 tcp port 443 -w tls_traffic.pcap
+
+      # Capture only DNS queries (UDP port 53)
+      sudo tcpdump -i eth0 udp port 53
+
+      # Capture SYN packets (potential port scan or SYN flood)
+      sudo tcpdump -i eth0 'tcp[tcpflags] & tcp-syn != 0 and tcp[tcpflags] & tcp-ack == 0'
+
+      # Capture HTTP traffic and display in real-time
+      sudo tcpdump -i eth0 -A port 80 | grep -E "GET|POST|Host:|User-Agent:"
+      ```
+
+      ### Wireshark Display Filters (applied post-capture)
+      ```
+      # Show all HTTP requests
+      http.request
+
+      # Filter by destination IP
+      ip.dst == 203.0.113.100
+
+      # Show TLS handshakes only (ClientHello)
+      tls.handshake.type == 1
+
+      # Detect DNS queries to suspicious domains
+      dns.qry.name contains "pastebin"
+
+      # Detect potential data exfiltration (large DNS TXT records)
+      dns.resp.type == 16 and dns.resp.len > 200
+
+      # Show ICMP traffic
+      icmp
+
+      # Find all POST requests (potential data submission)
+      http.request.method == "POST"
+
+      # Detect ARP spoofing (duplicate IPs in ARP replies)
+      arp.duplicate-address-detected
+      ```
+
+      ### Security Analysis Workflow
+      ```bash
+      # Follow a TCP stream in tshark (CLI Wireshark)
+      tshark -r capture.pcap -q -z follow,tcp,ascii,0
+
+      # Extract all HTTP objects from a PCAP
+      tshark -r capture.pcap --export-objects http,./extracted_files/
+
+      # Find all unique DNS queries in a capture (OSINT on malware C2)
+      tshark -r capture.pcap -Y "dns.flags.response == 0" \
+          -T fields -e dns.qry.name | sort -u
+
+      # Detect port scans — many SYNs to different ports from same source
+      tshark -r capture.pcap -Y "tcp.flags.syn==1 and tcp.flags.ack==0" \
+          -T fields -e ip.src -e tcp.dstport | \
+          sort | uniq -c | sort -rn | head -20
+      ```
+
+  - heading: "Open Port Auditing, fail2ban, and Linux Server Hardening"
+    content: |
+      ## Open Port Auditing, fail2ban, and Linux Server Hardening
+
+      ### Open Port Auditing with ss and netstat
+      ```bash
+      # List all listening TCP and UDP ports with PID/process name
+      sudo ss -tlnp          # TCP listening, numeric, with process
+      sudo ss -ulnp          # UDP listening
+
+      # Show all established TCP connections
+      ss -tn state established
+
+      # Find what process owns a specific port
+      sudo ss -tlnp | grep :22
+      sudo lsof -i :443      # Alternative using lsof
+
+      # Check for unexpected outbound connections (potential malware C2)
+      ss -tn state established | awk '{print $5}' | cut -d: -f1 | \
+          sort | uniq -c | sort -rn
+      ```
+
+      ### fail2ban — Adaptive Brute-Force Prevention
+      fail2ban monitors log files for authentication failure patterns and dynamically adds
+      iptables/firewalld rules to block offending IP addresses for a configurable ban period.
+
+      ```bash
+      sudo apt install fail2ban
+
+      # Create local override (never edit /etc/fail2ban/jail.conf directly)
+      sudo tee /etc/fail2ban/jail.local > /dev/null << 'EOF'
+      [DEFAULT]
+      bantime  = 3600          # Ban for 1 hour
+      findtime = 600           # Look at last 10 minutes
+      maxretry = 5             # 5 failures triggers a ban
+      backend  = systemd
+
+      [sshd]
+      enabled  = true
+      port     = ssh
+      logpath  = %(sshd_log)s
+
+      [nginx-http-auth]
+      enabled  = true
+      port     = http,https
+      logpath  = /var/log/nginx/error.log
+
+      [nginx-limit-req]
+      enabled  = true
+      port     = http,https
+      logpath  = /var/log/nginx/error.log
+      maxretry = 10
+      EOF
+
+      sudo systemctl enable --now fail2ban
+      sudo fail2ban-client status sshd      # View current bans
+      sudo fail2ban-client set sshd unbanip 203.0.113.5  # Manual unban
+      ```
+
+      ### Linux Server Security Hardening Checklist
+      Based on CIS Benchmark for Ubuntu Linux 22.04 LTS (Level 1 and Level 2):
+
+      ```bash
+      # ── 1. System Updates ─────────────────────────────────────────────────
+      sudo apt update && sudo apt upgrade -y
+      sudo apt install unattended-upgrades
+      sudo dpkg-reconfigure --priority=low unattended-upgrades
+
+      # ── 2. SSH Hardening (/etc/ssh/sshd_config) ───────────────────────────
+      sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/'         /etc/ssh/sshd_config
+      sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+      sudo sed -i 's/^#\?X11Forwarding.*/X11Forwarding no/'             /etc/ssh/sshd_config
+      sudo sed -i 's/^#\?MaxAuthTries.*/MaxAuthTries 3/'                /etc/ssh/sshd_config
+      sudo sed -i 's/^#\?ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config
+      sudo sed -i 's/^#\?ClientAliveCountMax.*/ClientAliveCountMax 2/'  /etc/ssh/sshd_config
+      # Append to /etc/ssh/sshd_config:
+      echo "AllowGroups sshusers" | sudo tee -a /etc/ssh/sshd_config
+      sudo systemctl restart sshd
+
+      # ── 3. Disable Unused Services ────────────────────────────────────────
+      sudo systemctl disable --now avahi-daemon cups bluetooth 2>/dev/null
+
+      # ── 4. Kernel Hardening (sysctl) ──────────────────────────────────────
+      sudo tee /etc/sysctl.d/99-hardening.conf > /dev/null << 'EOF'
+      # Ignore ICMP broadcasts (Smurf attack prevention)
+      net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+      # Ignore bogus ICMP error responses
+      net.ipv4.icmp_ignore_bogus_error_responses = 1
+
+      # Enable SYN cookies (SYN flood protection)
+      net.ipv4.tcp_syncookies = 1
+
+      # Disable IP source routing
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv6.conf.all.accept_source_route = 0
+
+      # Disable ICMP redirect acceptance
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv6.conf.all.accept_redirects = 0
+
+      # Log martian packets (spoofed source IPs)
+      net.ipv4.conf.all.log_martians = 1
+
+      # Enable reverse path filtering (anti-spoofing)
+      net.ipv4.conf.all.rp_filter = 1
+
+      # Disable IPv6 if not used
+      net.ipv6.conf.all.disable_ipv6 = 1
+      EOF
+      sudo sysctl --system
+
+      # ── 5. File Integrity Monitoring with AIDE ────────────────────────────
+      sudo apt install aide
+      sudo aideinit             # Build baseline database (store offline)
+      sudo aide --check         # Compare current state against baseline
+
+      # ── 6. Audit Logging ─────────────────────────────────────────────────
+      sudo apt install auditd audispd-plugins
+      # Watch /etc/passwd and /etc/shadow for modifications
+      sudo auditctl -w /etc/passwd -p wa -k identity_changes
+      sudo auditctl -w /etc/shadow -p wa -k identity_changes
+      # Watch for setuid execution
+      sudo auditctl -a always,exit -F arch=b64 -S execve \
+          -F euid=0 -F auid!=0 -k elevated_privs
+      sudo ausearch -k identity_changes    # Search audit log
+
+      # ── 7. Check for SUID/SGID binaries (review unexpected ones) ──────────
+      find / -perm /6000 -type f 2>/dev/null | tee suid_binaries.txt
+
+      # ── 8. Verify no accounts have empty passwords ────────────────────────
+      sudo awk -F: '($2 == "" ) { print "WARNING: "$1" has no password!" }' /etc/shadow
+      ```
+
+quiz:
+  - question: "A Linux administrator runs `sudo iptables -P INPUT DROP` followed by `sudo iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT`. A user then reports they cannot SSH to the server, but existing SSH sessions continue to work. What is the most likely cause?"
+    options:
+      - "The conntrack module is not loaded in the kernel"
+      - "There is no rule allowing NEW inbound TCP connections on port 22 — only established sessions are permitted"
+      - "The OUTPUT chain policy must also be set to DROP to enforce the firewall"
+      - "iptables does not support the conntrack module on modern Linux kernels"
+    answer: 1
+    explanation: "Setting `INPUT DROP` as the default policy means all inbound packets are dropped unless explicitly permitted. The `ESTABLISHED,RELATED` rule allows return traffic for sessions already initiated — so existing SSH sessions continue working. However, new SSH connection attempts (ctstate NEW) are dropped because no rule explicitly allows TCP port 22 with ctstate NEW. The fix is to add: `iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW -j ACCEPT`."
+
+  - question: "An organization deploys Suricata in IPS mode using NFQueue (NFQUEUE). A zero-day exploit is discovered that Suricata's ruleset does not yet detect. What is the security consequence of the inline IPS deployment in this scenario?"
+    options:
+      - "The IPS will block all traffic on that port as a precaution until rules are updated"
+      - "The attack passes through undetected and unblocked — identical to the consequence if using an IDS"
+      - "The IPS automatically generates a new detection rule based on traffic anomalies"
+      - "The NFQUEUE drops all packets that cannot be classified, blocking the attack by default"
+    answer: 1
+    explanation: "An IPS without a matching signature for a zero-day exploit will pass the traffic unimpeded — exactly as an IDS would (both would miss the attack). The IPS only blocks what its ruleset detects. This illustrates why defense-in-depth is critical: IPS/IDS is one layer, not a complete solution. Other controls (WAF, application-level validation, memory-safe coding) provide additional coverage for unknown attacks."
+
+  - question: "Which WireGuard cryptographic primitive is used for the static key exchange that authenticates peers, and what is the primary advantage of WireGuard's cryptographic design compared to OpenVPN?"
+    options:
+      - "RSA-4096 for key exchange; advantage is compatibility with existing PKI"
+      - "X25519 (Curve25519 ECDH) for key exchange; advantage is a minimal, auditable ~4,000-line codebase using only modern, conservative algorithms"
+      - "AES-256-GCM for key exchange; advantage is hardware acceleration via AES-NI"
+      - "IKEv2 for key exchange; advantage is MOBIKE support for mobile roaming"
+    answer: 1
+    explanation: "WireGuard uses Curve25519 (via the Noise Protocol Framework's IK handshake) for static key exchange. Its key security advantage is a dramatically smaller codebase (~4,000 lines vs ~600,000 for OpenVPN/IPsec stacks), making it far easier to audit for vulnerabilities. It uses only modern, conservative primitives: ChaCha20-Poly1305 for symmetric encryption, Curve25519 for ECDH, BLAKE2 for hashing — with no cryptographic agility (no weak algorithm fallback options)."
+
+  - question: "A VLAN hopping attack is attempted on a switch. The attacker's host sends a frame with two 802.1Q tags — an outer tag for VLAN 10 (the attacker's VLAN) and an inner tag for VLAN 99 (the target VLAN). Which mitigation BEST prevents this attack?"
+    options:
+      - "Enabling port security with MAC address limits on all access ports"
+      - "Configuring Private VLANs (PVLANs) on all user-facing access ports"
+      - "Ensuring the native VLAN on all trunk links is a dedicated, unused VLAN (not VLAN 1 or any access-port VLAN)"
+      - "Enabling 802.1X authentication on all access ports"
+    answer: 2
+    explanation: "Double-tagging VLAN hopping works because the attacker's outer tag matches the native VLAN on the trunk link (frames on the native VLAN are sent untagged on trunk ports, so the switch strips the outer tag and forwards based on the inner tag). The mitigation is to change the native VLAN on all trunk links to a dedicated, unused VLAN ID (e.g., VLAN 999) that is not assigned to any access port. This ensures no attacker on an access port can craft an outer tag that matches the trunk's native VLAN."
+
+  - question: "You examine a Wireshark capture and notice repeated DNS queries from an internal host with unusually long subdomains (e.g., `c2data.a1b2c3d4e5f6.evil.com`, `exfilbatch2.a7b8c9d0e1f2.evil.com`). What attack technique does this most likely indicate?"
+    options:
+      - "DNS Cache Poisoning — an attacker modifying DNS responses on the network"
+      - "DNS Amplification DDoS — the host is being used as a reflector"
+      - "DNS Tunnelling — data is being encoded in DNS query subdomains for command-and-control or data exfiltration"
+      - "DNSSEC validation failures causing repeated retry queries"
+    answer: 2
+    explanation: "DNS Tunnelling encodes data (C2 commands, exfiltrated data) in the subdomain portion of DNS queries. Because DNS is typically allowed through firewalls and is rarely inspected in depth, it is an effective covert channel. The indicator is unusually long, high-entropy subdomains sent at regular intervals to a consistent domain. Detection: entropy analysis of DNS query names, anomalous DNS query volume per host, and correlation of domain registration age (newly registered domains are suspicious). Tools like iodine and dnscat2 implement DNS tunnelling."

