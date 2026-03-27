@@ -87,8 +87,8 @@ def test_lesson_markdown_renders_as_html(client):
 def test_osi_lesson_paragraphs_are_not_escaped(client):
     response = client.get("/lesson/networking/01_osi_model")
     assert response.status_code == 200
-    assert b"&lt;p&gt;The OSI model divides network communication" not in response.data
-    assert b"<p>The OSI model divides network communication" in response.data
+    assert b"&lt;p&gt;In the early 1970s" not in response.data
+    assert b"<p>In the early 1970s" in response.data
 
 
 def test_lesson_invalid_slug_returns_404(client):
