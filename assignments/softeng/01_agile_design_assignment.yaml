@@ -1,0 +1,340 @@
+title: "Agile & Design Patterns Assignment"
+category: "softeng"
+difficulty: "intermediate"
+estimated_minutes: 30
+related_lesson: "02_design_patterns"
+instructions: |
+  Demonstrate your understanding of Scrum methodology and Gang of Four (GoF) design patterns
+  by completing the tasks below. Multiple-choice questions are graded instantly. Written and
+  practical answers are graded by AI with detailed feedback explaining what you got right and
+  what to improve. For practical tasks, write clean, idiomatic Python that could be submitted
+  in a real code review.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "In Scrum, which role is solely accountable for ordering the Product Backlog and making decisions about the priority of backlog items?"
+    options:
+      - "The Scrum Master — they facilitate all backlog refinement sessions and own the backlog ordering"
+      - "The Product Owner — they prioritise items by business value, risk, and dependencies to maximise return on investment"
+      - "The Development Team — they best understand technical complexity and therefore decide what to work on first"
+      - "The Stakeholders — they are the ultimate customers and have final say over backlog ordering at every sprint"
+    answer: 1
+    explanation: "In Scrum, the Product Owner (PO) is solely accountable for the Product Backlog — including its content, availability, and ordering. The PO prioritises items based on business value, risk, dependencies, regulatory requirements, and market timing to maximise the value delivered by the Development Team. While the PO should gather input from stakeholders and collaborate with the Development Team (who provide effort estimates), the ordering decision belongs entirely to the PO. The Scrum Master facilitates the process and removes impediments but does not own the backlog. Stakeholders influence the backlog through the PO but cannot directly reorder it."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "A developer writes a User class with the following methods: login(), generateReport(), sendEmail(). Which SOLID principle does this design violate, and why?"
+    options:
+      - "Open/Closed Principle — the class is not open for extension because all methods are concrete implementations"
+      - "Single Responsibility Principle — the class has three unrelated reasons to change: authentication logic, reporting logic, and messaging logic"
+      - "Liskov Substitution Principle — subclasses of User would not be able to substitute the parent class without altering correctness"
+      - "Interface Segregation Principle — the class forces clients to depend on methods they may not use"
+    answer: 1
+    explanation: "The Single Responsibility Principle (SRP) states that a class should have only ONE reason to change — meaning it should encapsulate only one cohesive set of behaviour. The User class above has three completely unrelated concerns: authentication (login), report generation (generateReport), and email delivery (sendEmail). If the authentication mechanism changes, the User class must change. If the report format changes, it must change again. If the email provider switches from SMTP to SendGrid, it changes a third time. These are three independent reasons to change, directly violating SRP. The fix is to split this into three single-purpose classes: AuthService, ReportGenerator, and EmailNotifier."
+
+  - id: 3
+    type: "short_answer"
+    points: 15
+    question: |
+      Explain the Observer design pattern. Your answer must cover:
+      (1) What problem the pattern solves (what coupling does it eliminate?).
+      (2) The three core participants: Subject (Observable), Observer (interface), and
+          ConcreteObserver — with the role each plays.
+      (3) A real-world software example that demonstrates how the pattern is used in practice
+          (e.g., a GUI framework, event bus, reactive stream, or web framework feature).
+    rubric: |
+      Award full marks (15) if the answer covers all three areas:
+
+      1. (4 pts) Problem solved: the Observer pattern decouples the object that produces events
+         or state changes (Subject) from the objects that need to react to those changes
+         (Observers). Without Observer, the Subject would need a direct reference to every
+         interested party and call them explicitly — tight coupling that breaks the Open/Closed
+         Principle. Observer enables a publish/subscribe model where the Subject knows only the
+         Observer interface, not concrete classes.
+
+      2. (7 pts) Participants (2-3 pts each):
+         - Subject/Observable: maintains a list of Observers; provides attach(), detach(), and
+           notify() methods; calls notify() when its state changes.
+         - Observer interface: defines the update() method (or equivalent callback) that all
+           ConcreteObservers must implement.
+         - ConcreteObserver: implements the Observer interface; each has its own logic in update()
+           responding to the Subject's state change.
+
+      3. (4 pts) A concrete, accurate real-world example such as:
+         - Django signals (post_save triggers handlers in decoupled apps)
+         - JavaScript DOM event listeners (addEventListener)
+         - RxJS/reactive streams (Observable.subscribe)
+         - Java Swing ActionListener on a button
+         - Stock price feed notifying multiple display widgets
+
+      Award 10/15 if participants are described but the example is missing or vague.
+      Award 5/15 if only the pattern name and general idea are given without participants.
+    sample_answer: |
+      **Problem Solved:**
+      The Observer pattern solves the tight-coupling problem that arises when one object (the
+      producer) needs to notify multiple other objects (the consumers) about state changes. Without
+      this pattern, the producer would need a hard-coded list of references to every consumer class
+      and would call each one directly — making the producer impossible to reuse or extend without
+      modification. Observer introduces a level of indirection: the producer only knows about the
+      Observer interface, not any concrete consumer. New consumers can be added without touching
+      the producer code, satisfying the Open/Closed Principle.
+
+      **Participants:**
+
+      - **Subject (Observable):** The object whose state is being watched. It maintains a list
+        of registered Observer objects and provides `attach(observer)`, `detach(observer)`, and
+        `notify()` methods. When its internal state changes, it calls `notify()`, which iterates
+        the list and calls `update()` on each Observer. The Subject knows nothing about what
+        Observers do with the notification.
+
+      - **Observer (interface / abstract class):** Defines the contract — typically a single
+        `update(subject)` method — that all concrete observers must implement. The Subject
+        depends only on this abstraction.
+
+      - **ConcreteObserver:** Implements the Observer interface with its own specific reaction
+        to the state change. Multiple ConcreteObserver classes can implement the same interface
+        and be registered with the same Subject simultaneously.
+
+      **Real-World Example — Django Signals:**
+      Django's signal system is a built-in implementation of Observer. The `post_save` signal
+      is the Subject; any function decorated with `@receiver(post_save, sender=Order)` is a
+      ConcreteObserver. When an `Order` object is saved, Django's ORM calls `post_save.send()`,
+      which notifies all registered receivers. A `send_confirmation_email` handler and an
+      `update_inventory` handler can both listen to the same signal without the `Order` model
+      knowing either of them exists. Adding a new handler (e.g., `trigger_analytics_event`)
+      requires zero changes to the Order model.
+
+  - id: 4
+    type: "short_answer"
+    points: 15
+    question: |
+      Explain the Dependency Inversion Principle (DIP) — one of the SOLID principles.
+      Your answer must:
+      (1) State the DIP definition precisely (both of its sub-rules).
+      (2) Explain how Dependency Injection (DI) differs from DIP (one is a principle,
+          the other is a technique — how do they relate?).
+      (3) Provide a short Python before/after example showing a class that violates DIP
+          and a refactored version that satisfies it.
+    rubric: |
+      Award full marks (15) if the answer covers all three areas:
+
+      1. (5 pts) DIP definition: (a) High-level modules should not depend on low-level modules;
+         both should depend on abstractions. (b) Abstractions should not depend on details;
+         details (concrete implementations) should depend on abstractions.
+
+      2. (5 pts) DI vs DIP relationship: DIP is the design principle stating what the
+         dependency direction should be. Dependency Injection is a technique for achieving DIP
+         — instead of a class creating its own dependencies (which hard-codes the concrete type),
+         dependencies are provided from the outside (injected via constructor, method, or
+         property), allowing the concrete type to be swapped without modifying the high-level class.
+         DI is one way to achieve DIP; DIP does not mandate DI (e.g., a Service Locator also
+         satisfies DIP without traditional DI).
+
+      3. (5 pts) Python example must show: a "before" class that instantiates a concrete
+         dependency directly (e.g., MySQLDatabase() inside __init__), and an "after" class that
+         accepts an abstract interface via constructor injection, with the concrete class
+         implementing that interface.
+
+      Award 10/15 if DIP is correctly defined and the example is present but DI relationship
+      is poorly explained.
+      Award 5/15 if only a general description without the formal definition or example.
+    sample_answer: |
+      **1. The Dependency Inversion Principle (DIP):**
+      DIP has two sub-rules:
+      - High-level modules (which contain business logic) should NOT depend on low-level modules
+        (which handle details like databases, file systems, or HTTP). Both should depend on
+        **abstractions** (interfaces or abstract base classes).
+      - Abstractions should not depend on details. Details (concrete implementations) should
+        depend on abstractions.
+
+      The "inversion" refers to inverting the traditional dependency direction: instead of
+      business logic → concrete database, you get business logic → abstract interface ←
+      concrete database.
+
+      **2. DIP vs Dependency Injection:**
+      DIP is a design *principle* — it tells you what the dependency structure should look like.
+      Dependency Injection (DI) is an implementation *technique* that helps you achieve DIP.
+      With DI, a class does not create its own dependencies inside its methods or `__init__`;
+      instead, the dependencies are provided ("injected") from the outside — typically via the
+      constructor. This means the caller decides which concrete implementation to use, while the
+      class only codes against the abstraction. DI makes it trivial to swap implementations
+      (e.g., replace a real database with a fake in tests) without modifying the high-level class.
+
+      **3. Python Before/After Example:**
+
+      ```python
+      # BEFORE: Violates DIP — OrderService hard-codes a dependency on MySQLDatabase
+      class MySQLDatabase:
+          def save(self, order):
+              print(f"Saving {order} to MySQL")
+
+      class OrderService:
+          def __init__(self):
+              self.db = MySQLDatabase()  # high-level module creates its own low-level dependency
+
+          def place_order(self, order):
+              self.db.save(order)
+      ```
+
+      The problem: `OrderService` is tightly coupled to `MySQLDatabase`. Switching to PostgreSQL,
+      or using an in-memory fake in tests, requires modifying `OrderService`.
+
+      ```python
+      # AFTER: Satisfies DIP — both depend on an abstraction
+      from abc import ABC, abstractmethod
+
+      class Database(ABC):                 # the abstraction
+          @abstractmethod
+          def save(self, order) -> None:
+              ...
+
+      class MySQLDatabase(Database):       # detail depends on abstraction
+          def save(self, order) -> None:
+              print(f"Saving {order} to MySQL")
+
+      class InMemoryDatabase(Database):    # swap-in for tests
+          def __init__(self):
+              self.records = []
+          def save(self, order) -> None:
+              self.records.append(order)
+
+      class OrderService:                  # high-level module depends on abstraction
+          def __init__(self, db: Database):  # dependency injected via constructor
+              self.db = db
+
+          def place_order(self, order):
+              self.db.save(order)
+
+      # Production usage
+      service = OrderService(MySQLDatabase())
+      # Test usage — no real database needed
+      fake_db = InMemoryDatabase()
+      service = OrderService(fake_db)
+      ```
+
+  - id: 5
+    type: "practical"
+    points: 50
+    question: |
+      Implement the **Strategy** design pattern in Python for a data exporter that supports
+      multiple output formats. Your implementation must include:
+
+      1. An abstract base class `ExportStrategy` with an abstract method `export(data: list) -> str`.
+      2. Three concrete strategy classes:
+         - `CSVExportStrategy` — exports the list of dicts as CSV text (header row + data rows).
+         - `JSONExportStrategy` — exports the data as a pretty-printed JSON string.
+         - `XMLExportStrategy` — exports the data as simple XML (a root <records> element
+           containing one <record> element per dict, with dict keys as child elements).
+      3. A context class `DataExporter` that:
+         - Accepts an `ExportStrategy` at construction time.
+         - Provides a `set_strategy(strategy: ExportStrategy)` method to change strategies at runtime.
+         - Provides an `export(data: list) -> str` method that delegates to the current strategy.
+      4. A demonstration block (under `if __name__ == "__main__":`) that creates sample data
+         (at least two records), exports it with all three strategies, and prints the results.
+    rubric: |
+      Abstract base class ExportStrategy (10 pts):
+      - Imports and uses ABC and abstractmethod correctly (5 pts).
+      - Defines export(data: list) -> str as an abstract method (5 pts).
+
+      Concrete strategy classes (24 pts, 8 pts each):
+      CSVExportStrategy (8 pts): uses csv module or manual formatting; produces a valid header
+        row from dict keys and correct data rows (4 pts); returns a string (4 pts).
+      JSONExportStrategy (8 pts): uses json.dumps with indent for pretty-printing (4 pts);
+        returns the JSON string (4 pts).
+      XMLExportStrategy (8 pts): produces well-formed XML with a root element (4 pts); each
+        record and its fields are correctly nested (4 pts).
+
+      DataExporter context class (8 pts):
+      - Constructor accepts and stores a strategy (2 pts).
+      - set_strategy() method replaces the current strategy (3 pts).
+      - export() delegates to self._strategy.export(data) (3 pts).
+
+      Demonstration block (8 pts):
+      - Creates at least two sample records as a list of dicts (2 pts).
+      - Calls export with all three strategies and prints output (6 pts).
+    sample_answer: |
+      ```python
+      from abc import ABC, abstractmethod
+      import csv
+      import io
+      import json
+
+
+      # 1. Abstract base class
+      class ExportStrategy(ABC):
+          @abstractmethod
+          def export(self, data: list) -> str:
+              """Convert a list of dicts to a formatted string."""
+              ...
+
+
+      # 2. Concrete strategy: CSV
+      class CSVExportStrategy(ExportStrategy):
+          def export(self, data: list) -> str:
+              if not data:
+                  return ""
+              output = io.StringIO()
+              writer = csv.DictWriter(output, fieldnames=data[0].keys())
+              writer.writeheader()
+              writer.writerows(data)
+              return output.getvalue()
+
+
+      # 2. Concrete strategy: JSON
+      class JSONExportStrategy(ExportStrategy):
+          def export(self, data: list) -> str:
+              return json.dumps(data, indent=2)
+
+
+      # 2. Concrete strategy: XML
+      class XMLExportStrategy(ExportStrategy):
+          def export(self, data: list) -> str:
+              lines = ["<records>"]
+              for record in data:
+                  lines.append("  <record>")
+                  for key, value in record.items():
+                      lines.append(f"    <{key}>{value}</{key}>")
+                  lines.append("  </record>")
+              lines.append("</records>")
+              return "\n".join(lines)
+
+
+      # 3. Context class
+      class DataExporter:
+          def __init__(self, strategy: ExportStrategy) -> None:
+              self._strategy = strategy
+
+          def set_strategy(self, strategy: ExportStrategy) -> None:
+              self._strategy = strategy
+
+          def export(self, data: list) -> str:
+              return self._strategy.export(data)
+
+
+      # 4. Demonstration
+      if __name__ == "__main__":
+          sample_data = [
+              {"id": 1, "name": "Alice", "department": "Engineering"},
+              {"id": 2, "name": "Bob",   "department": "Marketing"},
+          ]
+
+          exporter = DataExporter(CSVExportStrategy())
+          print("=== CSV ===")
+          print(exporter.export(sample_data))
+
+          exporter.set_strategy(JSONExportStrategy())
+          print("=== JSON ===")
+          print(exporter.export(sample_data))
+
+          exporter.set_strategy(XMLExportStrategy())
+          print("=== XML ===")
+          print(exporter.export(sample_data))
+      ```
+
+      The Strategy pattern lets the `DataExporter` context class change its export algorithm
+      at runtime without any if/elif logic inside the class. Adding a new format (e.g., YAML)
+      requires only a new concrete strategy class — the context and all existing strategies
+      are untouched, satisfying the Open/Closed Principle.

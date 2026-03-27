@@ -1,0 +1,306 @@
+title: "TDD & Testing Quality Assignment"
+category: "softeng"
+difficulty: "intermediate"
+estimated_minutes: 35
+related_lesson: "03_testing_tdd"
+instructions: |
+  Demonstrate your understanding of the TDD development cycle, pytest, test doubles (mocks and
+  stubs), and code coverage metrics by completing the tasks below. Multiple-choice questions are
+  graded instantly. Written and practical answers are graded by AI with detailed feedback.
+  For practical tasks, write runnable pytest code that follows real-world testing conventions.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "In Test-Driven Development, what is the correct order of the Red-Green-Refactor cycle, and why does this specific order matter?"
+    options:
+      - "Green → Red → Refactor: write working code first, then add a test to confirm it works, then clean it up"
+      - "Red → Green → Refactor: write a failing test first, write the minimum code to make it pass, then improve the code without changing behaviour"
+      - "Refactor → Red → Green: clean up existing code first so the new feature fits cleanly, then write the test, then implement"
+      - "Red → Refactor → Green: write the failing test, refactor the design speculatively, then implement to make it pass"
+    answer: 1
+    explanation: "The Red-Green-Refactor cycle must follow this exact order for TDD to deliver its benefits. Red (write a failing test first) proves the test actually exercises new behaviour — if you skip this step you might write a test that passes vacuously without testing anything. Green (write the minimum code to pass the test) keeps the implementation focused and avoids over-engineering. Refactor (improve the code without changing observable behaviour) is safe because the passing tests act as a regression safety net — if a refactor accidentally breaks behaviour, the tests immediately turn red. Any other ordering breaks one of these guarantees: writing code before a test means you may never discover whether the test can actually fail."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "What is the key difference between a Stub and a Mock in unit testing?"
+    options:
+      - "A Stub is used for external services like databases; a Mock is used for in-process dependencies like utility functions"
+      - "A Stub returns predefined data to the code under test and makes no assertions about how it was called; a Mock also verifies that specific interactions occurred — it has expectations about which methods were called, with which arguments, and how many times"
+      - "Stubs and Mocks are synonyms for the same concept; the distinction is purely a naming convention that varies by testing framework"
+      - "A Mock replaces an entire class hierarchy; a Stub replaces only a single method on a real object (similar to monkey-patching)"
+    answer: 1
+    explanation: "The distinction comes from Gerard Meszaros's 'xUnit Test Patterns'. A Stub is a passive test double that simply returns canned responses to keep the code under test running in isolation — for example, a stub database connection that always returns a fixed list of users. The stub does not care whether its methods were called or how many times. A Mock is an active test double that also records calls and verifies expectations: you set up expectations before the call ('assert_called_once_with(user_id=42)') and the test fails if the mock was not called in the expected way. In Python's unittest.mock, MagicMock can act as either: used as a stub if you only set return_value; used as a mock if you assert on calls afterwards."
+
+  - id: 3
+    type: "short_answer"
+    points: 15
+    question: |
+      Explain why achieving 100% statement (line) coverage does not guarantee that your test
+      suite is adequate. Your answer must address:
+      (1) A concrete example showing code that is 100% statement-covered yet has a logic bug
+          that the tests miss.
+      (2) How branch (decision) coverage improves on statement coverage and what it measures.
+      (3) What mutation testing is and how it provides a stronger quality signal than
+          coverage metrics alone.
+    rubric: |
+      Award full marks (15) if the answer covers all three areas:
+
+      1. (5 pts) Concrete example demonstrating the gap: e.g., a function with an if/else
+         where a single test hits the if branch — all lines execute (100% statement coverage)
+         but the else branch is never tested. Or: a test that calls a function and ignores the
+         return value — every line runs but no assertion catches a wrong result. Must be
+         specific, not just a vague claim.
+
+      2. (5 pts) Branch coverage: measures whether every decision point (if/else, while, for,
+         ternary, try/except, logical AND/OR short-circuit) has been evaluated as both True and
+         False. A test that only takes the True branch of an if statement has 100% statement
+         coverage for that if block (if the line inside was executed) but 50% branch coverage.
+         Branch coverage subsumes statement coverage — 100% branch coverage implies 100%
+         statement coverage, but not vice versa.
+
+      3. (5 pts) Mutation testing: a tool automatically introduces small syntactic mutations
+         (e.g., change > to >=, flip a + to -, negate a boolean return) into the source code
+         and runs the test suite against each mutant. If the tests still pass despite the
+         mutation, the mutant has "survived" — indicating that no test caught that logic change.
+         High kill rate (few surviving mutants) is a stronger quality signal than coverage
+         because it directly probes whether tests can detect specific wrong behaviours.
+         Tools: mutmut (Python), PIT (Java).
+
+      Award 10/15 if two of three areas are well covered.
+      Award 5/15 if only a vague coverage discussion without an example or mutation testing.
+    sample_answer: |
+      **1. Why 100% Statement Coverage is Insufficient — Concrete Example:**
+
+      ```python
+      def classify_age(age: int) -> str:
+          if age >= 18:
+              return "adult"
+          else:
+              return "minor"
+      ```
+
+      A single test `assert classify_age(25) == "adult"` achieves 100% line coverage (the
+      function body has two return statements; both lines are visited because the interpreter
+      parses both branches... actually only the taken branch runs). Even with just the one
+      test, coverage tools may report 100% statement coverage if they count only reachable
+      lines. But the `else` branch is never executed: if a developer accidentally changes
+      `>= 18` to `> 18`, `classify_age(18)` would return `"minor"` instead of `"adult"` and
+      no test would catch it. Additionally, a test can call a function and never assert on the
+      return value — every line runs, but a wrong result would pass undetected.
+
+      **2. Branch (Decision) Coverage:**
+      Branch coverage measures whether every control-flow decision has been evaluated in both
+      its True and False outcomes. For every `if`, `while`, `for`, `try/except`, `and`/`or`
+      short-circuit, and ternary expression, branch coverage requires at least one test taking
+      each path. In the example above, 100% branch coverage requires two tests: one with
+      `age >= 18` (True branch) and one with `age < 18` (False branch). Branch coverage
+      subsumes statement coverage — achieving 100% branch coverage automatically gives you
+      100% statement coverage, but the converse is not true.
+
+      **3. Mutation Testing:**
+      Mutation testing tools (e.g., `mutmut` for Python, `PIT` for Java) automatically inject
+      small, targeted code changes called *mutants* into the production source — for example,
+      changing `>=` to `>`, flipping `return True` to `return False`, or replacing `+` with
+      `-`. After each mutation, the full test suite is re-run. If the tests all pass despite
+      the mutation, the mutant "survived" — meaning no test was sensitive enough to detect
+      that specific logic error. The *mutation score* (killed mutants / total mutants) gives a
+      direct measure of how well tests verify actual behaviour, not just which lines were
+      executed. A suite with 100% branch coverage but a low mutation score has structurally
+      adequate tests that make weak or missing assertions.
+
+  - id: 4
+    type: "short_answer"
+    points: 15
+    question: |
+      You are writing a function `get_user_status(user_id: int) -> str` that calls an external
+      REST API at `https://api.example.com/users/{user_id}` and returns the value of the
+      `"status"` key from the JSON response.
+
+      Explain how you would unit test this function WITHOUT making real HTTP requests, then
+      write the complete pytest test using `unittest.mock.patch`. Your test code must show:
+      (1) Patching the HTTP call so no real request is made.
+      (2) Configuring the mock to return a fake JSON response.
+      (3) Calling the function under test.
+      (4) Asserting that the mock was called with the correct URL.
+      (5) Asserting on the function's return value.
+    rubric: |
+      Award full marks (15) if the answer covers all five elements:
+
+      1. (3 pts) Correct use of @patch or patch() context manager targeting the requests
+         function used inside get_user_status (e.g., @patch("module.requests.get") or
+         @patch("requests.get")). The patch target must be the location where requests.get
+         is looked up, not where it is defined.
+
+      2. (3 pts) Mock return value configured: mock_get.return_value.json.return_value = {...}
+         (for a requests.Response-style mock) OR mock_get.return_value = MagicMock with
+         appropriate json() method.
+
+      3. (2 pts) The function under test (get_user_status) is called with a test user_id.
+
+      4. (4 pts) mock_get.assert_called_once_with("https://api.example.com/users/42") or
+         equivalent assertion confirming the correct URL was used.
+
+      5. (3 pts) assert on the function's return value matching the expected status string
+         from the fake response.
+
+      Award 10/15 if patching and assertion on return value are correct but call verification
+      (assert_called_once_with) is missing.
+      Award 5/15 if the approach is correct but the code has significant syntax errors.
+    sample_answer: |
+      **Approach:**
+      Unit tests must be isolated from external dependencies. Making real HTTP calls in tests
+      causes non-determinism (network failures, API downtime), slowness, and potential side
+      effects. The solution is to *patch* the `requests.get` function in the module under test
+      so it is replaced by a `MagicMock` for the duration of the test. The mock returns a
+      pre-configured fake response object that mimics the `requests.Response` interface.
+
+      **Implementation under test:**
+      ```python
+      # user_service.py
+      import requests
+
+      def get_user_status(user_id: int) -> str:
+          response = requests.get(f"https://api.example.com/users/{user_id}")
+          response.raise_for_status()
+          return response.json()["status"]
+      ```
+
+      **pytest test:**
+      ```python
+      # test_user_service.py
+      from unittest.mock import patch, MagicMock
+      from user_service import get_user_status
+
+
+      @patch("user_service.requests.get")          # patch where it's used, not where defined
+      def test_get_user_status_returns_status(mock_get):
+          # (2) Configure the mock to return a fake response
+          fake_response = MagicMock()
+          fake_response.json.return_value = {"id": 42, "status": "active", "name": "Alice"}
+          fake_response.raise_for_status.return_value = None   # no-op — don't raise
+          mock_get.return_value = fake_response
+
+          # (3) Call the function under test
+          result = get_user_status(42)
+
+          # (4) Assert the mock was called with the correct URL
+          mock_get.assert_called_once_with("https://api.example.com/users/42")
+
+          # (5) Assert the function returned the expected value
+          assert result == "active"
+      ```
+
+      The `@patch("user_service.requests.get")` decorator replaces `requests.get` in
+      `user_service`'s namespace for the duration of the test function, then restores it
+      automatically. The patched mock is passed as the `mock_get` argument. Because `mock_get`
+      is a `MagicMock`, all attribute access on it (including `.return_value`, `.json()`,
+      `.raise_for_status()`) automatically returns more MagicMocks unless explicitly configured.
+
+  - id: 5
+    type: "practical"
+    points: 50
+    question: |
+      Using TDD, implement a `PasswordValidator` class that enforces the following rules:
+        - Minimum 8 characters in length.
+        - At least one uppercase letter (A-Z).
+        - At least one digit (0-9).
+        - At least one special character from the set: !@#$%^&*
+
+      **Requirements:**
+      1. Write the **tests first** (at least 6 tests):
+         - One test for each individual rule failing (4 tests — too short, no uppercase,
+           no digit, no special character).
+         - One test for a completely valid password that passes all rules.
+         - At least one additional edge-case test of your choice.
+         Use `pytest.mark.parametrize` for the invalid-password cases.
+      2. Write the `PasswordValidator` class implementation that makes all tests pass.
+         The class must have a `validate(password: str) -> bool` method that returns
+         `True` if the password meets all rules, `False` otherwise.
+      3. Do NOT use a single large regex for the whole validation — check each rule separately
+         so that individual rules could be reported independently in the future.
+    rubric: |
+      Tests written first with pytest (20 pts):
+      - At least 4 invalid-case tests covering each individual failing rule (12 pts — 3 pts each).
+      - At least 1 valid-password test (4 pts).
+      - At least 1 additional edge-case (e.g., empty string, exactly 8 chars, boundary) (4 pts).
+
+      pytest.mark.parametrize used for invalid cases (10 pts):
+      - @pytest.mark.parametrize applied to the invalid-password tests with at least 4
+        parameter tuples (one per rule) (10 pts).
+      - Award 5 pts if parametrize is used but covers fewer than 4 cases.
+
+      PasswordValidator implementation (15 pts):
+      - Class with validate() method that returns bool (3 pts).
+      - Length rule checked independently (3 pts).
+      - Uppercase rule checked independently (3 pts).
+      - Digit rule checked independently (3 pts).
+      - Special character rule checked independently (3 pts).
+
+      All tests pass (5 pts):
+      - Running pytest produces 0 failures and all tests are collected and pass (5 pts).
+    sample_answer: |
+      ```python
+      # test_password_validator.py  — TESTS WRITTEN FIRST (Red phase)
+      import pytest
+      from password_validator import PasswordValidator
+
+
+      @pytest.mark.parametrize("password, description", [
+          ("Short1!",    "too short — only 7 characters"),
+          ("alllower1!", "no uppercase letter"),
+          ("NoDigits!!!", "no digit"),
+          ("NoSpecial1",  "no special character"),
+      ])
+      def test_invalid_passwords(password, description):
+          validator = PasswordValidator()
+          assert validator.validate(password) is False, f"Expected invalid: {description}"
+
+
+      def test_valid_password():
+          validator = PasswordValidator()
+          assert validator.validate("Secure1!") is True
+
+
+      def test_empty_string_is_invalid():
+          validator = PasswordValidator()
+          assert validator.validate("") is False
+
+
+      def test_exactly_8_chars_with_all_rules_satisfied():
+          validator = PasswordValidator()
+          assert validator.validate("Abc1!xyz") is True
+
+
+      def test_only_special_chars_is_invalid():
+          validator = PasswordValidator()
+          assert validator.validate("!@#$%^&*") is False
+      ```
+
+      ```python
+      # password_validator.py  — IMPLEMENTATION (Green phase)
+
+      class PasswordValidator:
+          MIN_LENGTH = 8
+          SPECIAL_CHARS = set("!@#$%^&*")
+
+          def validate(self, password: str) -> bool:
+              if len(password) < self.MIN_LENGTH:
+                  return False
+              if not any(c.isupper() for c in password):
+                  return False
+              if not any(c.isdigit() for c in password):
+                  return False
+              if not any(c in self.SPECIAL_CHARS for c in password):
+                  return False
+              return True
+      ```
+
+      Each rule is a separate guard clause that returns `False` immediately when violated.
+      This keeps the rules independent: future enhancements (e.g., returning a list of
+      violated rules with error messages) can be added by converting each guard into a
+      collected check without restructuring the logic. The parametrized test consolidates
+      the four invalid-password cases into a single, readable test function that produces
+      four separate test items in pytest output — one per parameter tuple.
