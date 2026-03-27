@@ -1,0 +1,701 @@
+title: "NoSQL Databases: MongoDB, Redis & Beyond"
+order: 3
+summary: "A comprehensive examination of NoSQL database paradigms including the CAP theorem, document stores (MongoDB), key-value stores (Redis), columnar databases, and graph databases — with practical shell examples and guidance on selecting the right database for a given workload."
+learning_objectives:
+  - "Articulate the trade-offs between relational and NoSQL databases and apply the CAP theorem to classify NoSQL systems."
+  - "Perform CRUD operations, aggregation pipeline queries, and index creation in MongoDB using the mongo shell."
+  - "Use Redis data structures (strings, hashes, lists, sets, sorted sets) and features (TTL, pub/sub) from the redis-cli."
+  - "Describe the conceptual architecture of columnar (wide-column) and graph databases and identify appropriate use cases."
+  - "Choose the right database type for a given application workload, justifying the decision with reference to CAP, data model, and access patterns."
+builds_on:
+  - "Lesson 1 (SQL Fundamentals) — contrast against the relational model"
+  - "Linux terminal — you will use mongosh and redis-cli"
+  - "Basic JSON — MongoDB documents are JSON-like (BSON)"
+sections:
+  - heading: "NoSQL vs Relational: Motivations and Trade-offs"
+    content: |
+      ## NoSQL vs Relational: Motivations and Trade-offs
+
+      The term **NoSQL** (originally "No SQL", now often interpreted as "Not Only SQL") emerged
+      around 2009 to describe a generation of database systems designed to address limitations
+      of relational databases at **web-scale workloads**. Companies like Google (Bigtable, 2006),
+      Amazon (Dynamo, 2007), and Facebook (Cassandra, 2008) encountered problems that traditional
+      RDBMS systems struggled to solve: horizontal scalability across thousands of commodity
+      servers, flexible schemas for rapidly evolving data models, and extremely high throughput
+      for simple access patterns (key lookups, range scans).
+
+      The motivations for NoSQL are not that SQL is "bad" — they are that **different workloads
+      have different optimal data models**. The relational model excels at complex queries,
+      ad-hoc reporting, and enforcing referential integrity. NoSQL systems optimise for specific
+      access patterns, often sacrificing generality for performance and scalability.
+
+      | Dimension | Relational (PostgreSQL, MySQL) | NoSQL (MongoDB, Redis, Cassandra) |
+      |-----------|-------------------------------|----------------------------------|
+      | **Schema** | Fixed schema; DDL required to change structure | Schema-flexible (document) or schema-free (key-value) |
+      | **Data model** | Tables, rows, columns | Documents, key-value pairs, wide columns, graphs |
+      | **Query language** | SQL — powerful, standardised | System-specific APIs; some support query languages |
+      | **Joins** | Native, optimised | Generally discouraged; denormalise instead |
+      | **ACID** | Full ACID transactions (PostgreSQL) | Varies: MongoDB has multi-doc ACID; Redis is single-op atomic |
+      | **Scaling** | Primarily vertical; sharding is complex | Designed for horizontal scaling (sharding built-in) |
+      | **Consistency** | Strong consistency (default) | Often eventual consistency (configurable) |
+      | **Best for** | Complex queries, reporting, financial systems | High-throughput simple operations, flexible schemas, real-time data |
+
+      **Critical nuance:** The choice is not always binary. **Polyglot persistence** — using
+      multiple database types within one application — is standard practice. A typical web
+      application might use PostgreSQL for user accounts and orders, Redis for session caching
+      and rate limiting, MongoDB for user-generated content, and Elasticsearch for full-text
+      search.
+
+  - heading: "The CAP Theorem"
+    content: |
+      ## The CAP Theorem
+
+      The **CAP Theorem** (Brewer's Theorem) was proposed by Eric Brewer in 2000 and formally
+      proven by Gilbert and Lynch (2002). It states that a distributed data store can guarantee
+      at most **two of the following three properties** simultaneously:
+
+      - **C — Consistency:** Every read receives the most recent write or an error. All nodes
+        in the cluster see the same data at the same time (not to be confused with the C in
+        ACID, which means constraint satisfaction).
+      - **A — Availability:** Every request receives a (non-error) response — though it may
+        not contain the most recent write.
+      - **P — Partition Tolerance:** The system continues to operate even if network messages
+        are dropped or delayed between nodes (a network partition).
+
+      ```mermaid
+      graph TD
+          CAP(("CAP\nTheorem"))
+          C["Consistency\nEvery node returns\nthe same data"]
+          A["Availability\nEvery request\ngets a response"]
+          P["Partition\nTolerance\nWorks despite\nnetwork failures"]
+
+          CAP --- C
+          CAP --- A
+          CAP --- P
+
+          CA["CA Systems\nPostgreSQL, MySQL\n(single node)\nNo partition tolerance"]
+          CP["CP Systems\nMongoDB (w/ write concern)\nHBase, ZooKeeper\nSacrifices availability"]
+          AP["AP Systems\nCassandra, DynamoDB\nCouchDB\nSacrifices strict consistency"]
+
+          C --- CA
+          A --- CA
+          C --- CP
+          P --- CP
+          A --- AP
+          P --- AP
+
+          style CA fill:#4A90D9,color:#fff
+          style CP fill:#8E44AD,color:#fff
+          style AP fill:#D4A017,color:#fff
+      ```
+
+      **In practice:** Network partitions in distributed systems are inevitable, so the real
+      choice for distributed databases is between **CP** (sacrifice availability during a
+      partition — return an error rather than stale data) and **AP** (sacrifice consistency
+      — return potentially stale data rather than an error). This leads to the concept of
+      **eventual consistency**: all nodes will converge to the same state *eventually*, once
+      the partition heals.
+
+      **PACELC** (Patterson et al., 2012) extends CAP for the non-partition case: even without
+      a partition, there is a trade-off between **latency** (L) and **consistency** (C). A
+      distributed system that provides stronger consistency (synchronous replication) has higher
+      write latency than one that uses asynchronous replication.
+
+      | Database | CAP Classification | Notes |
+      |----------|-------------------|-------|
+      | PostgreSQL (single node) | CA | Not distributed by default |
+      | MongoDB | CP (configurable) | `w: majority` write concern gives CP; `w: 1` gives AP |
+      | Redis (Cluster) | AP | Redis Cluster sacrifices consistency for availability |
+      | Apache Cassandra | AP | Tunable consistency (ONE, QUORUM, ALL) |
+      | Apache HBase | CP | Built on HDFS; favours consistency |
+      | Amazon DynamoDB | AP (default) | Eventual consistency; strong consistency available at cost |
+
+  - heading: "MongoDB: Document Store Fundamentals"
+    content: |
+      ## MongoDB: Document Store Fundamentals
+
+      **MongoDB** is the most widely deployed document-oriented database. Data is stored as
+      **BSON documents** (Binary JSON — a binary-encoded superset of JSON that adds types like
+      `Date`, `ObjectId`, `Decimal128`, and binary data). Documents are grouped into
+      **collections** (analogous to tables), and collections live in a **database**. Unlike
+      relational tables, documents within the same collection do not need to share the same
+      schema — though in practice most applications use a consistent structure.
+
+      **Key terminology comparison:**
+
+      | Relational | MongoDB |
+      |-----------|---------|
+      | Database | Database |
+      | Table | Collection |
+      | Row / Tuple | Document |
+      | Column | Field |
+      | Primary Key | `_id` field (auto-generated `ObjectId` if not specified) |
+      | JOIN | `$lookup` aggregation stage (or denormalisation) |
+      | Index | Index |
+
+      ### Connecting and Basic Navigation
+
+      ```bash
+      # Start the MongoDB shell (mongosh)
+      mongosh
+
+      # Connect to a specific host/database
+      mongosh "mongodb://localhost:27017/university"
+      ```
+
+      ```javascript
+      // Show all databases
+      show dbs
+
+      // Switch to (or create) a database
+      use university
+
+      // Show collections in current database
+      show collections
+
+      // Get collection statistics
+      db.students.stats()
+      ```
+
+      ### CRUD Operations
+
+      #### Create (insertOne / insertMany)
+
+      ```javascript
+      // insertOne: returns { acknowledged: true, insertedId: ObjectId("...") }
+      db.students.insertOne({
+          first_name: "Alice",
+          last_name:  "Chen",
+          email:      "achen@uni.edu",
+          gpa:        3.92,
+          department: "Computer Science",
+          enrolled_courses: ["CS310", "CS201", "CS405"],
+          address: {
+              city:    "San Francisco",
+              state:   "CA",
+              country: "USA"
+          },
+          created_at: new Date()
+      });
+
+      // insertMany: insert an array of documents
+      db.courses.insertMany([
+          { code: "CS310", title: "Database Systems",  credits: 3, dept: "CS" },
+          { code: "CS201", title: "Algorithms",         credits: 3, dept: "CS" },
+          { code: "CS405", title: "Machine Learning",   credits: 4, dept: "CS" }
+      ]);
+      ```
+
+      #### Read (find / findOne)
+
+      ```javascript
+      // Find all documents (returns a cursor)
+      db.students.find()
+
+      // Find with filter (equality)
+      db.students.find({ department: "Computer Science" })
+
+      // Projection: include only specific fields (1=include, 0=exclude)
+      db.students.find(
+          { department: "Computer Science" },
+          { first_name: 1, last_name: 1, gpa: 1, _id: 0 }
+      )
+
+      // Comparison operators: $gt, $gte, $lt, $lte, $ne, $in, $nin
+      db.students.find({ gpa: { $gte: 3.5 } })
+
+      // Logical operators: $and, $or, $not, $nor
+      db.students.find({
+          $and: [
+              { gpa: { $gte: 3.0 } },
+              { department: { $in: ["Computer Science", "Mathematics"] } }
+          ]
+      })
+
+      // Query on nested field (dot notation)
+      db.students.find({ "address.city": "San Francisco" })
+
+      // Query on array field: matches if array CONTAINS the value
+      db.students.find({ enrolled_courses: "CS310" })
+
+      // Sorting, limiting, skipping
+      db.students.find().sort({ gpa: -1 }).limit(10).skip(0)
+
+      // Count matching documents
+      db.students.countDocuments({ department: "Computer Science" })
+      ```
+
+      #### Update (updateOne / updateMany / findOneAndUpdate)
+
+      ```javascript
+      // Update a single document: $set modifies specific fields without replacing the doc
+      db.students.updateOne(
+          { email: "achen@uni.edu" },
+          { $set: { gpa: 3.95, updated_at: new Date() } }
+      )
+
+      // Increment a numeric field
+      db.students.updateOne(
+          { email: "achen@uni.edu" },
+          { $inc: { login_count: 1 } }
+      )
+
+      // Add an element to an array field
+      db.students.updateOne(
+          { email: "achen@uni.edu" },
+          { $push: { enrolled_courses: "CS450" } }
+      )
+
+      // Remove an element from an array
+      db.students.updateOne(
+          { email: "achen@uni.edu" },
+          { $pull: { enrolled_courses: "CS201" } }
+      )
+
+      // Update all matching documents
+      db.students.updateMany(
+          { department: "Computer Science" },
+          { $set: { last_updated: new Date() } }
+      )
+
+      // upsert: insert if not found, update if found
+      db.students.updateOne(
+          { email: "new@uni.edu" },
+          { $setOnInsert: { first_name: "New", gpa: 0.0, created_at: new Date() } },
+          { upsert: true }
+      )
+      ```
+
+      #### Delete
+
+      ```javascript
+      // Delete one document
+      db.students.deleteOne({ email: "achen@uni.edu" })
+
+      // Delete all matching documents
+      db.students.deleteMany({ gpa: { $lt: 1.0 } })
+
+      // Drop entire collection
+      db.students.drop()
+      ```
+
+  - heading: "MongoDB: Aggregation Pipeline and Indexes"
+    content: |
+      ## MongoDB: Aggregation Pipeline and Indexes
+
+      ### Aggregation Pipeline
+
+      The **aggregation pipeline** processes documents through an ordered sequence of stages.
+      Each stage transforms the documents and passes them to the next stage. This is MongoDB's
+      primary mechanism for analytics, reporting, and complex data transformations — analogous
+      to a chain of SQL GROUP BY, JOIN, and HAVING clauses.
+
+      Common pipeline stages:
+
+      | Stage | SQL Equivalent | Description |
+      |-------|---------------|-------------|
+      | `$match` | WHERE | Filters documents |
+      | `$group` | GROUP BY | Groups documents and applies accumulators |
+      | `$project` | SELECT | Reshapes documents (include/exclude/add fields) |
+      | `$sort` | ORDER BY | Sorts documents |
+      | `$limit` | LIMIT | Passes the first N documents |
+      | `$skip` | OFFSET | Skips the first N documents |
+      | `$unwind` | (normalise array) | Deconstructs array field into separate documents |
+      | `$lookup` | LEFT JOIN | Joins documents from another collection |
+      | `$addFields` | computed column | Adds new fields to documents |
+      | `$count` | COUNT(*) | Returns a count document |
+
+      ```javascript
+      // Average GPA per department, only for departments with > 3 students
+      db.students.aggregate([
+          // Stage 1: filter out documents without a department
+          { $match: { department: { $exists: true, $ne: null } } },
+
+          // Stage 2: group by department, calculate stats
+          { $group: {
+              _id: "$department",
+              student_count: { $sum: 1 },
+              avg_gpa:       { $avg: "$gpa" },
+              max_gpa:       { $max: "$gpa" },
+              min_gpa:       { $min: "$gpa" }
+          }},
+
+          // Stage 3: filter groups with fewer than 4 students
+          { $match: { student_count: { $gt: 3 } } },
+
+          // Stage 4: project and rename fields
+          { $project: {
+              _id: 0,
+              department:    "$_id",
+              student_count: 1,
+              avg_gpa:       { $round: ["$avg_gpa", 2] }
+          }},
+
+          // Stage 5: sort by average GPA descending
+          { $sort: { avg_gpa: -1 } }
+      ])
+
+      // $lookup: join students with their enrolled course details
+      db.students.aggregate([
+          { $unwind: "$enrolled_courses" },   // one doc per course code
+          { $lookup: {
+              from:         "courses",         // collection to join
+              localField:   "enrolled_courses",
+              foreignField: "code",
+              as:           "course_detail"
+          }},
+          { $unwind: "$course_detail" },
+          { $project: {
+              student_name: { $concat: ["$first_name", " ", "$last_name"] },
+              course_title: "$course_detail.title",
+              credits:      "$course_detail.credits"
+          }}
+      ])
+      ```
+
+      ### MongoDB Indexes
+
+      ```javascript
+      // Single-field index (ascending)
+      db.students.createIndex({ gpa: -1 })     // -1 = descending
+
+      // Compound index
+      db.students.createIndex({ department: 1, gpa: -1 })
+
+      // Unique index
+      db.students.createIndex({ email: 1 }, { unique: true })
+
+      // Text index for full-text search
+      db.courses.createIndex({ title: "text", description: "text" })
+      db.courses.find({ $text: { $search: "database systems" } })
+
+      // Sparse index: only indexes documents that HAVE the field (skips docs where field is absent)
+      db.students.createIndex({ phone: 1 }, { sparse: true })
+
+      // TTL index: automatically delete documents after N seconds
+      // (useful for session documents, temporary data)
+      db.sessions.createIndex({ created_at: 1 }, { expireAfterSeconds: 3600 })
+
+      // View existing indexes
+      db.students.getIndexes()
+
+      // Explain a query (shows index usage)
+      db.students.find({ gpa: { $gte: 3.5 } }).explain("executionStats")
+      ```
+
+  - heading: "Redis: Key-Value Store and Data Structures"
+    content: |
+      ## Redis: Key-Value Store and Data Structures
+
+      **Redis** (Remote Dictionary Server) is an in-memory data structure store, created by
+      Salvatore Sanfilippo in 2009. It is used as a database, cache, message broker, and
+      streaming engine. Because Redis stores all data in RAM (with optional persistence to disk
+      via RDB snapshots or AOF append-only-file), it delivers sub-millisecond latency for most
+      operations — often 100,000–1,000,000 operations per second on a single instance.
+
+      Redis is not just a simple key-value store: it supports **rich data structures** that
+      allow efficient operations that would require many round-trips or complex application
+      code in a plain key-value system.
+
+      ### Connecting
+
+      ```bash
+      # Start the Redis CLI
+      redis-cli
+
+      # Connect to a specific host and port
+      redis-cli -h redis.example.com -p 6379
+
+      # Test connectivity
+      redis-cli PING        # returns PONG
+      ```
+
+      ### Strings
+
+      The simplest data type: a key maps to a single string value (up to 512 MB). Despite the
+      name, strings can hold integers, floats, serialised JSON, or binary data.
+
+      ```bash
+      # SET and GET
+      SET user:1:name "Alice Chen"
+      GET user:1:name                   # "Alice Chen"
+
+      # SET with expiry (TTL — Time To Live)
+      SET session:abc123 '{"user_id":1,"role":"admin"}' EX 3600   # expires in 1 hour
+      TTL session:abc123                # remaining seconds; -1 = no expiry; -2 = key gone
+      EXPIRE session:abc123 7200        # reset TTL to 2 hours
+
+      # Atomic integer increment (perfect for counters, rate limiting)
+      SET page:views:home 0
+      INCR  page:views:home             # returns 1
+      INCRBY page:views:home 10         # returns 11
+      DECR  page:views:home             # returns 10
+
+      # SETNX: set only if key does NOT exist (distributed lock primitive)
+      SETNX lock:payment:order_42 "worker-node-1"   # 1 = acquired; 0 = already held
+      ```
+
+      ### Hashes
+
+      A hash is a map of field-value pairs stored under a single key — analogous to a JSON
+      object or a database row. More memory-efficient than storing each field as a separate
+      string key.
+
+      ```bash
+      # HSET sets one or more fields
+      HSET user:1  first_name "Alice"  last_name "Chen"  email "achen@uni.edu"  gpa "3.92"
+
+      # HGET a single field
+      HGET user:1 email                  # "achen@uni.edu"
+
+      # HGETALL: returns all field-value pairs
+      HGETALL user:1
+
+      # HMGET: get multiple specific fields
+      HMGET user:1 first_name gpa
+
+      # HINCRBY: increment a numeric hash field
+      HSET product:42 stock 100
+      HINCRBY product:42 stock -1        # atomic decrement; returns 99
+
+      # HEXISTS, HDEL
+      HEXISTS user:1 phone               # 0 (field does not exist)
+      HDEL    user:1 gpa
+      ```
+
+      ### Lists
+
+      An ordered collection of strings, implemented as a doubly linked list. Efficient O(1)
+      push/pop from both ends; O(n) access by index.
+
+      ```bash
+      # RPUSH / LPUSH: push to right (tail) or left (head)
+      RPUSH notifications:user:1 "Your grade for CS310 has been posted"
+      RPUSH notifications:user:1 "New course CS450 is now available"
+      LPUSH notifications:user:1 "System maintenance at 2 AM"
+
+      # LRANGE: get a range of elements (0-indexed; -1 = last element)
+      LRANGE notifications:user:1 0 -1    # all elements
+
+      # LPOP / RPOP: remove and return from left/right
+      LPOP notifications:user:1           # dequeue from head
+
+      # LLEN: length of list
+      LLEN notifications:user:1
+
+      # BRPOP: blocking pop (wait up to N seconds for an element)
+      # Used in producer-consumer / task queue patterns
+      BRPOP job:queue 30                  # block for up to 30 seconds
+      ```
+
+      ### Sets
+
+      An unordered collection of unique strings. Supports O(1) add/remove/check and efficient
+      set operations (union, intersection, difference).
+
+      ```bash
+      # SADD: add members (duplicates silently ignored)
+      SADD course:cs310:enrolled student:1 student:2 student:3 student:4
+      SADD course:cs201:enrolled student:2 student:3 student:5
+
+      # SMEMBERS: all members
+      SMEMBERS course:cs310:enrolled
+
+      # SISMEMBER: check membership O(1)
+      SISMEMBER course:cs310:enrolled student:1    # 1 (yes)
+
+      # SCARD: cardinality (number of members)
+      SCARD course:cs310:enrolled                  # 4
+
+      # Set operations
+      SINTER course:cs310:enrolled course:cs201:enrolled    # students in BOTH courses
+      SUNION course:cs310:enrolled course:cs201:enrolled    # students in EITHER course
+      SDIFF  course:cs310:enrolled course:cs201:enrolled    # in cs310 but NOT cs201
+      ```
+
+      ### Sorted Sets
+
+      Like sets, but each member has an associated floating-point **score**. Members are
+      stored in order by score, enabling efficient range queries by rank or score. The
+      canonical use case is leaderboards.
+
+      ```bash
+      # ZADD: add members with scores
+      ZADD leaderboard:cs310  95.5 "alice"
+      ZADD leaderboard:cs310  88.0 "bob"
+      ZADD leaderboard:cs310  92.3 "carla"
+      ZADD leaderboard:cs310  88.0 "david"    # tied score with bob
+
+      # ZRANGE: get members by rank (ascending), WITHSCORES optional
+      ZRANGE leaderboard:cs310 0 -1 WITHSCORES
+
+      # ZREVRANGE: descending order (top N)
+      ZREVRANGE leaderboard:cs310 0 2 WITHSCORES    # top 3
+
+      # ZRANK / ZREVRANK: get 0-based rank of a member
+      ZREVRANK leaderboard:cs310 "alice"             # 0 (highest score = rank 0)
+
+      # ZSCORE: get the score of a member
+      ZSCORE leaderboard:cs310 "carla"               # "92.3"
+
+      # ZRANGEBYSCORE: get members within a score range
+      ZRANGEBYSCORE leaderboard:cs310 90 100 WITHSCORES
+      ```
+
+      ### Pub/Sub and TTL Patterns
+
+      ```bash
+      # PUBLISH / SUBSCRIBE: lightweight message broadcasting
+      # Terminal 1 — subscriber
+      SUBSCRIBE notifications:global
+
+      # Terminal 2 — publisher
+      PUBLISH notifications:global '{"type":"grade_posted","course":"CS310","student_id":1}'
+
+      # Key expiry and eviction
+      SET rate_limit:ip:192.168.1.5 0 EX 60     # rate limit window: 60 seconds
+      INCR rate_limit:ip:192.168.1.5             # increment on each request
+      GET  rate_limit:ip:192.168.1.5             # check current count
+
+      # Persistence configuration (in redis.conf)
+      # RDB snapshot: save 1000 writes in 60 seconds
+      # save 60 1000
+      # AOF: log every write command
+      # appendonly yes
+      ```
+
+  - heading: "Columnar and Graph Databases: Conceptual Overview"
+    content: |
+      ## Columnar and Graph Databases: Conceptual Overview
+
+      ### Wide-Column (Columnar) Databases
+
+      **Wide-column stores** (also called column-family stores) organise data by column groups
+      rather than rows. The two most prominent examples are **Apache Cassandra** (Facebook,
+      2008; now Apache) and **Google Bigtable** (the academic paper that inspired Cassandra and
+      HBase). The data model has rows identified by a **partition key** (determines which node
+      stores the data) and a **clustering key** (determines ordering of rows within a partition).
+
+      Wide-column databases are optimised for:
+      - **Write-heavy workloads** at massive scale (IoT sensor data, event logs, time-series)
+      - **Queries by primary key** (not ad-hoc filtering)
+      - **Linear horizontal scaling** by adding nodes
+
+      They are *not* optimal for complex joins, ad-hoc analytics, or frequently changing schemas.
+
+      ```
+      Cassandra CQL example (conceptual):
+
+      CREATE TABLE sensor_readings (
+          sensor_id   UUID,
+          recorded_at TIMESTAMP,
+          temperature FLOAT,
+          humidity    FLOAT,
+          PRIMARY KEY (sensor_id, recorded_at)
+      ) WITH CLUSTERING ORDER BY (recorded_at DESC);
+
+      -- Efficient: query by partition key + clustering key range
+      SELECT * FROM sensor_readings
+      WHERE sensor_id = ? AND recorded_at > '2024-01-01';
+      ```
+
+      ### Graph Databases
+
+      **Graph databases** represent data as **nodes** (entities) and **edges** (relationships),
+      each with properties. This model is native to problems where relationships are first-class
+      data — not a join to be computed at query time. The leading graph database is **Neo4j**,
+      which uses the **Cypher** query language.
+
+      Graph databases excel at:
+      - **Social networks** (friends-of-friends, influence analysis)
+      - **Recommendation engines** (users who bought X also bought Y)
+      - **Fraud detection** (finding suspicious transaction patterns)
+      - **Knowledge graphs** and ontologies
+      - **Network/IT topology** (dependency graphs, impact analysis)
+
+      ```
+      Cypher (Neo4j) example:
+
+      // Create nodes and relationships
+      CREATE (alice:Student {name: "Alice", gpa: 3.92})
+      CREATE (cs310:Course  {code: "CS310", title: "Database Systems"})
+      CREATE (alice)-[:ENROLLED_IN {semester: "Fall2024"}]->(cs310)
+
+      // Find friends-of-friends who are not already friends
+      MATCH (me:Student {name: "Alice"})-[:FRIENDS_WITH]->(friend)
+            -[:FRIENDS_WITH]->(fof:Student)
+      WHERE NOT (me)-[:FRIENDS_WITH]->(fof)
+        AND fof <> me
+      RETURN fof.name, COUNT(friend) AS mutual_friends
+      ORDER BY mutual_friends DESC;
+      ```
+
+      ### Choosing the Right Database
+
+      ```mermaid
+      graph TD
+          START["What is your primary\naccess pattern?"] --> Q1{"Complex queries,\nJOINs, reporting?"}
+          Q1 -->|Yes| RDBMS["Relational DB\nPostgreSQL / MySQL"]
+          Q1 -->|No| Q2{"Flexible schema,\ndocument-centric?"}
+          Q2 -->|Yes| MONGO["Document Store\nMongoDB"]
+          Q2 -->|No| Q3{"Sub-millisecond\nlatency, caching?"}
+          Q3 -->|Yes| REDIS["Key-Value / Cache\nRedis"]
+          Q3 -->|No| Q4{"Massive write\nthroughput, time-series?"}
+          Q4 -->|Yes| CASS["Wide-Column\nCassandra / HBase"]
+          Q4 -->|No| Q5{"Relationship\ntraversal?"}
+          Q5 -->|Yes| GRAPH["Graph DB\nNeo4j"]
+          Q5 -->|No| SEARCH["Search Engine\nElasticsearch"]
+
+          style RDBMS fill:#4A90D9,color:#fff
+          style MONGO fill:#5BA35B,color:#fff
+          style REDIS fill:#C0392B,color:#fff
+          style CASS  fill:#8E44AD,color:#fff
+          style GRAPH fill:#D4A017,color:#fff
+          style SEARCH fill:#16A085,color:#fff
+      ```
+
+quiz:
+  - question: "The CAP theorem states that a distributed system can guarantee at most two of Consistency, Availability, and Partition Tolerance. In practice, why must all distributed systems tolerate partitions, making the real choice between C and A?"
+    options:
+      - "Network partitions are theoretically impossible if the hardware is reliable enough"
+      - "Network partitions are inevitable in any distributed system; you must choose whether to return an error (CP) or stale data (AP) during a partition"
+      - "Partition tolerance is automatic in cloud environments, so you only choose between C and A in on-premises systems"
+      - "Partition tolerance is a property of the application layer, not the database"
+    answer: 1
+    explanation: "In any real distributed system spanning multiple nodes, network partitions (lost or delayed messages between nodes) are not merely possible but guaranteed to occur eventually — due to hardware failures, network congestion, or software bugs. Since P cannot be sacrificed without abandoning distribution entirely, the real design choice is whether to prioritise Consistency (CP: refuse requests when the node cannot confirm consistency) or Availability (AP: serve requests with potentially stale data)."
+
+  - question: "You need to store user session data with automatic expiration after 30 minutes, and retrieve it by session token in under 1 ms. Which database and feature is most appropriate?"
+    options:
+      - "PostgreSQL with a scheduled DELETE job every 30 minutes"
+      - "MongoDB with a TTL index on the created_at field"
+      - "Redis SET with EX 1800 (TTL of 1800 seconds)"
+      - "Cassandra with a default_time_to_live setting"
+    answer: 2
+    explanation: "Redis is purpose-built for this use case: sub-millisecond in-memory lookups by key, with native TTL support (EX option in SET, or EXPIRE command). The key is the session token; the value is the session data. Automatic expiry eliminates the need for a background cleanup job. While MongoDB TTL indexes and Cassandra TTL also work, they involve disk I/O and higher latency than Redis."
+
+  - question: "In MongoDB, you have a students collection with a field enrolled_courses that is an array of course codes. Which query finds all students enrolled in course 'CS310'?"
+    options:
+      - "db.students.find({ enrolled_courses: { $contains: 'CS310' } })"
+      - "db.students.find({ enrolled_courses: 'CS310' })"
+      - "db.students.find({ enrolled_courses: { $elemMatch: { $eq: 'CS310' } } })"
+      - "Both B and C are correct"
+    answer: 3
+    explanation: "In MongoDB, a query predicate against an array field automatically checks whether the array CONTAINS the specified value. So `{ enrolled_courses: 'CS310' }` matches any document where the array includes 'CS310'. `$elemMatch` is also valid and produces the same result for a simple equality check. `$contains` does not exist as a MongoDB operator."
+
+  - question: "A Redis Sorted Set is used as a leaderboard. After running ZADD scores 88 'bob', ZADD scores 95 'alice', ZADD scores 92 'carla' — what does ZREVRANGE scores 0 0 WITHSCORES return?"
+    options:
+      - "bob 88"
+      - "alice 95"
+      - "carla 92"
+      - "An error — ZREVRANGE requires a score range"
+    answer: 1
+    explanation: "ZREVRANGE returns members in descending score order. Index 0 0 means 'the first element in descending order', which is the member with the highest score. Alice has score 95 (the highest), so the result is 'alice 95'. ZREVRANGEBYSCORE takes a score range; ZREVRANGE takes rank indices."
+
+  - question: "Which of the following correctly describes the difference between MongoDB's $match stage and a SQL WHERE clause, in the context of an aggregation pipeline?"
+    options:
+      - "$match can only appear as the first stage of a pipeline; WHERE can appear anywhere"
+      - "$match filters documents at any stage of the pipeline and, when placed first, can leverage indexes just like WHERE; both filter before passing data to the next operation"
+      - "$match applies to grouped data; WHERE applies to raw rows — they are not equivalent"
+      - "$match always performs a collection scan; WHERE uses indexes"
+    answer: 1
+    explanation: "$match can appear at any position in the pipeline — as the first stage (most efficient, uses indexes), after a $group to filter aggregated results (analogous to HAVING), or between other stages. When $match appears first, MongoDB's query planner uses available indexes exactly as it would for a find() query. The semantics are essentially the same as SQL WHERE for row/document filtering."

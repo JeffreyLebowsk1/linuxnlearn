@@ -1,0 +1,271 @@
+title: "NoSQL & Query Optimisation Assignment"
+category: "databases"
+difficulty: "intermediate"
+estimated_minutes: 35
+related_lesson: "03_nosql_databases"
+instructions: |
+  Demonstrate your understanding of NoSQL database paradigms, MongoDB operations, Redis data
+  structures, and query optimisation principles by completing the tasks below. Multiple-choice
+  questions are graded instantly. Written and practical answers are graded by AI with detailed
+  feedback. Where SQL or NoSQL code is required, write correct, runnable statements and briefly
+  explain your choices.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "An e-commerce platform uses Cassandra (an AP system) for its shopping cart service. During a network partition, a customer adds an item to their cart. Node A processes the write but cannot replicate to Node B before the partition heals. The customer's next request is routed to Node B. According to CAP theorem, what behaviour should be expected from an AP system?"
+    options:
+      - "Node B returns an error, refusing to serve the request until consistency is restored"
+      - "Node B returns the cart data without the recently added item (stale/eventually consistent response)"
+      - "The entire cluster goes offline until the partition heals to protect consistency"
+      - "Node B automatically redirects the request to Node A"
+    answer: 1
+    explanation: "AP systems prioritise Availability over Consistency during a partition. Rather than returning an error (CP behaviour), an AP system like Cassandra will serve a response from Node B using whatever data it has — which does not yet include the write that only reached Node A. This is eventual consistency: once the partition heals and the nodes synchronise, both will converge to the same state. The customer may momentarily see stale cart contents, but the service remains available."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "You are building a real-time leaderboard for a multiplayer game. Players' scores update hundreds of times per second and you need to efficiently retrieve the top 10 players at any moment. Which Redis data structure and command combination is most appropriate?"
+    options:
+      - "Hash (HSET for scores) with HGETALL to retrieve all scores and sort in application code"
+      - "String keys (SET player:<id>:score) with KEYS pattern to retrieve all and sort in application code"
+      - "Sorted Set (ZADD for score updates) with ZREVRANGE leaderboard 0 9 WITHSCORES for top 10"
+      - "List (LPUSH for each score update) with LRANGE to retrieve and sort"
+    answer: 2
+    explanation: "Redis Sorted Sets are purpose-built for leaderboards. ZADD inserts or updates a member's score in O(log N) time while maintaining sorted order. ZREVRANGE retrieves a rank-based range in descending score order in O(log N + M) time, where M is the number of elements returned. The alternatives all require O(N) retrieval plus O(N log N) application-level sorting — far less efficient at scale."
+
+  - id: 3
+    type: "short_answer"
+    points: 15
+    question: |
+      You have a MongoDB collection called `products` with millions of documents. Each document
+      has the fields: category (string), in_stock (boolean), price (number), and name (string).
+
+      A developer reports that the following query is very slow:
+
+        db.products.find({ category: "electronics", in_stock: true }).sort({ price: 1 })
+
+      (a) Explain why this query is likely slow without any indexes.
+      (b) Propose the most effective index for this query and write the createIndex command.
+      (c) Explain why the ORDER of fields in a compound index matters and how it applies to your
+          proposed index.
+    rubric: |
+      Award full marks (15) if the answer covers all three parts:
+      (a) Without an index, MongoDB performs a Collection Scan (COLLSCAN) — it reads every document and checks the predicates. On millions of documents this is O(N) and very slow (3 pts).
+      (b) Compound index on {category: 1, in_stock: 1, price: 1} — covers the two equality filters and the sort. The createIndex command must be syntactically correct (5 pts):
+          db.products.createIndex({ category: 1, in_stock: 1, price: 1 })
+      (c) The leading-column rule: fields are ordered so that the most selective equality predicates come first (category, then in_stock), and the sort field (price) comes last. This allows the index to satisfy both filtering AND sorting without a separate in-memory sort step. Putting price first would break the ability to use the index for the equality filters efficiently (7 pts).
+      Award partial credit proportionally if parts are incomplete.
+    sample_answer: |
+      **(a) Why it is slow without indexes:**
+      Without an index on any of the queried fields, MongoDB must perform a **Collection Scan (COLLSCAN)** — it reads every single document in the collection sequentially, evaluates the `category` and `in_stock` predicates on each one, collects matching documents, and then sorts them in memory by price. On a collection with millions of documents this is O(N) I/O plus an O(M log M) in-memory sort, where M is the number of matching documents. This will cause high latency and consume significant memory.
+
+      **(b) Effective compound index:**
+      ```javascript
+      db.products.createIndex({ category: 1, in_stock: 1, price: 1 })
+      ```
+      This compound index covers both equality filter fields and the sort field. MongoDB can use it for an **IXSCAN** (index scan) directly, narrowing to the matching category + in_stock documents, and then reading price values in already-sorted order — avoiding an in-memory sort entirely.
+
+      **(c) Field order matters — the leading-column rule:**
+      In a compound index, the fields must be ordered to match the query's access pattern:
+      1. **Equality fields first** (`category`, `in_stock`) — MongoDB uses these to narrow the index to a small subset of entries.
+      2. **Sort/range fields last** (`price`) — after the equality fields narrow the scan, the remaining entries in the index are already sorted by price, so MongoDB can stream them out in order without sorting.
+
+      If we put `price` first — `{ price: 1, category: 1, in_stock: 1 }` — MongoDB would have to scan price values across all categories, find the matching ones, and then sort the result; the index cannot satisfy the equality filters efficiently. The general rule for compound index design is: **Equality fields → Sort fields → Range fields** (ESR rule).
+
+  - id: 4
+    type: "short_answer"
+    points: 15
+    question: |
+      Compare and contrast MongoDB and Redis as database solutions. Your answer must address:
+      (a) Primary data model and how data is structured in each system.
+      (b) Persistence and durability guarantees.
+      (c) A specific real-world use case where MongoDB is clearly the better choice, and a
+          different use case where Redis is clearly the better choice. Justify each choice
+          with reference to the specific technical requirements of the use case.
+    rubric: |
+      Award full marks (15) if the answer addresses all three parts with sufficient technical depth:
+      (a) MongoDB: BSON document model, flexible nested JSON-like documents in collections; schema-optional; rich query language with aggregation pipeline (3 pts). Redis: in-memory key-value with rich data structures (strings, hashes, lists, sets, sorted sets); very fast but limited query capability (3 pts).
+      (b) MongoDB: durable by default (writes to WAL/journal), supports replica sets and sharding; data persists to disk. Redis: primarily in-memory; optional persistence via RDB snapshots and/or AOF log; data can be lost on crash without persistence configured; durability weaker than MongoDB (3 pts).
+      (c) MongoDB use case: content management, e-commerce product catalogue, user profiles, IoT event storage — anything requiring complex queries, variable schema, or document-centric data (3 pts). Redis use case: caching, session storage, rate limiting, leaderboards, pub/sub, job queues — anything requiring sub-millisecond latency, TTL, or atomic counter/set operations (3 pts).
+      Deduct 2 pts if justifications do not reference technical characteristics.
+    sample_answer: |
+      **(a) Data models:**
+      **MongoDB** stores data as **BSON documents** — binary-encoded JSON-like objects with support for nested objects, arrays, and various primitive types. Documents with different field sets can coexist in the same collection (flexible schema). MongoDB supports rich ad-hoc queries, compound filtering, aggregation pipelines, and joins via `$lookup`. It is suited for complex, hierarchical data.
+
+      **Redis** stores data as **key-value pairs** where the value is one of several rich data structures: strings, hashes (field-value maps), lists (ordered sequences), sets (unique unordered), and sorted sets (unique with scores). Each structure has purpose-built O(1) or O(log N) commands. Redis has no query language — you access data by key; there are no secondary indexes or ad-hoc queries in the relational sense.
+
+      **(b) Persistence and durability:**
+      **MongoDB** writes to a journal (WAL) before acknowledging writes, providing strong durability guarantees similar to a relational database. With a replica set and `w: majority` write concern, data is durable even if a node fails.
+
+      **Redis** is primarily **in-memory**. Persistence is optional: **RDB snapshots** periodically write a point-in-time snapshot to disk (some data can be lost between snapshots), and **AOF (Append-Only File)** logs every write command and can be configured to fsync every second or every write. Even with AOF, Redis has weaker durability guarantees than MongoDB and is therefore not typically used as a system of record for critical business data.
+
+      **(c) Use case comparisons:**
+      **MongoDB is the better choice** for a **product catalogue** in an e-commerce platform. Products vary widely in structure (a laptop has RAM/CPU specs; a shirt has size/colour variants), making a flexible document schema ideal. Queries are complex (filter by category + price range + brand + in-stock status), and the aggregation pipeline handles reporting natively. Durability requirements are high (product data is the system of record).
+
+      **Redis is the better choice** for **rate limiting an API**. When a client makes a request, you increment a counter (INCR) keyed by IP address or API key with a TTL equal to the rate-limit window (e.g., 60 seconds). The entire operation is sub-millisecond, atomic, and scales to hundreds of thousands of requests per second per Redis instance. No complex query capability is needed — it is a pure key-lookup-and-increment operation where speed is critical.
+
+  - id: 5
+    type: "practical"
+    points: 50
+    question: |
+      You are building a backend for a social media platform. The platform stores user posts in
+      MongoDB and uses Redis for ancillary features.
+
+      **Task A — MongoDB Schema Design (15 pts):**
+      Design a MongoDB document schema for a `posts` collection. Each post has: author (user_id
+      and username), content (text up to 2000 chars), tags (array of strings), like_count
+      (integer), created_at (datetime), and comments (an array of embedded comment objects,
+      each with user_id, username, text, and created_at). Write an example document as a
+      JavaScript object literal (as you would pass to insertOne).
+
+      **Task B — MongoDB Aggregation (20 pts):**
+      Write an aggregation pipeline that returns the top 5 most-used tags across all posts
+      in the last 30 days, with the count of how many posts use each tag. Assume `created_at`
+      is a Date field and today's date can be referenced as `new Date()`.
+
+      **Task C — Redis Design (15 pts):**
+      Describe (with Redis CLI commands) how you would implement the following two features
+      using Redis:
+      (i)  A per-post like counter that can be atomically incremented and read.
+      (ii) A feed of the 20 most recent post IDs for a user's follower timeline, where new
+           post IDs are prepended and the list is capped at 200 entries.
+    rubric: |
+      Task A (15 pts):
+      - Document has _id (explicit or implicit ObjectId) (1 pt)
+      - author is an embedded object with user_id and username (2 pts)
+      - content field present and appropriate type (1 pt)
+      - tags is an array of strings (2 pts)
+      - like_count is a number (1 pt)
+      - created_at is a Date (1 pt)
+      - comments is an array of embedded objects each with user_id, username, text, created_at (4 pts)
+      - Document is syntactically valid JavaScript / JSON-like (3 pts)
+
+      Task B (20 pts):
+      - $match stage filtering created_at within last 30 days (4 pts)
+      - $unwind on tags array (4 pts)
+      - $group by tag with $sum: 1 accumulator (4 pts)
+      - $sort by count descending (3 pts)
+      - $limit 5 (3 pts)
+      - Correct pipeline syntax overall (2 pts)
+
+      Task C (15 pts):
+      (i) INCR/GET on a string key like post:<id>:likes (5 pts) — correct key naming, atomic increment
+      (ii) LPUSH to prepend to a list + LTRIM to cap at 200 entries (10 pts) — LPUSH for O(1) prepend, LRANGE for retrieval, LTRIM to enforce max length
+    sample_answer: |
+      **Task A: MongoDB Document Schema**
+
+      ```javascript
+      db.posts.insertOne({
+          // _id is auto-generated as ObjectId if omitted
+          author: {
+              user_id:  "usr_a1b2c3",
+              username: "alice_codes"
+          },
+          content: "Just deployed my first PostgreSQL full-text search index. " +
+                   "The performance difference is remarkable — queries went from 800ms to 4ms!",
+          tags:       ["databases", "postgresql", "performance", "backend"],
+          like_count: 0,
+          created_at: new Date(),
+          comments: [
+              {
+                  user_id:    "usr_d4e5f6",
+                  username:   "bob_dev",
+                  text:       "Great tip! Did you use GIN or GiST index?",
+                  created_at: new Date()
+              },
+              {
+                  user_id:    "usr_g7h8i9",
+                  username:   "carla_dba",
+                  text:       "Agreed — tsvector + GIN is the way to go for unstructured text.",
+                  created_at: new Date()
+              }
+          ]
+      });
+      ```
+
+      **Task B: Top 5 Tags in Last 30 Days**
+
+      ```javascript
+      db.posts.aggregate([
+          // Stage 1: filter to posts created in the last 30 days
+          {
+              $match: {
+                  created_at: {
+                      $gte: new Date(new Date() - 30 * 24 * 60 * 60 * 1000)
+                  }
+              }
+          },
+
+          // Stage 2: unwind the tags array — one document per tag per post
+          { $unwind: "$tags" },
+
+          // Stage 3: group by tag and count occurrences
+          {
+              $group: {
+                  _id:        "$tags",
+                  post_count: { $sum: 1 }
+              }
+          },
+
+          // Stage 4: sort by count descending
+          { $sort: { post_count: -1 } },
+
+          // Stage 5: keep only the top 5 tags
+          { $limit: 5 },
+
+          // Stage 6: clean up output field names
+          {
+              $project: {
+                  _id:        0,
+                  tag:        "$_id",
+                  post_count: 1
+              }
+          }
+      ]);
+      ```
+
+      **Task C: Redis Implementation**
+
+      **(i) Per-post like counter:**
+
+      ```bash
+      # Atomically increment the like counter for post ID 42
+      INCR post:42:likes          # returns new count (e.g. 1, 2, 3...)
+
+      # Read the current like count
+      GET post:42:likes            # returns "47" (string — parse to int in app code)
+
+      # If you need to initialise (e.g., when migrating from DB):
+      SET post:42:likes 47
+
+      # Atomic increment is safe under concurrent requests —
+      # no race condition even with thousands of simultaneous likes
+      ```
+
+      **(ii) User follower timeline (capped list of recent post IDs):**
+
+      ```bash
+      # When user alice_codes (user_id: usr_a1b2c3) publishes post ID 9981,
+      # push to the timeline list of every follower.
+      # Example: push to follower bob_dev's timeline
+      LPUSH timeline:usr_d4e5f6 9981   # prepend post_id to head of list (O(1))
+
+      # Immediately cap the list at 200 entries to prevent unbounded growth
+      LTRIM timeline:usr_d4e5f6 0 199  # keep indices 0–199 (most recent 200)
+
+      # Retrieve the 20 most recent post IDs for bob's timeline feed (page 1)
+      LRANGE timeline:usr_d4e5f6 0 19  # returns up to 20 post IDs
+
+      # Page 2 (posts 21-40):
+      LRANGE timeline:usr_d4e5f6 20 39
+
+      # Check how many posts are in the timeline
+      LLEN timeline:usr_d4e5f6         # max 200
+
+      # Rationale: LPUSH is O(1) (linked list prepend). LTRIM is O(N) where N is
+      # the number of elements removed — but since we cap at 200, it removes at most
+      # 1 element per publish. LRANGE page retrieval is O(S + M) where M is elements
+      # returned. This pattern (fan-out on write) is used by Twitter/X for timeline delivery.
+      ```
