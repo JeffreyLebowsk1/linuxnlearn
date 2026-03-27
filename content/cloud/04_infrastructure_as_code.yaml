@@ -1,0 +1,591 @@
+title: "Infrastructure as Code with Terraform & CI/CD Pipelines"
+order: 4
+summary: |
+  A rigorous treatment of Infrastructure as Code principles, Terraform HCL workflow, remote state management, and GitHub Actions CI/CD pipelines — with complete working examples and deployment strategy patterns. Students will provision real AWS infrastructure with Terraform, manage state safely with S3 and DynamoDB locking, build multi-job GitHub Actions pipelines that build Docker images and deploy to Kubernetes, and implement blue/green, canary, and GitOps deployment patterns.
+learning_objectives:
+  - "Articulate IaC benefits and explain Terraform declarative, idempotent workflow"
+  - "Write Terraform configurations using providers, resources, variables, outputs, data sources, and modules"
+  - "Manage Terraform state locally and remotely with S3 backend and state locking"
+  - "Build complete GitHub Actions CI/CD pipelines with matrix strategies, secrets, and artefacts"
+  - "Implement blue/green, canary, and rolling deployment strategies with feature flags"
+builds_on:
+  - "Kubernetes & Container Orchestration (CS 401 Lesson 3) — you will deploy k8s infrastructure with Terraform"
+  - "Containerisation with Docker (CS 401 Lesson 2) — pipelines build and push Docker images"
+sections:
+  - heading: "Infrastructure as Code — Concepts & Benefits"
+    content: |
+      ## Infrastructure as Code — Concepts & Benefits
+
+      Infrastructure as Code (IaC) is the practice of managing and provisioning infrastructure — networks, virtual machines, load balancers, databases — through machine-readable configuration files rather than through manual processes or interactive GUIs. The term was popularised by Kief Morris in his 2016 book *Infrastructure as Code* (O'Reilly) and has become a foundational discipline in modern DevOps and Site Reliability Engineering.
+
+      ### Core Benefits
+
+      1. **Reproducibility**: The same configuration always produces the same infrastructure. Eliminates the "it works on my machine" problem for entire environments — you can spin up an exact replica of production for testing.
+      2. **Version Control**: Infrastructure changes are tracked in Git with full history, blame, and the ability to revert. A pull request for an infrastructure change triggers the same review process as application code.
+      3. **Automation**: No human clicking through the AWS Console. Eliminates human error, enforces consistency, and enables pipelines that provision infrastructure as part of every deployment.
+      4. **Documentation**: The code IS the documentation. There is no drift between a README and what is actually deployed — the Terraform files describe exactly what exists.
+      5. **Idempotency**: Running the same configuration multiple times produces the same result. If the resource already exists and matches the desired state, nothing happens.
+      6. **Cost efficiency**: Easily destroy non-production environments overnight and recreate them in the morning. Developers stop paying for idle dev environments 16 hours a day.
+
+      ### IaC Tools Comparison
+
+      | Tool | Approach | Cloud | Language | State |
+      |------|----------|-------|----------|-------|
+      | Terraform | Declarative | Multi-cloud | HCL | tfstate file |
+      | AWS CloudFormation | Declarative | AWS only | YAML/JSON | AWS managed |
+      | Pulumi | Declarative/Imperative | Multi-cloud | Python/TS/Go | pulumi.com |
+      | Ansible | Imperative | Multi-cloud | YAML | Stateless |
+      | AWS CDK | Imperative | AWS/multi | Python/TS/Java | CloudFormation |
+
+      ### Declarative vs Imperative
+
+      **Declarative** (Terraform, CloudFormation): You describe the desired end state; the tool calculates the diff between current and desired state and figures out the sequence of API calls to get there. You say *what* you want.
+
+      **Imperative** (Ansible playbooks, shell scripts): You describe the exact steps to execute in order. You say *how* to do it. This is powerful and flexible but harder to make idempotent — you must manually guard every step with "only do this if it hasn't been done already."
+
+      Terraform uses **HCL (HashiCorp Configuration Language)**: human-readable, structured, machine-parseable. Terraform maintains a **state file** (`terraform.tfstate`) that records which real-world resources correspond to which configuration blocks — this is the mechanism that enables idempotency and drift detection.
+
+  - heading: "Terraform Workflow & HCL Syntax"
+    content: |
+      ## Terraform Workflow & HCL Syntax
+
+      The core Terraform workflow has four commands that every practitioner must know:
+
+      ```bash
+      terraform init    # Download providers, initialise backend, install modules
+      terraform plan    # Preview changes (dry run) — produces an execution plan
+      terraform apply   # Apply the plan — create, modify, or destroy resources
+      terraform destroy # Destroy all resources managed by this configuration
+      ```
+
+      Always run `plan` before `apply` in production. The plan output shows exactly what will change: `+` for created resources, `~` for modified, `-` for destroyed, `-/+` for replaced (destroyed and recreated).
+
+      ### Provider and Version Configuration
+
+      ```hcl
+      # versions.tf — pin provider versions for reproducibility
+      terraform {
+        required_version = ">= 1.6.0"
+        required_providers {
+          aws = {
+            source  = "hashicorp/aws"
+            version = "~> 5.0"
+          }
+        }
+      }
+
+      provider "aws" {
+        region = var.aws_region
+        default_tags {
+          tags = {
+            Project     = var.project_name
+            Environment = var.environment
+            ManagedBy   = "terraform"
+          }
+        }
+      }
+      ```
+
+      ### Variables
+
+      ```hcl
+      # variables.tf
+      variable "aws_region" {
+        description = "AWS region to deploy resources"
+        type        = string
+        default     = "us-east-1"
+      }
+
+      variable "environment" {
+        description = "Deployment environment (dev/staging/production)"
+        type        = string
+        validation {
+          condition     = contains(["dev", "staging", "production"], var.environment)
+          error_message = "environment must be dev, staging, or production."
+        }
+      }
+
+      variable "project_name" {
+        description = "Project name used in resource naming and tagging"
+        type        = string
+      }
+
+      variable "instance_type" {
+        description = "EC2 instance type"
+        type        = string
+        default     = "t3.micro"
+      }
+
+      variable "vpc_cidr" {
+        description = "CIDR block for the VPC"
+        type        = string
+        default     = "10.0.0.0/16"
+      }
+      ```
+
+      ### Resources, Data Sources, and Outputs
+
+      ```hcl
+      # main.tf — VPC, subnets, and EC2 instance
+      data "aws_availability_zones" "available" {
+        state = "available"
+      }
+
+      resource "aws_vpc" "main" {
+        cidr_block           = var.vpc_cidr
+        enable_dns_hostnames = true
+        enable_dns_support   = true
+
+        tags = {
+          Name = "${var.project_name}-${var.environment}-vpc"
+        }
+      }
+
+      resource "aws_subnet" "public" {
+        count             = 2
+        vpc_id            = aws_vpc.main.id
+        cidr_block        = cidrsubnet(var.vpc_cidr, 8, count.index)
+        availability_zone = data.aws_availability_zones.available.names[count.index]
+        map_public_ip_on_launch = true
+
+        tags = {
+          Name                     = "${var.project_name}-public-${count.index + 1}"
+          "kubernetes.io/role/elb" = "1"
+        }
+      }
+
+      resource "aws_internet_gateway" "main" {
+        vpc_id = aws_vpc.main.id
+      }
+
+      resource "aws_route_table" "public" {
+        vpc_id = aws_vpc.main.id
+
+        route {
+          cidr_block = "0.0.0.0/0"
+          gateway_id = aws_internet_gateway.main.id
+        }
+      }
+
+      resource "aws_route_table_association" "public" {
+        count          = length(aws_subnet.public)
+        subnet_id      = aws_subnet.public[count.index].id
+        route_table_id = aws_route_table.public.id
+      }
+
+      data "aws_ami" "amazon_linux" {
+        most_recent = true
+        owners      = ["amazon"]
+
+        filter {
+          name   = "name"
+          values = ["al2023-ami-*-x86_64"]
+        }
+      }
+
+      resource "aws_instance" "web" {
+        ami           = data.aws_ami.amazon_linux.id
+        instance_type = var.instance_type
+        subnet_id     = aws_subnet.public[0].id
+
+        user_data = base64encode(templatefile("${path.module}/userdata.sh.tpl", {
+          environment = var.environment
+          project     = var.project_name
+        }))
+
+        tags = {
+          Name = "${var.project_name}-${var.environment}-web"
+        }
+      }
+      ```
+
+      ```hcl
+      # outputs.tf
+      output "vpc_id" {
+        description = "ID of the created VPC"
+        value       = aws_vpc.main.id
+      }
+
+      output "web_instance_public_ip" {
+        description = "Public IP address of the web server"
+        value       = aws_instance.web.public_ip
+      }
+
+      output "web_instance_id" {
+        description = "EC2 instance ID"
+        value       = aws_instance.web.id
+      }
+      ```
+
+      ### Meta-Arguments and Expressions
+
+      Key meta-arguments available on any resource block:
+
+      - **`count`**: Create N copies of a resource. Access each with `resource.name[index]`.
+      - **`for_each`**: Create one resource per map entry or set item. More stable than count for non-ordered collections.
+      - **`depends_on`**: Explicitly declare a dependency when Terraform cannot infer it from references.
+      - **`lifecycle`**: Control resource lifecycle: `create_before_destroy` (zero-downtime replacement), `prevent_destroy` (guard against accidental deletion), `ignore_changes` (ignore drift on specific attributes like auto-scaled instance counts).
+
+      Built-in functions: `cidrsubnet()` (calculate subnet CIDRs), `templatefile()` (render a template file with variables), `base64encode()`, `jsonencode()`, `toset()`, `flatten()`. Conditionals use the ternary operator: `condition ? true_val : false_val`.
+
+  - heading: "Terraform State & Modules"
+    content: |
+      ## Terraform State & Modules
+
+      ### Understanding Terraform State
+
+      The `terraform.tfstate` file is a JSON document that records the mapping between your HCL configuration and the real infrastructure that was created. When you run `terraform plan`, Terraform compares:
+
+      1. **Desired state** — your `.tf` files
+      2. **Known state** — the `tfstate` file
+      3. **Actual state** — live API calls to refresh resource attributes
+
+      Without state, Terraform cannot determine what already exists and would attempt to create every resource from scratch on every `apply`.
+
+      **Local state** (default): stored in `terraform.tfstate` in the working directory. Problems: not shareable across a team, no locking mechanism (two engineers running `apply` simultaneously causes state corruption), no backup.
+
+      ### Remote State with S3 + DynamoDB Locking
+
+      ```hcl
+      # backend.tf
+      terraform {
+        backend "s3" {
+          bucket         = "my-company-terraform-state"
+          key            = "production/vpc/terraform.tfstate"
+          region         = "us-east-1"
+          encrypt        = true
+          kms_key_id     = "arn:aws:kms:us-east-1:123456789:key/xxx"
+          dynamodb_table = "terraform-state-locks"
+        }
+      }
+      ```
+
+      The DynamoDB table provides **state locking** — when one operator runs `terraform apply`, a lock record is written. Any concurrent `apply` fails immediately with a lock error. Bootstrap these resources once (manually or with a separate bootstrap Terraform config):
+
+      ```bash
+      aws s3api create-bucket --bucket my-company-terraform-state --region us-east-1
+      aws s3api put-bucket-versioning --bucket my-company-terraform-state \
+        --versioning-configuration Status=Enabled
+      aws s3api put-bucket-encryption --bucket my-company-terraform-state \
+        --server-side-encryption-configuration \'{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}\'
+      aws dynamodb create-table \
+        --table-name terraform-state-locks \
+        --attribute-definitions AttributeName=LockID,AttributeType=S \
+        --key-schema AttributeName=LockID,KeyType=HASH \
+        --billing-mode PAY_PER_REQUEST
+      ```
+
+      S3 bucket versioning is essential — it provides a history of state files so you can recover from accidental state corruption.
+
+      ### Terraform Modules
+
+      A module is any directory containing `.tf` files. Modules enable reuse and encapsulation. The **root module** (your working directory) calls **child modules**:
+
+      ```hcl
+      # Root module calling a local module
+      module "vpc" {
+        source      = "./modules/vpc"
+        project     = var.project_name
+        environment = var.environment
+        cidr        = "10.0.0.0/16"
+        azs         = ["us-east-1a", "us-east-1b", "us-east-1c"]
+      }
+
+      # Calling a module from the Terraform Registry
+      module "eks" {
+        source  = "terraform-aws-modules/eks/aws"
+        version = "~> 20.0"
+
+        cluster_name    = "${var.project_name}-${var.environment}"
+        cluster_version = "1.29"
+        vpc_id          = module.vpc.vpc_id
+        subnet_ids      = module.vpc.private_subnets
+      }
+      ```
+
+      Always pin Registry modules to a version range (`~> 20.0` allows patch and minor updates but not major). Modules expose outputs that the root module accesses via `module.name.output_name`.
+
+      ### Advanced CLI Commands
+
+      ```bash
+      terraform init -upgrade            # upgrade providers to latest matching version
+      terraform validate                 # syntax and type check without API calls
+      terraform plan -out=plan.tfplan    # save plan to file
+      terraform apply plan.tfplan        # apply a saved plan (guaranteed same changes)
+      terraform show plan.tfplan         # inspect a saved plan in human-readable form
+      terraform state list               # list all resources tracked in state
+      terraform state show aws_vpc.main  # inspect state for a specific resource
+      terraform import aws_instance.web i-0abc123  # adopt existing resource into state
+      terraform taint aws_instance.web   # mark resource for forced recreation on next apply
+      terraform workspace new staging    # create a named workspace for environment isolation
+      terraform workspace select prod    # switch active workspace
+      ```
+
+  - heading: "GitHub Actions CI/CD Pipelines"
+    content: |
+      ## GitHub Actions CI/CD Pipelines
+
+      GitHub Actions is a CI/CD platform built directly into GitHub. Workflows are YAML files stored in `.github/workflows/` and are triggered by repository events. Every push, pull request, tag, or schedule can trigger a workflow.
+
+      ### Core Concepts
+
+      | Concept | Description |
+      |---------|-------------|
+      | **Workflow** | A YAML file defining automation triggered by events |
+      | **Job** | A set of steps running on the same runner (isolated VM) |
+      | **Step** | An individual task: a shell command or a reusable Action |
+      | **Action** | A reusable, versioned unit from the GitHub Marketplace |
+      | **Runner** | The VM that executes jobs: `ubuntu-latest`, `windows-latest`, self-hosted |
+      | **Secret** | Encrypted environment variable stored in repo/org settings |
+      | **Artifact** | Files persisted between jobs or for download after a run |
+      | **Environment** | A named deployment target with optional protection rules (manual approval) |
+
+      ### Complete Production CI/CD Pipeline
+
+      The following workflow tests a Python application across multiple Python versions, builds a Docker image, pushes to Amazon ECR, and deploys to EKS:
+
+      ```yaml
+      # .github/workflows/deploy.yml
+      name: CI/CD Pipeline
+
+      on:
+        push:
+          branches: [main, develop]
+          tags:
+            - "v*.*.*"
+        pull_request:
+          branches: [main]
+
+      env:
+        AWS_REGION: us-east-1
+        ECR_REPOSITORY: myapp
+        EKS_CLUSTER: production-cluster
+
+      jobs:
+        test:
+          name: Run Tests
+          runs-on: ubuntu-latest
+          strategy:
+            matrix:
+              python-version: ["3.11", "3.12"]
+          steps:
+            - uses: actions/checkout@v4
+
+            - name: Set up Python ${{ matrix.python-version }}
+              uses: actions/setup-python@v5
+              with:
+                python-version: ${{ matrix.python-version }}
+                cache: "pip"
+
+            - name: Install dependencies
+              run: pip install -r requirements-dev.txt
+
+            - name: Run linting
+              run: |
+                flake8 . --max-line-length=120
+                mypy src/ --ignore-missing-imports
+
+            - name: Run tests with coverage
+              run: |
+                pytest tests/ -v --cov=src --cov-report=xml --cov-fail-under=80
+
+            - name: Upload coverage report
+              uses: actions/upload-artifact@v4
+              with:
+                name: coverage-${{ matrix.python-version }}
+                path: coverage.xml
+
+        build-and-push:
+          name: Build & Push Docker Image
+          runs-on: ubuntu-latest
+          needs: test
+          if: github.ref == \'refs/heads/main\' || startsWith(github.ref, \'refs/tags/\')
+          outputs:
+            image-tag: ${{ steps.meta.outputs.tags }}
+            image-digest: ${{ steps.build.outputs.digest }}
+          steps:
+            - uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+                aws-region: ${{ env.AWS_REGION }}
+
+            - name: Login to Amazon ECR
+              id: ecr-login
+              uses: aws-actions/amazon-ecr-login@v2
+
+            - name: Extract Docker metadata
+              id: meta
+              uses: docker/metadata-action@v5
+              with:
+                images: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+                tags: |
+                  type=semver,pattern={{version}}
+                  type=sha,prefix=sha-,format=short
+
+            - name: Build and push image
+              id: build
+              uses: docker/build-push-action@v5
+              with:
+                context: .
+                push: true
+                tags: ${{ steps.meta.outputs.tags }}
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+
+        deploy:
+          name: Deploy to EKS
+          runs-on: ubuntu-latest
+          needs: build-and-push
+          environment: production
+          steps:
+            - uses: actions/checkout@v4
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+                aws-region: ${{ env.AWS_REGION }}
+
+            - name: Update kubeconfig
+              run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER }} --region ${{ env.AWS_REGION }}
+
+            - name: Deploy to Kubernetes
+              run: |
+                kubectl set image deployment/myapp \
+                  app=${{ needs.build-and-push.outputs.image-tag }} \
+                  -n production
+                kubectl rollout status deployment/myapp -n production --timeout=5m
+      ```
+
+      ### Key Pipeline Concepts Explained
+
+      - **`needs`**: Creates an explicit job dependency. `needs: test` means this job will not start until `test` succeeds. Enables fan-out (parallel jobs) and fan-in (join after parallel work).
+      - **`if`**: Conditional job/step execution. The `build-and-push` job only runs on pushes to `main` or version tags — not on pull requests from forks (which should not push images).
+      - **`environment: production`**: Links the job to a GitHub Environment, which can require manual approval from designated reviewers before the job runs. Essential for production deployments.
+      - **`outputs`**: Pass data from one job to another. The `build-and-push` job exposes the image tag; the `deploy` job reads it via `needs.build-and-push.outputs.image-tag`.
+      - **`strategy.matrix`**: Run the same job with different parameter combinations. The `test` job runs twice — once for Python 3.11 and once for 3.12 — in parallel.
+      - **OIDC role assumption**: `configure-aws-credentials` with `role-to-assume` uses OpenID Connect to get short-lived AWS credentials without storing long-lived access keys as secrets. The AWS role trusts GitHub's OIDC provider for the specific repository and branch.
+
+  - heading: "Deployment Strategies & GitOps"
+    content: |
+      ## Deployment Strategies & GitOps
+
+      Choosing a deployment strategy involves trade-offs between risk, cost, rollback speed, and complexity. Production systems require zero-downtime deployments — the following strategies achieve this with different approaches.
+
+      ### Blue/Green Deployment
+
+      Maintain two identical production environments called Blue (current) and Green (new). All live traffic routes to Blue. Deploy the new version to Green, run smoke tests and integration tests against Green in isolation, then switch 100% of traffic from Blue to Green (via a DNS change or load balancer listener rule update). If problems emerge, switch back to Blue in seconds — instant rollback.
+
+      **Trade-offs**: Zero downtime, instant rollback, full pre-production testing. Cost: double the infrastructure during the transition window.
+
+      ```bash
+      # Blue/green with kubectl label switching
+      kubectl apply -f green-deployment.yaml
+      kubectl rollout status deployment/myapp-green -n production
+
+      # After smoke tests pass, switch the Service selector
+      kubectl patch service myapp-svc -n production \
+        -p '{"spec":{"selector":{"version":"green"}}}'
+      ```
+
+      ### Canary Deployment
+
+      Route a small percentage of live traffic (5%, 10%) to the new version while the majority continues on the stable version. Monitor error rates, latency (p99), and business metrics. Gradually increase the canary traffic share if metrics are healthy. If metrics degrade, remove the canary Pods instantly.
+
+      The simplest Kubernetes canary uses replica ratios: 9 stable replicas + 1 canary replica = 10% canary traffic (assuming the Service selects both by the `app` label).
+
+      ```yaml
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: myapp-canary
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: myapp
+            track: canary
+        template:
+          metadata:
+            labels:
+              app: myapp
+              track: canary
+          spec:
+            containers:
+              - name: app
+                image: myapp:2.0.0
+      ```
+
+      For precise percentage-based traffic splitting (not replica-ratio-based), use a service mesh (Istio VirtualService, AWS App Mesh) or a progressive delivery tool (Argo Rollouts, Flagger).
+
+      ### Rolling Deployment
+
+      The default Kubernetes strategy. Incrementally replaces old Pods with new Pods using `maxUnavailable` and `maxSurge`. Middle ground: no extra infrastructure cost (unlike blue/green) and safer than an in-place replacement of all Pods at once. The primary risk is that both old and new versions serve traffic simultaneously during the rollout — your API must be backwards-compatible.
+
+      ### Feature Flags
+
+      Feature flags (feature toggles) decouple deployment from release. Deploy code with the new feature disabled for all users. Enable it progressively: internal users → 1% → 10% → 50% → 100%. If issues arise, flip the flag off instantly without a code deployment. Tools: LaunchDarkly, AWS AppConfig, Unleash (open source), GrowthBook.
+
+      ### GitOps
+
+      GitOps is a deployment paradigm where Git is the single source of truth for both application code and infrastructure/Kubernetes configuration. All changes to the system are made through Git commits and pull requests — never by running `kubectl apply` manually.
+
+      **Two patterns:**
+      - **Push-based**: The CI pipeline pushes changes after a merge (`kubectl apply`, `helm upgrade`). Simple but gives the CI system direct cluster access — a security concern.
+      - **Pull-based**: An agent (ArgoCD, Flux) runs *inside* the cluster, watches a Git repository, and automatically reconciles cluster state toward the Git-defined desired state. The cluster pulls from Git; nothing external pushes to the cluster.
+
+      ```mermaid
+      graph LR
+          DEV["Developer<br/>git push"] --> REPO["Git Repository<br/>(GitHub/GitLab)"]
+          REPO --> CI["CI Pipeline<br/>(GitHub Actions)"]
+          CI --> REGISTRY["Container Registry<br/>(ECR)"]
+          CI --> MANIFEST["Manifest Repo<br/>(k8s YAML / Helm)"]
+          ARGOCD["ArgoCD<br/>(Pull-based GitOps)"] --> MANIFEST
+          ARGOCD --> CLUSTER["Kubernetes Cluster"]
+          style DEV fill:#4A90D9,color:#fff
+          style ARGOCD fill:#E96F2B,color:#fff
+          style CLUSTER fill:#326CE5,color:#fff
+      ```
+
+      ArgoCD continuously compares desired state (Git) with actual cluster state. If someone manually changes a resource in the cluster (configuration drift), ArgoCD detects the divergence and reverts it to match Git. This property — automatic drift correction — is the core value proposition of pull-based GitOps and makes it the preferred pattern for regulated and high-compliance environments.
+
+quiz:
+  - question: "What is the purpose of Terraform's DynamoDB table when using an S3 remote backend?"
+    options:
+      - "Store the Terraform state file in a NoSQL database"
+      - "Provide state locking to prevent concurrent modifications"
+      - "Cache provider plugins between runs"
+      - "Store encrypted secrets referenced by the configuration"
+    answer: 1
+    explanation: |
+      DynamoDB is used exclusively for state locking. When one operator runs terraform apply, a lock record is written to the DynamoDB table. Any concurrent apply by another operator will fail immediately with a lock error, preventing simultaneous modifications that would corrupt the state file. The state file itself is stored in S3.
+  - question: "In a GitHub Actions workflow, which keyword makes one job wait for another job to succeed before starting?"
+    options:
+      - "after"
+      - "requires"
+      - "needs"
+      - "depends_on"
+    answer: 2
+    explanation: |
+      The `needs` keyword specifies job dependencies in GitHub Actions. A job with `needs: [test, build]` will not start until both the `test` and `build` jobs complete successfully. This enables sequential pipelines (test → build → deploy) and fan-in patterns where multiple parallel jobs must all complete before a final job begins.
+  - question: "Which deployment strategy routes a small percentage of live traffic to the new version while the majority continues on the stable version?"
+    options:
+      - "Blue/green deployment"
+      - "Rolling deployment"
+      - "Canary deployment"
+      - "Recreate deployment"
+    answer: 2
+    explanation: |
+      A canary deployment sends a small fraction of real production traffic (e.g., 5-10%) to the new version for live validation under real conditions. If error rates and latency metrics are healthy, traffic is gradually shifted to 100%. If not, the canary Pods are removed with minimal user impact. The name comes from the historical use of canary birds in coal mines as early warning systems.
+  - question: "A team uses ArgoCD to deploy applications. A developer manually runs kubectl delete deployment myapp in the production cluster. What happens next?"
+    options:
+      - "The deployment is permanently deleted until the next Git commit"
+      - "ArgoCD detects drift and automatically recreates the deployment from Git"
+      - "ArgoCD sends an alert but does not recreate the resource"
+      - "The CI pipeline re-deploys on the next code commit"
+    answer: 1
+    explanation: |
+      ArgoCD continuously compares desired state (defined in Git) with actual cluster state. When it detects drift — in this case, a missing Deployment — it automatically reconciles by recreating the resource from the Git manifest. This automatic drift correction is the defining feature of pull-based GitOps and prevents configuration drift regardless of how changes are made to the cluster.
