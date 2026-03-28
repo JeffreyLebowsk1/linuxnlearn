@@ -1,0 +1,1164 @@
+title: "Test-Driven Development & Software Quality Assurance"
+order: 3
+summary: "Master pytest, the Red-Green-Refactor TDD cycle, test doubles (mock/stub/fake/spy), coverage measurement, static analysis, and CI integration for continuously delivering high-quality Python software."
+learning_objectives:
+  - "Write pytest unit tests with fixtures (all four scopes), @pytest.mark.parametrize, and custom markers."
+  - "Apply the Red-Green-Refactor TDD cycle to build a non-trivial class from scratch, one failing test at a time."
+  - "Use unittest.mock (MagicMock, @patch, side_effect, autospec) to isolate the system under test from its collaborators."
+  - "Measure statement and branch coverage with pytest-cov and enforce minimum thresholds in CI pipelines."
+  - "Integrate flake8, mypy, and bandit static analysis into a CI workflow alongside pytest for continuously enforced quality gates."
+builds_on:
+  - "Python programming (CS 215) — decorators, context managers, generators, and dataclasses are used in test code"
+  - "Design Patterns (CS 320 Lesson 2) — dependency injection is the prerequisite for effective mocking"
+  - "CI/CD concepts (Cloud CS 401) — the CI pipeline sections assume familiarity with GitHub Actions YAML syntax"
+sections:
+  - heading: "The Testing Pyramid & Testing Vocabulary"
+    content: |
+      ## The Testing Pyramid & Testing Vocabulary
+
+      ### The Testing Pyramid
+
+      Mike Cohn's **Testing Pyramid** (2009) describes the ideal distribution of automated tests
+      across three layers. The pyramid shape communicates both quantity and cost:
+
+      ```mermaid
+      graph TB
+          subgraph pyramid["Testing Pyramid"]
+              E2E["🔺 End-to-End Tests\nSlow · Expensive · Fragile\nFew (5–10%)\nSelenium / Playwright / Cypress"]
+              INT["▲ Integration Tests\nModerate speed and cost\nSome (20–30%)\nReal DB / real HTTP / real filesystem"]
+              UNIT["▬ Unit Tests\nFast · Cheap · Stable\nMany (60–70%)\npytest with mocks"]
+          end
+          UNIT --> INT --> E2E
+      ```
+
+      | Layer | Scope | Speed | Quantity | Failure Signal |
+      |-------|-------|-------|----------|----------------|
+      | **Unit** | One function / class in isolation | < 1 ms | Hundreds | Precise — broken line identified |
+      | **Integration** | Multiple real components (DB, cache) | 100 ms – 1 s | Tens | Moderate — component boundary broken |
+      | **End-to-End** | Full application stack via UI or API | 5–60 s | Few | Broad — something is broken but pinpointing is slow |
+
+      **Why unit tests form the base:** They run in milliseconds, provide precise failure messages,
+      and can be run thousands of times per day. A developer who changes code and sees 400 unit
+      tests pass in 2 seconds has high confidence before pushing.
+
+      ### Testing Vocabulary
+
+      | Term | Definition |
+      |------|-----------|
+      | **SUT** | System Under Test — the specific function, class, or module being tested |
+      | **Assertion** | A statement that verifies an expected condition; causes the test to fail if false |
+      | **Fixture** | Reusable setup/teardown logic that provides the SUT with a known state |
+      | **Test Double** | Any object that stands in for a real collaborator (mock, stub, fake, spy) |
+      | **AAA Pattern** | Arrange / Act / Assert — the three-phase structure of a well-written test |
+      | **Flaky Test** | A test that passes and fails non-deterministically (same code, different outcomes) |
+
+      **AAA Pattern in practice:**
+
+      ```python
+      def test_bank_account_deposit_increases_balance():
+          # ARRANGE — set up the SUT in a known state
+          account = BankAccount(owner="Alice", initial_balance=100.00)
+
+          # ACT — invoke the behaviour being tested
+          account.deposit(50.00)
+
+          # ASSERT — verify the expected outcome
+          assert account.balance == 150.00
+      ```
+
+      **Avoiding flaky tests:**
+
+      - Never depend on wall-clock time in assertions; use `freezegun` or `monkeypatch`
+      - Never depend on file system state; use `tmp_path` fixture
+      - Never depend on network; mock all HTTP calls
+      - Never depend on insertion order in sets or dicts unless using Python 3.7+
+      - Never run tests in parallel without `pytest-xdist` isolation
+
+  - heading: "pytest Fundamentals"
+    content: |
+      ## pytest Fundamentals
+
+      pytest is the de facto standard Python testing framework. Unlike `unittest`, pytest
+      requires no class boilerplate — tests are plain functions with `assert` statements.
+
+      ### Installation and Test Discovery
+
+      ```bash
+      pip install pytest pytest-cov
+
+      # Project layout (pytest discovers tests automatically):
+      # src/
+      #   bank/
+      #     __init__.py
+      #     account.py
+      # tests/
+      #   conftest.py          ← shared fixtures
+      #   test_account.py      ← must start with "test_"
+      #   bank/
+      #     test_account.py    ← can mirror src layout
+
+      pytest -v                          # verbose: show each test name
+      pytest tests/test_account.py       # specific file
+      pytest -k "deposit or withdraw"    # run tests matching keyword
+      pytest --tb=short                  # shorter tracebacks
+      ```
+
+      ### The BankAccount Class (SUT for this lesson)
+
+      ```python
+      # src/bank/account.py
+      from decimal import Decimal
+      from typing import Optional
+
+      class InsufficientFundsError(Exception):
+          """Raised when a withdrawal exceeds the available balance."""
+
+      class BankAccount:
+          def __init__(self, owner: str, initial_balance: Decimal = Decimal("0.00")):
+              if initial_balance < 0:
+                  raise ValueError("Initial balance cannot be negative")
+              self.owner = owner
+              self._balance = Decimal(str(initial_balance))
+              self._transactions: list[dict] = []
+
+          @property
+          def balance(self) -> Decimal:
+              return self._balance
+
+          def deposit(self, amount: Decimal) -> None:
+              if amount <= 0:
+                  raise ValueError("Deposit amount must be positive")
+              self._balance += Decimal(str(amount))
+              self._transactions.append({"type": "deposit", "amount": amount})
+
+          def withdraw(self, amount: Decimal) -> None:
+              if amount <= 0:
+                  raise ValueError("Withdrawal amount must be positive")
+              if amount > self._balance:
+                  raise InsufficientFundsError(
+                      f"Cannot withdraw {amount}; balance is {self._balance}"
+                  )
+              self._balance -= Decimal(str(amount))
+              self._transactions.append({"type": "withdrawal", "amount": amount})
+
+          def statement(self) -> list[dict]:
+              return list(self._transactions)  # defensive copy
+      ```
+
+      ### Fixtures — Scoped Setup and Teardown
+
+      ```python
+      # tests/conftest.py
+      import pytest
+      from decimal import Decimal
+      from bank.account import BankAccount
+
+      @pytest.fixture(scope="function")   # default — fresh instance per test
+      def empty_account():
+          return BankAccount(owner="Test User")
+
+      @pytest.fixture(scope="function")
+      def funded_account():
+          acc = BankAccount(owner="Alice", initial_balance=Decimal("1000.00"))
+          return acc
+
+      @pytest.fixture(scope="module")     # created once per test module (file)
+      def db_connection():
+          conn = create_test_db_connection()
+          yield conn                       # yield makes this a teardown fixture
+          conn.close()                     # runs AFTER all tests in the module
+
+      @pytest.fixture(scope="session")    # created once for the entire test session
+      def app_config():
+          return {"debug": True, "db": "sqlite:///:memory:"}
+      ```
+
+      **Fixture scopes:**
+
+      | Scope | Lifetime | Use Case |
+      |-------|----------|---------|
+      | `function` | One test | Stateful objects that must not bleed between tests |
+      | `class` | One test class | Shared setup for logically grouped tests |
+      | `module` | One test file | Expensive setup like DB connections |
+      | `session` | Entire test run | App-level config, read-only data |
+
+      ### Tests with Fixtures
+
+      ```python
+      # tests/test_account.py
+      import pytest
+      from decimal import Decimal
+      from bank.account import BankAccount, InsufficientFundsError
+
+      class TestDeposit:
+          def test_deposit_increases_balance(self, funded_account):
+              funded_account.deposit(Decimal("200.00"))
+              assert funded_account.balance == Decimal("1200.00")
+
+          def test_deposit_records_transaction(self, funded_account):
+              funded_account.deposit(Decimal("50.00"))
+              txns = funded_account.statement()
+              assert txns[-1] == {"type": "deposit", "amount": Decimal("50.00")}
+
+          def test_deposit_zero_raises(self, empty_account):
+              with pytest.raises(ValueError, match="must be positive"):
+                  empty_account.deposit(Decimal("0.00"))
+
+          def test_deposit_negative_raises(self, empty_account):
+              with pytest.raises(ValueError):
+                  empty_account.deposit(Decimal("-10.00"))
+
+      class TestWithdrawal:
+          def test_withdraw_decreases_balance(self, funded_account):
+              funded_account.withdraw(Decimal("300.00"))
+              assert funded_account.balance == Decimal("700.00")
+
+          def test_overdraft_raises_insufficient_funds(self, funded_account):
+              with pytest.raises(InsufficientFundsError) as exc_info:
+                  funded_account.withdraw(Decimal("9999.00"))
+              assert "1000.00" in str(exc_info.value)  # balance mentioned in message
+      ```
+
+      ### Parametrize — Data-Driven Tests
+
+      ```python
+      @pytest.mark.parametrize("amount,expected_balance", [
+          (Decimal("100.00"),  Decimal("1100.00")),
+          (Decimal("0.01"),    Decimal("1000.01")),
+          (Decimal("999.99"),  Decimal("1999.99")),
+          (Decimal("5000.00"), Decimal("6000.00")),
+      ])
+      def test_deposit_parametrized(funded_account, amount, expected_balance):
+          funded_account.deposit(amount)
+          assert funded_account.balance == expected_balance
+
+      @pytest.mark.parametrize("invalid_amount", [
+          Decimal("0"), Decimal("-1"), Decimal("-100"),
+      ], ids=["zero", "negative-one", "large-negative"])
+      def test_invalid_deposits_raise(empty_account, invalid_amount):
+          with pytest.raises(ValueError):
+              empty_account.deposit(invalid_amount)
+      ```
+
+      ### Markers
+
+      ```python
+      # Mark slow tests to run only when explicitly requested:
+      @pytest.mark.slow
+      def test_generate_annual_statement():
+          ...  # iterates over 50,000 transactions
+
+      # Mark expected failures (test documents a known bug):
+      @pytest.mark.xfail(reason="Issue #88: rounding bug with 3 decimal places")
+      def test_balance_three_decimal_places():
+          acc = BankAccount("Alice", Decimal("10.00"))
+          acc.deposit(Decimal("0.005"))
+          assert acc.balance == Decimal("10.01")  # currently fails
+
+      # Skip on a condition:
+      @pytest.mark.skipif(
+          condition=sys.platform == "win32",
+          reason="File locking behaviour differs on Windows"
+      )
+      def test_concurrent_deposits(): ...
+      ```
+
+      ```ini
+      # pytest.ini — register custom markers to avoid PytestUnknownMarkWarning
+      [pytest]
+      markers =
+          slow: marks tests as slow (run with -m slow)
+          integration: marks integration tests requiring external services
+      addopts = -ra --strict-markers
+      ```
+
+      ### Capturing Output and tmp_path
+
+      ```python
+      def test_statement_print(funded_account, capsys):
+          funded_account.deposit(Decimal("100"))
+          # capsys captures stdout/stderr without modifying the SUT:
+          # (if account had a print_statement method)
+          captured = capsys.readouterr()
+          # assert "100" in captured.out
+
+      def test_export_to_file(funded_account, tmp_path):
+          """tmp_path is a pytest built-in fixture providing a unique temp directory."""
+          export_file = tmp_path / "statement.csv"
+          funded_account.deposit(Decimal("100"))
+          # account.export_csv(export_file)
+          # assert export_file.exists()
+          # assert "deposit" in export_file.read_text()
+      ```
+
+  - heading: "Test-Driven Development: Red-Green-Refactor"
+    content: |
+      ## Test-Driven Development: Red-Green-Refactor
+
+      TDD is a development technique (Kent Beck, *Test-Driven Development: By Example*, 2002)
+      where **tests are written before the implementation**. The discipline forces small, focused
+      design decisions and results in 100% test coverage by construction.
+
+      ### The TDD Cycle
+
+      ```mermaid
+      flowchart LR
+          RED["🔴 RED\nWrite a failing test\n(the simplest test\nthat exposes\nmissing behaviour)"]
+          GREEN["🟢 GREEN\nWrite the minimal code\nto make the test pass\n(no more, no less)"]
+          REFACTOR["🔵 REFACTOR\nImprove the design\nwithout changing behaviour\n(all tests still pass)"]
+          RED --> GREEN --> REFACTOR --> RED
+      ```
+
+      **Rules of TDD:**
+      1. Do not write production code unless it is to make a failing test pass.
+      2. Do not write more of a unit test than is sufficient to fail (including compilation failures).
+      3. Do not write more production code than is sufficient to make the currently failing test pass.
+
+      ### Full TDD Walkthrough — Building `ShoppingCart`
+
+      We will build a `ShoppingCart` class through five TDD iterations. Start with an empty file:
+
+      ```python
+      # src/shop/cart.py  — initially empty
+      ```
+
+      ---
+
+      **Iteration 1: Add an item to the cart**
+
+      ```python
+      # tests/test_cart.py
+      def test_add_item_appears_in_cart():
+          cart = ShoppingCart()
+          cart.add_item("apple", price=0.99, qty=3)
+          assert cart.item_count() == 1    # 1 unique item, not 3 units
+      ```
+
+      Run: `pytest` → **🔴 RED** (`NameError: name 'ShoppingCart' is not defined`)
+
+      ```python
+      # src/shop/cart.py — minimal implementation to pass ONE test
+      class ShoppingCart:
+          def __init__(self):
+              self._items: dict[str, dict] = {}
+
+          def add_item(self, name: str, price: float, qty: int) -> None:
+              self._items[name] = {"price": price, "qty": qty}
+
+          def item_count(self) -> int:
+              return len(self._items)
+      ```
+
+      Run: `pytest` → **🟢 GREEN**. No refactoring needed yet.
+
+      ---
+
+      **Iteration 2: Calculate total price**
+
+      ```python
+      def test_total_price_is_sum_of_price_times_qty():
+          cart = ShoppingCart()
+          cart.add_item("apple", price=0.99, qty=3)    # 2.97
+          cart.add_item("banana", price=0.49, qty=2)   # 0.98
+          assert abs(cart.total() - 3.95) < 0.001      # float comparison with tolerance
+      ```
+
+      Run: `pytest` → **🔴 RED** (`AttributeError: 'ShoppingCart' has no attribute 'total'`)
+
+      ```python
+      # Add to ShoppingCart:
+          def total(self) -> float:
+              return sum(v["price"] * v["qty"] for v in self._items.values())
+      ```
+
+      Run: `pytest` → **🟢 GREEN**.
+
+      **Refactor:** Use `Decimal` for monetary precision — updating both cart and tests:
+
+      ```python
+      from decimal import Decimal
+
+      class ShoppingCart:
+          def add_item(self, name: str, price: Decimal | float | str, qty: int) -> None:
+              self._items[name] = {"price": Decimal(str(price)), "qty": qty}
+
+          def total(self) -> Decimal:
+              return sum(
+                  (v["price"] * v["qty"] for v in self._items.values()),
+                  Decimal("0.00")
+              )
+      ```
+
+      ---
+
+      **Iteration 3: Apply a percentage discount**
+
+      ```python
+      def test_percentage_discount_reduces_total():
+          cart = ShoppingCart()
+          cart.add_item("book", price="25.00", qty=2)  # subtotal = 50.00
+          cart.apply_discount(pct=10)                   # 10% off → 45.00
+          assert cart.total() == Decimal("45.00")
+
+      def test_discount_cannot_exceed_100_percent():
+          cart = ShoppingCart()
+          cart.add_item("item", price="10.00", qty=1)
+          with pytest.raises(ValueError, match="between 0 and 100"):
+              cart.apply_discount(pct=101)
+      ```
+
+      Run: `pytest` → **🔴 RED** × 2
+
+      ```python
+      from decimal import Decimal, ROUND_HALF_UP
+
+          def apply_discount(self, pct: int | float) -> None:
+              if not (0 <= pct <= 100):
+                  raise ValueError("Discount percentage must be between 0 and 100")
+              self._discount_pct = Decimal(str(pct))
+
+          def total(self) -> Decimal:
+              subtotal = sum(
+                  (v["price"] * v["qty"] for v in self._items.values()),
+                  Decimal("0.00")
+              )
+              discount = subtotal * (self._discount_pct / 100)
+              return (subtotal - discount).quantize(Decimal("0.01"), ROUND_HALF_UP)
+      ```
+
+      Also add `self._discount_pct = Decimal("0")` to `__init__`.
+
+      Run: `pytest` → **🟢 GREEN**.
+
+      ---
+
+      **Iteration 4: Remove an item**
+
+      ```python
+      def test_remove_item_decreases_count():
+          cart = ShoppingCart()
+          cart.add_item("apple", price="0.99", qty=3)
+          cart.add_item("mango", price="1.50", qty=1)
+          cart.remove_item("apple")
+          assert cart.item_count() == 1
+
+      def test_remove_nonexistent_item_raises():
+          cart = ShoppingCart()
+          with pytest.raises(KeyError, match="not in cart"):
+              cart.remove_item("dragonfruit")
+      ```
+
+      Run: `pytest` → **🔴 RED**
+
+      ```python
+          def remove_item(self, name: str) -> None:
+              if name not in self._items:
+                  raise KeyError(f"'{name}' not in cart")
+              del self._items[name]
+      ```
+
+      Run: `pytest` → **🟢 GREEN**.
+
+      ---
+
+      **Iteration 5: Empty cart**
+
+      ```python
+      def test_empty_cart_total_is_zero():
+          cart = ShoppingCart()
+          assert cart.total() == Decimal("0.00")
+
+      def test_clear_empties_cart():
+          cart = ShoppingCart()
+          cart.add_item("tea", price="3.00", qty=1)
+          cart.clear()
+          assert cart.item_count() == 0
+          assert cart.total() == Decimal("0.00")
+      ```
+
+      Run: `pytest` → **🔴 RED** (for `test_clear_empties_cart`)
+
+      ```python
+          def clear(self) -> None:
+              self._items.clear()
+              self._discount_pct = Decimal("0")
+      ```
+
+      Run: `pytest` → **🟢 GREEN**. All 10 tests pass.
+
+      **Final refactor — complete ShoppingCart:**
+
+      ```python
+      # src/shop/cart.py  — final version after 5 TDD iterations
+      from decimal import Decimal, ROUND_HALF_UP
+
+      class ShoppingCart:
+          def __init__(self):
+              self._items: dict[str, dict] = {}
+              self._discount_pct: Decimal = Decimal("0")
+
+          def add_item(self, name: str, price: Decimal | float | str, qty: int) -> None:
+              self._items[name] = {"price": Decimal(str(price)), "qty": qty}
+
+          def remove_item(self, name: str) -> None:
+              if name not in self._items:
+                  raise KeyError(f"'{name}' not in cart")
+              del self._items[name]
+
+          def apply_discount(self, pct: int | float) -> None:
+              if not (0 <= pct <= 100):
+                  raise ValueError("Discount percentage must be between 0 and 100")
+              self._discount_pct = Decimal(str(pct))
+
+          def item_count(self) -> int:
+              return len(self._items)
+
+          def total(self) -> Decimal:
+              subtotal = sum(
+                  (v["price"] * v["qty"] for v in self._items.values()),
+                  Decimal("0.00"),
+              )
+              discount = subtotal * (self._discount_pct / 100)
+              return (subtotal - discount).quantize(Decimal("0.01"), ROUND_HALF_UP)
+
+          def clear(self) -> None:
+              self._items.clear()
+              self._discount_pct = Decimal("0")
+      ```
+
+  - heading: "Test Doubles with unittest.mock"
+    content: |
+      ## Test Doubles with unittest.mock
+
+      A **test double** (Gerard Meszaros, *xUnit Test Patterns*) is any object that stands in
+      for a real collaborator to allow the SUT to be tested in isolation.
+
+      | Double Type | Behaviour | When to Use |
+      |-------------|-----------|------------|
+      | **Stub** | Returns hard-coded values; no assertions | Isolate SUT from unpredictable inputs (time, random) |
+      | **Fake** | Simplified but real-ish implementation (e.g., in-memory DB) | Integration tests with lighter dependencies |
+      | **Mock** | Records calls; fails if expectations not met | Verify that the SUT *calls* a collaborator correctly |
+      | **Spy** | Like a mock but wraps real implementation; records calls | Verify interactions without losing real behaviour |
+
+      ### MagicMock Basics
+
+      ```python
+      from unittest.mock import MagicMock
+
+      # MagicMock auto-creates attributes and methods on access:
+      mock_service = MagicMock()
+      mock_service.get_user.return_value = {"id": 1, "name": "Alice"}
+
+      result = mock_service.get_user(user_id=1)
+      assert result == {"id": 1, "name": "Alice"}
+
+      # Verify calls:
+      mock_service.get_user.assert_called_once_with(user_id=1)
+      mock_service.get_user.assert_called_once()
+      assert mock_service.get_user.call_count == 1
+      ```
+
+      ### @patch Decorator
+
+      `@patch` replaces a real object with a `MagicMock` for the duration of the test and
+      restores it afterwards. The patch target must be the **import path as seen by the SUT**.
+
+      ```python
+      # src/notifications/email_client.py
+      import smtplib
+
+      class EmailClient:
+          def send(self, to: str, subject: str, body: str) -> bool:
+              with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                  server.starttls()
+                  server.login("sender@example.com", "password")
+                  server.sendmail("sender@example.com", to, f"Subject: {subject}\n\n{body}")
+              return True
+      ```
+
+      ```python
+      # tests/test_email_client.py
+      from unittest.mock import patch, MagicMock
+      from notifications.email_client import EmailClient
+
+      class TestEmailClient:
+          @patch("notifications.email_client.smtplib.SMTP")   # patch where it is USED
+          def test_send_calls_smtp_server(self, mock_smtp_class):
+              mock_server = MagicMock()
+              mock_smtp_class.return_value.__enter__.return_value = mock_server
+
+              client = EmailClient()
+              result = client.send("alice@example.com", "Hello", "Test body")
+
+              assert result is True
+              mock_server.starttls.assert_called_once()
+              mock_server.login.assert_called_once_with("sender@example.com", "password")
+              mock_server.sendmail.assert_called_once()
+
+          @patch("notifications.email_client.smtplib.SMTP")
+          def test_send_returns_false_on_smtp_error(self, mock_smtp_class):
+              mock_smtp_class.side_effect = smtplib.SMTPException("Connection refused")
+
+              client = EmailClient()
+              # Assuming EmailClient catches and returns False on failure:
+              # result = client.send("alice@example.com", "Hello", "Body")
+              # assert result is False
+      ```
+
+      ### Mocking HTTP with `requests`
+
+      ```python
+      # src/weather/client.py
+      import requests
+
+      class WeatherClient:
+          BASE_URL = "https://api.openweathermap.org/data/2.5"
+
+          def __init__(self, api_key: str):
+              self.api_key = api_key
+
+          def get_temperature(self, city: str) -> float:
+              """Returns temperature in Celsius."""
+              response = requests.get(
+                  f"{self.BASE_URL}/weather",
+                  params={"q": city, "appid": self.api_key, "units": "metric"},
+                  timeout=5,
+              )
+              response.raise_for_status()
+              return response.json()["main"]["temp"]
+      ```
+
+      ```python
+      # tests/test_weather_client.py
+      import pytest
+      from unittest.mock import patch, MagicMock
+      from weather.client import WeatherClient
+
+      @pytest.fixture
+      def client():
+          return WeatherClient(api_key="test-key-123")
+
+      class TestWeatherClient:
+          @patch("weather.client.requests.get")
+          def test_get_temperature_returns_celsius(self, mock_get, client):
+              # Arrange — configure the mock response
+              mock_response = MagicMock()
+              mock_response.json.return_value = {
+                  "main": {"temp": 22.5, "feels_like": 21.0},
+                  "weather": [{"description": "clear sky"}],
+              }
+              mock_response.raise_for_status.return_value = None
+              mock_get.return_value = mock_response
+
+              # Act
+              temp = client.get_temperature("London")
+
+              # Assert
+              assert temp == 22.5
+              mock_get.assert_called_once_with(
+                  "https://api.openweathermap.org/data/2.5/weather",
+                  params={"q": "London", "appid": "test-key-123", "units": "metric"},
+                  timeout=5,
+              )
+
+          @patch("weather.client.requests.get")
+          def test_network_error_propagates(self, mock_get, client):
+              import requests as req
+              mock_get.side_effect = req.ConnectionError("Network unreachable")
+
+              with pytest.raises(req.ConnectionError):
+                  client.get_temperature("Tokyo")
+
+          @patch("weather.client.requests.get")
+          def test_http_4xx_raises(self, mock_get, client):
+              import requests as req
+              mock_response = MagicMock()
+              mock_response.raise_for_status.side_effect = req.HTTPError("404 Not Found")
+              mock_get.return_value = mock_response
+
+              with pytest.raises(req.HTTPError):
+                  client.get_temperature("NonexistentCity12345")
+      ```
+
+      ### `patch.object` and `autospec`
+
+      ```python
+      from unittest.mock import patch, create_autospec
+      from bank.account import BankAccount
+
+      # patch.object targets a specific instance or class attribute:
+      def test_deposit_calls_transaction_log():
+          account = BankAccount("Bob", initial_balance=500)
+          with patch.object(account, "_transactions") as mock_txns:
+              account.deposit(100)
+              # Verify the internal list's append was called:
+              mock_txns.append.assert_called_once()
+
+      # autospec=True: mock mirrors the real object's signature —
+      # calling with wrong arguments raises TypeError just like the real object
+      def test_autospec_prevents_wrong_call_signatures():
+          mock_account = create_autospec(BankAccount, instance=True)
+          mock_account.deposit(100)         # OK
+          # mock_account.deposit(100, 200)  # Would raise TypeError — too many args
+          # This catches typos and API drift early
+      ```
+
+      ### `call_args` for Detailed Assertions
+
+      ```python
+      from unittest.mock import patch, call
+
+      @patch("weather.client.requests.get")
+      def test_multiple_cities_called_in_order(mock_get, client):
+          mock_get.return_value.json.return_value = {"main": {"temp": 15.0}}
+          mock_get.return_value.raise_for_status.return_value = None
+
+          client.get_temperature("Paris")
+          client.get_temperature("Berlin")
+
+          assert mock_get.call_count == 2
+          # Inspect individual calls:
+          first_call_kwargs = mock_get.call_args_list[0].kwargs
+          assert first_call_kwargs["params"]["q"] == "Paris"
+      ```
+
+  - heading: "Code Coverage & Static Analysis"
+    content: |
+      ## Code Coverage & Static Analysis
+
+      ### Statement vs Branch Coverage
+
+      **Statement coverage** checks that every line of code is executed at least once.
+      **Branch coverage** (also called decision coverage) additionally checks that every
+      branch of every conditional is exercised — both the `True` and `False` arms.
+
+      ```python
+      def absolute_value(n: int) -> int:
+          if n >= 0:           # branch: True (n=5), False (n=-3)
+              return n
+          return -n
+      ```
+
+      A test with only `absolute_value(5)` achieves **50% branch coverage** (only the `True`
+      branch is taken) despite visiting both `return` statements via statement coverage.
+
+      ### pytest-cov
+
+      ```bash
+      pip install pytest-cov
+
+      # Run tests with statement coverage report:
+      pytest --cov=src --cov-report=term-missing
+
+      # Output:
+      # Name                   Stmts   Miss  Cover   Missing
+      # ------------------------------------------------------
+      # src/bank/account.py       28      3    89%   45-47
+      # src/shop/cart.py          22      0   100%
+      # src/weather/client.py     14      2    86%   31, 35
+      # ------------------------------------------------------
+      # TOTAL                     64      5    92%
+
+      # Branch coverage (more informative):
+      pytest --cov=src --cov-branch --cov-report=term-missing
+
+      # HTML report (interactive, shows red/green lines):
+      pytest --cov=src --cov-branch --cov-report=html
+      # Open htmlcov/index.html in browser
+      ```
+
+      ### .coveragerc Configuration
+
+      ```ini
+      # .coveragerc
+      [run]
+      source = src
+      branch = True
+      omit =
+          src/migrations/*
+          src/settings.py
+          */__init__.py
+
+      [report]
+      show_missing = True
+      precision = 1
+      fail_under = 85          # exit code 2 if total coverage < 85%
+
+      [html]
+      directory = htmlcov
+      ```
+
+      ### Enforcing Coverage in CI
+
+      ```yaml
+      # .github/workflows/ci.yml
+      name: CI
+
+      on: [push, pull_request]
+
+      jobs:
+        test:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-python@v5
+              with:
+                python-version: "3.12"
+
+            - name: Install dependencies
+              run: pip install -r requirements-dev.txt
+
+            - name: Run tests with coverage
+              run: |
+                pytest \
+                  --cov=src \
+                  --cov-branch \
+                  --cov-report=xml \
+                  --cov-fail-under=90 \
+                  -v
+
+            - name: Upload coverage to Codecov
+              uses: codecov/codecov-action@v4
+              with:
+                file: ./coverage.xml
+      ```
+
+      ### flake8 — Style and Lint Errors
+
+      ```bash
+      pip install flake8 flake8-bugbear flake8-comprehensions
+
+      # Common error codes:
+      # E1xx: Indentation   E111 (indent not multiple of 4)
+      # E2xx: Whitespace    E201 (whitespace after '(')
+      # E3xx: Blank lines   E302 (expected 2 blank lines)
+      # E4xx: Imports       E401 (multiple imports on one line)
+      # E5xx: Line length   E501 (line too long > 79 chars)
+      # W   : Warnings      W291 (trailing whitespace)
+      # B   : Bugbear       B006 (mutable default arg)  ← catches real bugs
+      # C   : Comprehension C401 (unnecessary generator — use list())
+      ```
+
+      ```ini
+      # setup.cfg or .flake8
+      [flake8]
+      max-line-length = 120
+      extend-ignore = E203, W503    # Black compatibility
+      per-file-ignores =
+          tests/*:S101              # allow assert in tests
+      ```
+
+      ### mypy — Static Type Checking
+
+      ```bash
+      pip install mypy
+
+      mypy src/ --strict
+      # Output:
+      # src/bank/account.py:12: error: Argument 1 to "Decimal" has incompatible
+      #   type "float"; expected "str | int"  [arg-type]
+      # Found 1 error in 1 file (checked 3 source files)
+      ```
+
+      ```ini
+      # mypy.ini
+      [mypy]
+      python_version = 3.12
+      strict = True
+      ignore_missing_imports = True
+      disallow_untyped_defs = True
+      warn_return_any = True
+      warn_unused_ignores = True
+
+      [mypy-tests.*]
+      disallow_untyped_defs = False   # relax for test files
+      ```
+
+      **Practical type annotations:**
+
+      ```python
+      from typing import Optional, Union
+      from collections.abc import Sequence
+
+      def process_items(
+          items: Sequence[str],
+          max_count: Optional[int] = None,
+          transform: Union[str, None] = None,
+      ) -> list[str]:
+          result = list(items[:max_count])
+          if transform == "upper":
+              return [s.upper() for s in result]
+          return result
+      ```
+
+      ### bandit — Security Linter
+
+      ```bash
+      pip install bandit
+
+      bandit -r src/ -ll   # report medium and high severity only
+      # Output:
+      # >> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'secret'
+      #    Severity: Low   Confidence: Medium
+      #    Location: src/config.py:7
+      #
+      # >> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection via string-based query
+      #    Severity: Medium   Confidence: Medium
+      #    Location: src/legacy/db.py:42
+      ```
+
+      ```yaml
+      # In CI — run bandit as a quality gate:
+      - name: Security lint with bandit
+        run: bandit -r src/ -ll --exit-zero  # --exit-zero: don't fail CI on low severity
+      ```
+
+      ### Complete CI Quality Gate Summary
+
+      ```bash
+      # Run all checks locally before pushing (add to Makefile):
+      make lint:
+          flake8 src/ tests/
+          mypy src/ --strict
+          bandit -r src/ -ll
+
+      make test:
+          pytest --cov=src --cov-branch --cov-fail-under=90 -v
+
+      make check: lint test
+      ```
+
+  - heading: "Mutation Testing & Integration Testing"
+    content: |
+      ## Mutation Testing & Integration Testing
+
+      ### Why Coverage Alone Is Not Enough
+
+      100% coverage means every line was *executed* — it does not mean every line was
+      *meaningfully tested*. Consider:
+
+      ```python
+      def is_adult(age: int) -> bool:
+          return age >= 18
+
+      def test_is_adult():
+          assert is_adult(20)   # passes — but never tests the boundary!
+          # A bug: age >= 19 would still pass this test
+      ```
+
+      This test achieves 100% statement and branch coverage (the `True` branch is taken) yet
+      fails to catch an off-by-one error in the condition. **Mutation testing** exposes this gap.
+
+      ### Mutation Testing with mutmut
+
+      A **mutation testing tool** automatically introduces small bugs (**mutants**) into the
+      production code — flipping `>=` to `>`, changing `+` to `-`, replacing `True` with `False`
+      — then runs the test suite. If a test catches the mutation (i.e., *kills* the mutant), the
+      test is effective. Surviving mutants identify undertested logic.
+
+      ```bash
+      pip install mutmut
+
+      # Run mutation testing on a specific module:
+      mutmut run --paths-to-mutate src/shop/cart.py
+
+      # View results:
+      mutmut results
+      # Output:
+      # 🎉 42 out of 45 mutants killed (93.3%)
+      # Survived mutants (need better tests):
+      #   Mutant #7: cart.py:18: >= changed to >
+      #   Mutant #23: cart.py:31: * changed to /
+      #   Mutant #39: cart.py:44: + changed to -
+
+      # See the actual mutation:
+      mutmut show 7
+      ```
+
+      **Fixing a survived mutant** means writing a test that specifically targets the boundary:
+
+      ```python
+      def test_discount_exactly_100_percent_is_valid():
+          cart = ShoppingCart()
+          cart.add_item("item", price="10.00", qty=1)
+          cart.apply_discount(pct=100)
+          assert cart.total() == Decimal("0.00")  # kills mutant #7
+
+      def test_discount_0_percent_leaves_total_unchanged():
+          cart = ShoppingCart()
+          cart.add_item("item", price="10.00", qty=1)
+          cart.apply_discount(pct=0)
+          assert cart.total() == Decimal("10.00")
+      ```
+
+      ### Integration Testing Strategies
+
+      Integration tests verify that multiple real components work together correctly.
+
+      **Database integration test with pytest-postgresql:**
+
+      ```bash
+      pip install pytest-postgresql psycopg2-binary
+      ```
+
+      ```python
+      # tests/integration/test_user_repository.py
+      import pytest
+      from psycopg2.extras import RealDictCursor
+
+      @pytest.fixture(scope="module")
+      def db(postgresql):
+          """postgresql fixture from pytest-postgresql provides a real Postgres instance."""
+          cursor = postgresql.cursor()
+          cursor.execute("""
+              CREATE TABLE users (
+                  id SERIAL PRIMARY KEY,
+                  username VARCHAR(50) UNIQUE NOT NULL,
+                  email VARCHAR(255) NOT NULL
+              )
+          """)
+          postgresql.commit()
+          yield postgresql
+          cursor.execute("DROP TABLE users")
+          postgresql.commit()
+
+      def test_save_and_retrieve_user(db):
+          from bank.user_repository import UserRepository
+          repo = UserRepository(db)
+
+          repo.save(username="alice", email="alice@example.com")
+          user = repo.find_by_username("alice")
+
+          assert user["username"] == "alice"
+          assert user["email"] == "alice@example.com"
+      ```
+
+      **Mocking HTTP in integration tests with `responses`:**
+
+      ```bash
+      pip install responses
+      ```
+
+      ```python
+      import responses as resp_mock
+      import requests
+
+      @resp_mock.activate
+      def test_weather_integration_with_mock_http():
+          resp_mock.add(
+              resp_mock.GET,
+              "https://api.openweathermap.org/data/2.5/weather",
+              json={"main": {"temp": 18.5}},
+              status=200,
+          )
+          from weather.client import WeatherClient
+          client = WeatherClient(api_key="test")
+          assert client.get_temperature("London") == 18.5
+          # Real HTTP stack exercised, but no actual network call made
+      ```
+
+      ### Property-Based Testing with Hypothesis
+
+      **Property-based testing** generates hundreds of random inputs automatically to find edge
+      cases you didn't think to write. [Hypothesis](https://hypothesis.readthedocs.io/) is the
+      leading Python library for this approach.
+
+      ```bash
+      pip install hypothesis
+      ```
+
+      ```python
+      from hypothesis import given, strategies as st
+      from decimal import Decimal
+      from shop.cart import ShoppingCart
+
+      @given(
+          price=st.decimals(min_value=Decimal("0.01"), max_value=Decimal("9999.99"),
+                            places=2),
+          qty=st.integers(min_value=1, max_value=100),
+          pct=st.floats(min_value=0, max_value=100),
+      )
+      def test_total_never_exceeds_subtotal(price, qty, pct):
+          cart = ShoppingCart()
+          cart.add_item("item", price=price, qty=qty)
+          cart.apply_discount(pct=pct)
+          subtotal = price * qty
+          assert cart.total() <= subtotal   # discount can only reduce total
+
+      @given(st.integers(min_value=-1000, max_value=1000))
+      def test_is_adult_consistent_with_manual_check(age):
+          assert is_adult(age) == (age >= 18)
+      ```
+
+      Hypothesis will try to **shrink** a failing example to the simplest possible input that
+      still demonstrates the bug — e.g. if `price=Decimal("0.00")` causes a division by zero,
+      Hypothesis finds it and reports it as the minimal counterexample.
+
+      ### Test Pyramid Balance in Practice
+
+      ```
+      Recommended distribution for a medium-sized web application:
+
+      ┌────────────────────────────┐
+      │   E2E: 10–20 tests         │  ← Critical user journeys: login, checkout, signup
+      │   ~5% of total             │
+      ├────────────────────────────┤
+      │   Integration: 50–100 tests│  ← Repository, API client, service boundary tests
+      │   ~25% of total            │
+      ├────────────────────────────┤
+      │   Unit: 300–1000+ tests    │  ← All business logic, edge cases, error paths
+      │   ~70% of total            │
+      └────────────────────────────┘
+
+      Target metrics:
+        - Unit test suite runs in < 30 seconds
+        - Branch coverage ≥ 85% (90% for financial / safety-critical code)
+        - Zero known mutants surviving in core business logic modules
+        - All flake8, mypy, and bandit checks pass in CI
+      ```
+
+quiz:
+  - question: "A pytest fixture decorated with `scope='module'` is created once and shared across all tests in a single test file. Which fixture scope should you use for a heavyweight database connection object that should be reused across ALL test files in a session?"
+    options:
+      - "`scope='function'` — a new connection per test avoids state pollution"
+      - "`scope='class'` — groups all tests in a class under one connection"
+      - "`scope='module'` — one connection per file is the maximum safe reuse"
+      - "`scope='session'` — the fixture is created once for the entire pytest run"
+    answer: 3
+    explanation: "`scope='session'` creates the fixture exactly once for the entire pytest session and tears it down after the last test runs. This is ideal for expensive-to-create, read-only resources like a database connection pool, app configuration, or a compiled binary. For a mutable DB connection, you would pair session scope with transaction rollback per test to avoid state bleed."
+
+  - question: "In TDD's Red-Green-Refactor cycle, what is the correct interpretation of the 'Green' phase rule: 'write the minimum code to make the test pass'?"
+    options:
+      - "Write a fully featured, production-quality implementation immediately to avoid rewriting code later"
+      - "Write only the simplest code that makes the failing test pass, even if it is a hardcoded return value, then let future tests drive out the real logic"
+      - "Write code that makes all future anticipated tests pass preemptively (YAGNI exception for TDD)"
+      - "Write code that passes the current test AND does not break any other tests, regardless of how much logic is added"
+    answer: 1
+    explanation: "The Green phase demands strict minimalism. A valid Green implementation for `assert cart.total() == 3.95` could be `def total(self): return 3.95`. The next test with different values forces the real calculation. This discipline ensures that every line of production code exists because a test demanded it, providing a tight feedback loop and tracing every behaviour back to a specific test."
+
+  - question: "You mock `requests.get` in a test with `@patch('myapp.weather.requests.get')` but the mock never seems to activate — real HTTP calls are still made. What is the most likely cause?"
+    options:
+      - "You should use `@patch('requests.get')` — always patch the original module, not where it is used"
+      - "The patch path must match where `requests.get` is *used* (imported) in the SUT module, not where it is defined"
+      - "`requests.get` cannot be mocked because it is a C-extension function"
+      - "You must use `responses` library instead of `unittest.mock` for HTTP mocking"
+    answer: 1
+    explanation: "The fundamental patching rule: patch where the name is **used**, not where it is **defined**. If `myapp/weather.py` contains `import requests`, then `requests.get` in that module's namespace is what gets called. You must patch `myapp.weather.requests.get` (or `myapp.weather.requests` and access `.get`). Patching `requests.get` in the `requests` module itself won't intercept calls from code that already imported `requests` into its own namespace."
+
+  - question: "Your CI pipeline runs `pytest --cov=src --cov-branch --cov-fail-under=90` and reports 87% branch coverage. After investigation, you find the uncovered branches are error-handling paths for extremely rare OS-level exceptions. Which approach is MOST appropriate?"
+    options:
+      - "Lower the `--cov-fail-under` threshold to 85% so CI passes"
+      - "Write tests that deliberately inject the OS exceptions using `side_effect` on mocked system calls to cover the error paths"
+      - "Add `# pragma: no cover` to the exception handlers and document why in a comment"
+      - "Delete the exception handlers since they are never exercised in practice"
+    answer: 1
+    explanation: "The best practice is to test error-handling paths by injecting exceptions via `side_effect` — this is precisely why `side_effect` exists in `unittest.mock`. Error paths often contain bugs (incorrect logging, resource leaks, wrong status codes) that only testing uncovers. Lowering the threshold is a last resort and invites further coverage decay. `# pragma: no cover` is appropriate for truly unreachable code (e.g., abstract methods, type-checking blocks) but not for testable error handlers. Deleting exception handlers would break robustness."
+
+  - question: "After running `mutmut`, you discover that the mutant `return age > 18` survives in your `is_adult(age)` function (original: `return age >= 18`). Which test would kill this mutant?"
+    options:
+      - "`assert is_adult(20) == True` — tests a typical adult age"
+      - "`assert is_adult(0) == False` — tests a clearly non-adult age"
+      - "`assert is_adult(18) == True` — tests the exact boundary value that the mutant changes"
+      - "`assert is_adult(17) == False` — tests one below the boundary"
+    answer: 2
+    explanation: "The mutant changes `>=` to `>`, so `is_adult(18)` returns `False` under the mutant but `True` under the original. Only a test asserting `is_adult(18) == True` will fail with the mutant and pass with the original — thereby killing the mutant. Testing with 20 (above boundary) and 17 (below boundary) leaves the boundary unchallenged. This is why boundary value analysis (BVA) — testing at, below, and above boundaries — is a fundamental test design technique."

@@ -15,10 +15,27 @@
             <div class="nav-links">
                 <a href="{{ url_for('index') }}">Home</a>
                 <a href="{{ url_for('learning_path') }}">🗺 Path</a>
-                <a href="{{ url_for('category', category='linux') }}">Linux</a>
-                <a href="{{ url_for('category', category='networking') }}">Networking</a>
-                <a href="{{ url_for('category', category='cisco') }}">Cisco</a>
-                <a href="{{ url_for('category', category='python') }}">Python</a>
+
+                {# ── Courses dropdown ── #}
+                <div class="nav-dropdown">
+                    <button class="nav-dropdown-btn">Courses <span class="nav-caret">▾</span></button>
+                    <div class="nav-dropdown-menu">
+                        <div class="nav-dropdown-divider">Year 1 — Foundations</div>
+                        <a href="{{ url_for('category', category='linux') }}">🐧 SYS 202 — Linux</a>
+                        <a href="{{ url_for('category', category='python') }}">🐍 CS 215 — Python</a>
+                        <div class="nav-dropdown-divider">Year 2 — Core</div>
+                        <a href="{{ url_for('category', category='networking') }}">🌐 NET 201 — Networking</a>
+                        <a href="{{ url_for('category', category='databases') }}">🗄️ CS 310 — Databases</a>
+                        <a href="{{ url_for('category', category='softeng') }}">⚙️ CS 320 — Software Eng.</a>
+                        <div class="nav-dropdown-divider">Year 3 — Advanced</div>
+                        <a href="{{ url_for('category', category='cisco') }}">🔧 NET 310 — Cisco</a>
+                        <a href="{{ url_for('category', category='cybersecurity') }}">🔐 SEC 301 — Cybersecurity</a>
+                        <div class="nav-dropdown-divider">Year 4 — Specialisation</div>
+                        <a href="{{ url_for('category', category='cloud') }}">☁️ CS 401 — Cloud &amp; DevOps</a>
+                        <a href="{{ url_for('category', category='jetson') }}">🤖 AI 340 — Edge AI</a>
+                    </div>
+                </div>
+
                 <a href="{{ url_for('assignments_home') }}" class="btn-assignments">📝 Assignments</a>
                 <a href="{{ url_for('instructor') }}" class="btn-ai">🎓 Instructor</a>
                 <a href="{{ url_for('chat') }}" class="btn-ai">💬 AI Chat</a>
@@ -33,8 +50,8 @@
 
     <footer class="footer">
         <div class="footer-container">
-            <p>LinuxNLearn — AI-assisted education for networking, Cisco, Python &amp; Linux</p>
-            <p>Ever-expanding as you learn 🚀</p>
+            <p>LinuxNLearn — AI-assisted Bachelor's degree program in Information Technology</p>
+            <p>9 courses · 36+ credits · AI Professor · Interactive labs 🚀</p>
         </div>
     </footer>
 

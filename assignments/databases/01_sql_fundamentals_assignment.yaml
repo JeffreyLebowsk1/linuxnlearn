@@ -1,0 +1,227 @@
+title: "SQL Fundamentals Assignment"
+category: "databases"
+difficulty: "beginner"
+estimated_minutes: 30
+related_lesson: "01_sql_fundamentals"
+instructions: |
+  Demonstrate your understanding of relational databases and SQL fundamentals by completing
+  the tasks below. Multiple-choice questions are graded instantly. Written and practical
+  answers are graded by AI with detailed feedback explaining what you got right and what
+  to improve. All SQL examples should target PostgreSQL syntax unless otherwise noted.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "You run the following query on a students table that contains 500 rows, of which 200 have dept_id = 3:\n\nSELECT dept_id, COUNT(*) FROM students GROUP BY dept_id HAVING COUNT(*) > 50;\n\nWhat does the HAVING clause do in this query, and why can't WHERE be used instead?"
+    options:
+      - "HAVING filters individual rows before grouping; WHERE cannot filter rows after an aggregate is computed"
+      - "HAVING filters the groups produced by GROUP BY after aggregation; WHERE runs before grouping and cannot reference aggregate expressions like COUNT(*)"
+      - "HAVING and WHERE are interchangeable; the difference is only stylistic"
+      - "HAVING is required whenever GROUP BY is present, regardless of filtering needs"
+    answer: 1
+    explanation: "SQL's logical processing order is: FROM → WHERE → GROUP BY → aggregation → HAVING → SELECT → ORDER BY. WHERE filters individual rows before any grouping occurs, so it cannot reference aggregate functions like COUNT(*). HAVING filters the result of the GROUP BY + aggregation step, allowing you to keep only groups that satisfy the aggregate condition."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "A company has two tables: orders(order_id, customer_id, total) and customers(customer_id, name, country). A LEFT JOIN of customers onto orders is performed. Which statement about the result is correct?"
+    options:
+      - "Only customers who have at least one order are included in the result"
+      - "All customers are included; customers without orders will have NULL in the order columns"
+      - "All orders are included; orders without a matching customer will have NULL in the customer columns"
+      - "Only rows matching in both tables are returned, the same as an INNER JOIN"
+    answer: 1
+    explanation: "In a LEFT JOIN, ALL rows from the LEFT table (customers, listed first in the FROM clause) are preserved. For customers with no matching rows in the right table (orders), the right table's columns are filled with NULL. This makes LEFT JOIN the standard way to answer 'show me all X even if they have no matching Y'."
+
+  - id: 3
+    type: "short_answer"
+    points: 15
+    question: |
+      Explain the difference between a PRIMARY KEY and a FOREIGN KEY in a relational database.
+      Use a concrete example with two related tables to illustrate your answer. Your answer should
+      address: (1) what each constraint enforces, (2) which table each belongs to, and (3) what
+      happens when you try to violate each constraint.
+    rubric: |
+      Award full marks (15) if the answer covers all four criteria:
+      1. PRIMARY KEY: uniquely identifies each row in ITS OWN table; combination of NOT NULL + UNIQUE; a table can have only one PK.
+      2. FOREIGN KEY: references the PRIMARY KEY of another table; enforces referential integrity — the referenced row must exist.
+      3. Concrete example with two tables (e.g., department/student, author/book) showing which column is the PK and which is the FK.
+      4. Violation behaviour: inserting a duplicate/NULL PK is rejected; inserting a FK value that doesn't exist in the parent table is rejected (foreign key violation).
+      Award 10/15 if the answer is correct but the example is missing or incomplete.
+      Award 5/15 if only one constraint type is correctly described.
+      Award 0/15 if fundamentally incorrect.
+    sample_answer: |
+      A PRIMARY KEY uniquely identifies each row in its own table. It enforces two constraints simultaneously: NOT NULL (the column cannot be empty) and UNIQUE (no two rows can have the same value). A table can have only one primary key, though it can span multiple columns (composite primary key). Example: in a `department` table, `dept_id SERIAL PRIMARY KEY` means every department gets a unique, non-null integer ID. Attempting to INSERT a row with a dept_id that already exists, or omitting it, will raise an error.
+
+      A FOREIGN KEY is a column (or set of columns) in one table that references the PRIMARY KEY of another table. It enforces referential integrity: you cannot insert a row with a foreign key value that does not exist in the parent table, and (by default with RESTRICT) you cannot delete a parent row that is still referenced. Example: in a `student` table, `dept_id INT REFERENCES department(dept_id)` means every student's dept_id must match an existing dept_id in the department table. Attempting to INSERT a student with dept_id = 999 when no department with that ID exists will fail with a foreign key constraint violation.
+
+      In summary: PK identifies, FK relates. The PK lives in the parent/referenced table; the FK lives in the child/referencing table.
+
+  - id: 4
+    type: "short_answer"
+    points: 15
+    question: |
+      Consider the following schema:
+        products(product_id, name, category, price)
+        order_items(item_id, order_id, product_id, quantity)
+
+      Write a SQL query that returns the category name, the total number of distinct products in
+      that category that have been ordered, and the total revenue (price × quantity) per category.
+      Only include categories where total revenue exceeds $10,000. Sort by total revenue descending.
+
+      You do not need to execute the query — write it out and briefly explain what each clause does.
+    rubric: |
+      Award full marks (15) if the answer:
+      1. Correctly JOINs products and order_items on product_id (3 pts).
+      2. Groups by category (2 pts).
+      3. Correctly computes COUNT(DISTINCT p.product_id) for distinct products (3 pts).
+      4. Correctly computes SUM(p.price * oi.quantity) for revenue (3 pts).
+      5. Applies HAVING SUM(...) > 10000 (2 pts).
+      6. Applies ORDER BY revenue DESC (1 pt).
+      7. Includes a brief but correct explanation of each clause (1 pt).
+      Accept minor syntax variations (aliases, column quoting). Penalise use of WHERE instead of HAVING for the revenue filter.
+    sample_answer: |
+      ```sql
+      SELECT  p.category,
+              COUNT(DISTINCT p.product_id)      AS distinct_products,
+              SUM(p.price * oi.quantity)         AS total_revenue
+      FROM    products   p
+      JOIN    order_items oi ON p.product_id = oi.product_id
+      GROUP BY p.category
+      HAVING  SUM(p.price * oi.quantity) > 10000
+      ORDER BY total_revenue DESC;
+      ```
+
+      Explanation of each clause:
+      - **FROM / JOIN**: Combines rows from `products` and `order_items` where the `product_id` matches. Only products that have been ordered appear in the result (INNER JOIN).
+      - **GROUP BY p.category**: Partitions the joined rows into one group per unique category value.
+      - **COUNT(DISTINCT p.product_id)**: Counts the number of unique products (not unique order lines) in each category group.
+      - **SUM(p.price * oi.quantity)**: Multiplies each item's unit price by its ordered quantity and sums these across all order lines in the category.
+      - **HAVING SUM(...) > 10000**: Filters out category groups whose total revenue is ≤ $10,000. Must use HAVING (not WHERE) because the filter is on an aggregate value.
+      - **ORDER BY total_revenue DESC**: Sorts the final output so the highest-revenue category appears first.
+
+  - id: 5
+    type: "practical"
+    points: 50
+    question: |
+      You are designing a database schema for a simple online bookstore. The system must track:
+      - Authors (an author can write multiple books; a book can have multiple authors)
+      - Books (title, publication year, price, genre)
+      - Customers (name, email — must be unique)
+      - Orders (customer, order date, total amount)
+      - Order line items (which books are in each order, with quantity)
+
+      **Task A (20 pts):** Write the complete CREATE TABLE statements for all required tables.
+      Include appropriate data types, primary keys, foreign keys, NOT NULL constraints, and at
+      least one CHECK constraint. Handle the many-to-many relationship between authors and books
+      correctly using a junction table.
+
+      **Task B (15 pts):** Write a query that returns, for each genre, the average book price,
+      the number of distinct books, and the total number of copies sold (across all orders).
+      Only include genres where at least 50 total copies have been sold. Sort by copies sold
+      descending.
+
+      **Task C (15 pts):** Write a query using a LEFT JOIN to find all customers who have NEVER
+      placed an order. Return their name and email.
+    rubric: |
+      Task A (20 pts):
+      - author table with PK (2 pts)
+      - book table with PK, appropriate columns (year, price, genre), CHECK constraint e.g. price > 0 (4 pts)
+      - book_author junction table with composite PK or separate PK, FK to both author and book (4 pts)
+      - customer table with PK, UNIQUE email (3 pts)
+      - orders table with PK, FK to customer, order_date, NOT NULL constraints (4 pts)
+      - order_items table with FK to orders and books, quantity column with CHECK quantity > 0 (3 pts)
+
+      Task B (15 pts):
+      - Joins books to order_items (3 pts)
+      - Groups by genre (2 pts)
+      - AVG(price) and COUNT(DISTINCT book_id) (3 pts)
+      - SUM(quantity) for copies sold (3 pts)
+      - HAVING SUM(quantity) >= 50 (2 pts)
+      - ORDER BY copies_sold DESC (2 pts)
+
+      Task C (15 pts):
+      - Uses LEFT JOIN between customers and orders (5 pts)
+      - Filters on orders.order_id IS NULL (or any orders FK column IS NULL) (5 pts)
+      - Returns name and email (5 pts)
+    sample_answer: |
+      **Task A: Schema**
+
+      ```sql
+      CREATE TABLE author (
+          author_id   SERIAL PRIMARY KEY,
+          first_name  VARCHAR(80)  NOT NULL,
+          last_name   VARCHAR(80)  NOT NULL,
+          birth_year  SMALLINT,
+          nationality VARCHAR(50)
+      );
+
+      CREATE TABLE book (
+          book_id     SERIAL PRIMARY KEY,
+          title       VARCHAR(200) NOT NULL,
+          pub_year    SMALLINT     NOT NULL CHECK (pub_year BETWEEN 1000 AND 2100),
+          price       NUMERIC(8,2) NOT NULL CHECK (price > 0),
+          genre       VARCHAR(50)  NOT NULL,
+          isbn        VARCHAR(13)  UNIQUE
+      );
+
+      -- Junction table for many-to-many author ↔ book
+      CREATE TABLE book_author (
+          book_id     INT NOT NULL REFERENCES book(book_id)   ON DELETE CASCADE,
+          author_id   INT NOT NULL REFERENCES author(author_id) ON DELETE CASCADE,
+          author_role VARCHAR(30) DEFAULT 'Primary',
+          PRIMARY KEY (book_id, author_id)
+      );
+
+      CREATE TABLE customer (
+          customer_id SERIAL PRIMARY KEY,
+          full_name   VARCHAR(120) NOT NULL,
+          email       VARCHAR(120) NOT NULL UNIQUE,
+          joined_at   TIMESTAMP    NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE orders (
+          order_id    SERIAL PRIMARY KEY,
+          customer_id INT          NOT NULL REFERENCES customer(customer_id) ON DELETE RESTRICT,
+          order_date  DATE         NOT NULL DEFAULT CURRENT_DATE,
+          total_amount NUMERIC(10,2) NOT NULL CHECK (total_amount >= 0)
+      );
+
+      CREATE TABLE order_items (
+          item_id     SERIAL PRIMARY KEY,
+          order_id    INT          NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+          book_id     INT          NOT NULL REFERENCES book(book_id)    ON DELETE RESTRICT,
+          quantity    SMALLINT     NOT NULL CHECK (quantity > 0),
+          unit_price  NUMERIC(8,2) NOT NULL CHECK (unit_price > 0)
+      );
+      ```
+
+      **Task B: Genre sales summary**
+
+      ```sql
+      SELECT  b.genre,
+              ROUND(AVG(b.price), 2)         AS avg_price,
+              COUNT(DISTINCT b.book_id)       AS distinct_books,
+              SUM(oi.quantity)                AS copies_sold
+      FROM    book        b
+      JOIN    order_items oi ON b.book_id = oi.book_id
+      GROUP BY b.genre
+      HAVING  SUM(oi.quantity) >= 50
+      ORDER BY copies_sold DESC;
+      ```
+
+      **Task C: Customers with no orders**
+
+      ```sql
+      SELECT  c.full_name,
+              c.email
+      FROM    customer c
+      LEFT JOIN orders o ON c.customer_id = o.customer_id
+      WHERE   o.order_id IS NULL
+      ORDER BY c.full_name;
+      ```
+
+      The LEFT JOIN preserves all customers regardless of whether they have a matching row in
+      orders. For customers with no orders, every column from the orders table is NULL. The
+      WHERE o.order_id IS NULL clause filters to keep only those non-matching rows.

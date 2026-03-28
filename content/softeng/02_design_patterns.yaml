@@ -1,0 +1,1344 @@
+title: "SOLID Principles & Design Patterns"
+order: 2
+summary: "Apply the five SOLID principles and twelve GoF design patterns in Python, identify code smells, and refactor existing code toward clean, extensible, maintainable designs."
+learning_objectives:
+  - "Apply each of the five SOLID principles in Python, demonstrating before-and-after refactoring for each."
+  - "Implement the Factory Method, Singleton, Observer, Strategy, and Decorator patterns with complete, runnable Python code."
+  - "Identify common code smells (Long Method, God Class, Feature Envy, Duplicate Code, Primitive Obsession) in real code."
+  - "Choose and apply an appropriate refactoring technique (Extract Method, Extract Class, Replace Conditional with Polymorphism) for a given smell."
+  - "Explain the trade-offs of each design pattern — when to use it and when it introduces unnecessary complexity."
+builds_on:
+  - "Python OOP (CS 215) — classes, inheritance, abstract base classes, dunder methods, and decorators are used throughout"
+  - "Agile & Git (CS 320 Lesson 1) — refactoring exercises assume work done in feature branches with PR review"
+sections:
+  - heading: "SOLID Principles with Python Examples"
+    content: |
+      ## SOLID Principles with Python Examples
+
+      SOLID is an acronym coined by Robert C. Martin ("Uncle Bob") for five design principles
+      that, when applied together, lead to software that is easy to extend, test, and maintain.
+
+      ---
+
+      ### S — Single Responsibility Principle (SRP)
+
+      > *A class should have only one reason to change.*
+
+      **Before — God class with multiple responsibilities:**
+
+      ```python
+      # BAD: UserManager handles persistence, email, AND business logic
+      class UserManager:
+          def __init__(self, db_conn):
+              self.db = db_conn
+
+          def create_user(self, username, email, password):
+              hashed = self._hash_password(password)
+              self.db.execute(
+                  "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+                  (username, email, hashed),
+              )
+              # Sends welcome email — completely different concern!
+              self._send_welcome_email(email, username)
+
+          def _hash_password(self, password: str) -> str:
+              import hashlib
+              return hashlib.sha256(password.encode()).hexdigest()
+
+          def _send_welcome_email(self, email: str, username: str) -> None:
+              import smtplib
+              # ... SMTP code mixed into a persistence class
+      ```
+
+      **After — split into focused, single-responsibility classes:**
+
+      ```python
+      # GOOD: Each class has exactly one reason to change.
+      import hashlib
+      from dataclasses import dataclass
+
+      @dataclass
+      class User:
+          username: str
+          email: str
+          password_hash: str
+
+      class PasswordHasher:
+          """Responsible only for password hashing strategy."""
+          def hash(self, plaintext: str) -> str:
+              return hashlib.sha256(plaintext.encode()).hexdigest()
+
+      class UserRepository:
+          """Responsible only for persisting and retrieving users."""
+          def __init__(self, db_conn):
+              self.db = db_conn
+
+          def save(self, user: User) -> None:
+              self.db.execute(
+                  "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
+                  (user.username, user.email, user.password_hash),
+              )
+
+      class EmailService:
+          """Responsible only for sending transactional emails."""
+          def send_welcome(self, email: str, username: str) -> None:
+              print(f"Sending welcome email to {username} <{email}>")
+
+      class UserRegistrationService:
+          """Orchestrates the registration workflow."""
+          def __init__(self, repo: UserRepository, hasher: PasswordHasher,
+                       email_svc: EmailService):
+              self.repo = repo
+              self.hasher = hasher
+              self.email_svc = email_svc
+
+          def register(self, username: str, email: str, password: str) -> User:
+              user = User(username, email, self.hasher.hash(password))
+              self.repo.save(user)
+              self.email_svc.send_welcome(email, username)
+              return user
+      ```
+
+      Now if the email provider changes, only `EmailService` changes. If the hashing algorithm
+      changes, only `PasswordHasher` changes. Each class has a single axis of change.
+
+      ---
+
+      ### O — Open/Closed Principle (OCP)
+
+      > *Software entities should be open for extension, but closed for modification.*
+
+      **Before — adding a new discount type requires modifying existing code:**
+
+      ```python
+      # BAD: Every new discount type requires editing this function
+      def calculate_discount(order, discount_type: str) -> float:
+          if discount_type == "percentage":
+              return order.total * 0.10
+          elif discount_type == "fixed":
+              return 15.00
+          elif discount_type == "bogo":          # ← added later, modified existing code
+              return order.total / 2
+          # Adding "flash_sale" requires another elif — fragile!
+      ```
+
+      **After — new discount types are added without touching existing code:**
+
+      ```python
+      # GOOD: Abstract base class defines the extension point
+      from abc import ABC, abstractmethod
+
+      class DiscountStrategy(ABC):
+          @abstractmethod
+          def apply(self, order_total: float) -> float:
+              """Return the discount amount (not the final price)."""
+
+      class PercentageDiscount(DiscountStrategy):
+          def __init__(self, pct: float):
+              self.pct = pct
+
+          def apply(self, order_total: float) -> float:
+              return order_total * self.pct
+
+      class FixedDiscount(DiscountStrategy):
+          def __init__(self, amount: float):
+              self.amount = amount
+
+          def apply(self, order_total: float) -> float:
+              return min(self.amount, order_total)  # can't discount more than total
+
+      class BuyOneGetOneDiscount(DiscountStrategy):
+          def apply(self, order_total: float) -> float:
+              return order_total / 2
+
+      # New discount type: zero code changed above, just a new class
+      class FlashSaleDiscount(DiscountStrategy):
+          def apply(self, order_total: float) -> float:
+              return order_total * 0.30
+
+      def calculate_final_price(order_total: float, strategy: DiscountStrategy) -> float:
+          return order_total - strategy.apply(order_total)
+
+      # Usage:
+      print(calculate_final_price(100.0, PercentageDiscount(0.10)))  # 90.0
+      print(calculate_final_price(100.0, FlashSaleDiscount()))       # 70.0
+      ```
+
+      ---
+
+      ### L — Liskov Substitution Principle (LSP)
+
+      > *Objects of a subclass should be substitutable for objects of the superclass without
+      > altering the correctness of the program.*
+
+      **Before — violation: subclass changes expected behaviour:**
+
+      ```python
+      # BAD: Square IS-A Rectangle is intuitively appealing but violates LSP
+      class Rectangle:
+          def __init__(self, width: float, height: float):
+              self.width = width
+              self.height = height
+
+          def area(self) -> float:
+              return self.width * self.height
+
+      class Square(Rectangle):
+          def __init__(self, side: float):
+              super().__init__(side, side)
+
+          @Rectangle.width.setter         # type: ignore
+          def width(self, value: float):
+              self._width = self._height = value  # maintains invariant: width == height
+
+      def print_area(rect: Rectangle):
+          rect.width = 5
+          rect.height = 10
+          assert rect.area() == 50, "Expected area 50"  # ← FAILS for Square!
+      ```
+
+      **After — use composition and a common abstract base:**
+
+      ```python
+      # GOOD: Shape hierarchy with no surprises
+      from abc import ABC, abstractmethod
+
+      class Shape(ABC):
+          @abstractmethod
+          def area(self) -> float: ...
+
+      class Rectangle(Shape):
+          def __init__(self, width: float, height: float):
+              self.width = width
+              self.height = height
+
+          def area(self) -> float:
+              return self.width * self.height
+
+      class Square(Shape):
+          def __init__(self, side: float):
+              self.side = side
+
+          def area(self) -> float:
+              return self.side ** 2
+
+      # Any function accepting Shape works correctly with Rectangle or Square
+      def print_area(shape: Shape) -> None:
+          print(f"Area: {shape.area()}")
+      ```
+
+      ---
+
+      ### I — Interface Segregation Principle (ISP)
+
+      > *No client should be forced to depend on methods it does not use.*
+
+      ```python
+      # BAD: Fat interface forces implementors to stub out irrelevant methods
+      from abc import ABC, abstractmethod
+
+      class Worker(ABC):
+          @abstractmethod
+          def work(self): ...
+          @abstractmethod
+          def eat_lunch(self): ...   # Robots don't eat!
+          @abstractmethod
+          def take_break(self): ...  # Robots don't rest!
+
+      class RobotWorker(Worker):
+          def work(self): print("Robot working")
+          def eat_lunch(self): raise NotImplementedError("Robots don't eat")
+          def take_break(self): raise NotImplementedError("Robots don't rest")
+
+      # GOOD: Segregate into narrow interfaces
+      class Workable(ABC):
+          @abstractmethod
+          def work(self): ...
+
+      class Breakable(ABC):
+          @abstractmethod
+          def take_break(self): ...
+
+      class HumanWorker(Workable, Breakable):
+          def work(self): print("Human working")
+          def take_break(self): print("Human on break")
+
+      class RobotWorker(Workable):          # only implements what it needs
+          def work(self): print("Robot working 24/7")
+      ```
+
+      ---
+
+      ### D — Dependency Inversion Principle (DIP)
+
+      > *High-level modules should not depend on low-level modules. Both should depend on
+      > abstractions.*
+
+      ```python
+      # BAD: High-level OrderProcessor tightly coupled to low-level MySQLDatabase
+      class MySQLDatabase:
+          def save_order(self, order): print(f"Saving {order} to MySQL")
+
+      class OrderProcessor:
+          def __init__(self):
+              self.db = MySQLDatabase()   # ← concrete dependency baked in
+
+          def process(self, order):
+              self.db.save_order(order)
+
+      # GOOD: Both depend on an abstraction
+      from abc import ABC, abstractmethod
+
+      class OrderRepository(ABC):
+          @abstractmethod
+          def save_order(self, order) -> None: ...
+
+      class MySQLOrderRepository(OrderRepository):
+          def save_order(self, order) -> None:
+              print(f"Saving {order} to MySQL")
+
+      class InMemoryOrderRepository(OrderRepository):
+          """Used in unit tests — no real DB required."""
+          def __init__(self):
+              self._orders: list = []
+
+          def save_order(self, order) -> None:
+              self._orders.append(order)
+
+      class OrderProcessor:
+          def __init__(self, repo: OrderRepository):  # ← dependency injected
+              self.repo = repo
+
+          def process(self, order) -> None:
+              self.repo.save_order(order)
+
+      # Production:
+      processor = OrderProcessor(MySQLOrderRepository())
+      # Tests:
+      fake_repo = InMemoryOrderRepository()
+      test_processor = OrderProcessor(fake_repo)
+      ```
+
+  - heading: "Creational Patterns"
+    content: |
+      ## Creational Patterns
+
+      Creational patterns deal with **object creation**, decoupling the client from the specifics
+      of what is created, how it is created, and when.
+
+      ### Singleton — Ensure a Single Instance
+
+      The Singleton pattern ensures a class has exactly one instance and provides a global access
+      point to it. Common use cases: logging, configuration, connection pools.
+
+      **Thread-safe metaclass implementation:**
+
+      ```python
+      import threading
+
+      class SingletonMeta(type):
+          """Thread-safe Singleton metaclass."""
+          _instances: dict = {}
+          _lock: threading.Lock = threading.Lock()
+
+          def __call__(cls, *args, **kwargs):
+              if cls not in cls._instances:
+                  with cls._lock:
+                      # Double-checked locking
+                      if cls not in cls._instances:
+                          instance = super().__call__(*args, **kwargs)
+                          cls._instances[cls] = instance
+              return cls._instances[cls]
+
+      class AppConfig(metaclass=SingletonMeta):
+          def __init__(self):
+              import os
+              self.debug = os.getenv("DEBUG", "false") == "true"
+              self.db_url = os.getenv("DATABASE_URL", "sqlite:///app.db")
+              self.secret_key = os.getenv("SECRET_KEY", "change-me")
+
+      # Both variables point to the exact same object:
+      config_a = AppConfig()
+      config_b = AppConfig()
+      assert config_a is config_b   # True
+      ```
+
+      **Trade-offs:** Singletons are notoriously hard to test (they retain state between tests),
+      introduce hidden global state, and violate DIP. Prefer dependency injection over Singleton
+      in most cases.
+
+      ---
+
+      ### Factory Method — Decouple Object Creation
+
+      The Factory Method pattern defines an interface for creating an object but lets subclasses
+      decide which class to instantiate.
+
+      ```python
+      from abc import ABC, abstractmethod
+      from pathlib import Path
+
+      class DocumentParser(ABC):
+          """Product interface"""
+          @abstractmethod
+          def parse(self, file_path: Path) -> dict:
+              """Parse the document and return structured data."""
+
+      class PDFParser(DocumentParser):
+          def parse(self, file_path: Path) -> dict:
+              print(f"Parsing PDF: {file_path}")
+              return {"type": "pdf", "pages": 10, "text": "..."}
+
+      class CSVParser(DocumentParser):
+          def parse(self, file_path: Path) -> dict:
+              import csv
+              print(f"Parsing CSV: {file_path}")
+              return {"type": "csv", "rows": 100, "headers": ["id", "name"]}
+
+      class JSONParser(DocumentParser):
+          def parse(self, file_path: Path) -> dict:
+              import json
+              print(f"Parsing JSON: {file_path}")
+              return {"type": "json", "keys": ["id", "value"]}
+
+      class DocumentParserFactory:
+          """Creator — the factory method."""
+          _registry: dict[str, type[DocumentParser]] = {
+              ".pdf": PDFParser,
+              ".csv": CSVParser,
+              ".json": JSONParser,
+          }
+
+          @classmethod
+          def create(cls, file_path: Path) -> DocumentParser:
+              suffix = file_path.suffix.lower()
+              parser_class = cls._registry.get(suffix)
+              if parser_class is None:
+                  raise ValueError(f"No parser registered for extension '{suffix}'")
+              return parser_class()
+
+          @classmethod
+          def register(cls, extension: str, parser_class: type[DocumentParser]) -> None:
+              """Open/Closed: extend by registering new parsers without modifying factory."""
+              cls._registry[extension.lower()] = parser_class
+
+      # Usage — client code never imports PDFParser directly:
+      parser = DocumentParserFactory.create(Path("report.pdf"))
+      data = parser.parse(Path("report.pdf"))
+      ```
+
+      ```mermaid
+      classDiagram
+          class DocumentParser {
+              <<abstract>>
+              +parse(file_path) dict
+          }
+          class PDFParser {
+              +parse(file_path) dict
+          }
+          class CSVParser {
+              +parse(file_path) dict
+          }
+          class DocumentParserFactory {
+              +create(file_path) DocumentParser
+              +register(ext, class)
+          }
+          DocumentParser <|-- PDFParser
+          DocumentParser <|-- CSVParser
+          DocumentParserFactory ..> DocumentParser : creates
+      ```
+
+      ---
+
+      ### Builder — Construct Complex Objects Step by Step
+
+      Use Builder when constructing an object requires many optional parameters and you want
+      to avoid telescoping constructors.
+
+      ```python
+      from dataclasses import dataclass, field
+      from typing import Optional
+
+      @dataclass
+      class Query:
+          table: str
+          columns: list[str]
+          conditions: list[str]
+          order_by: Optional[str]
+          limit: Optional[int]
+
+          def to_sql(self) -> str:
+              cols = ", ".join(self.columns) if self.columns else "*"
+              sql = f"SELECT {cols} FROM {self.table}"
+              if self.conditions:
+                  sql += " WHERE " + " AND ".join(self.conditions)
+              if self.order_by:
+                  sql += f" ORDER BY {self.order_by}"
+              if self.limit:
+                  sql += f" LIMIT {self.limit}"
+              return sql
+
+      class QueryBuilder:
+          def __init__(self, table: str):
+              self._table = table
+              self._columns: list[str] = []
+              self._conditions: list[str] = []
+              self._order_by: Optional[str] = None
+              self._limit: Optional[int] = None
+
+          def select(self, *columns: str) -> "QueryBuilder":
+              self._columns.extend(columns)
+              return self   # enables fluent/method-chaining interface
+
+          def where(self, condition: str) -> "QueryBuilder":
+              self._conditions.append(condition)
+              return self
+
+          def order_by(self, column: str) -> "QueryBuilder":
+              self._order_by = column
+              return self
+
+          def limit(self, n: int) -> "QueryBuilder":
+              self._limit = n
+              return self
+
+          def build(self) -> Query:
+              return Query(self._table, self._columns, self._conditions,
+                           self._order_by, self._limit)
+
+      # Fluent API usage:
+      query = (
+          QueryBuilder("students")
+          .select("name", "gpa", "dept")
+          .where("gpa > 3.5")
+          .where("dept = 'CS'")
+          .order_by("gpa DESC")
+          .limit(10)
+          .build()
+      )
+      print(query.to_sql())
+      # SELECT name, gpa, dept FROM students
+      # WHERE gpa > 3.5 AND dept = 'CS' ORDER BY gpa DESC LIMIT 10
+      ```
+
+  - heading: "Structural Patterns"
+    content: |
+      ## Structural Patterns
+
+      Structural patterns compose classes and objects into larger structures while keeping
+      those structures flexible and efficient.
+
+      ### Adapter — Wrap a Legacy Interface
+
+      The Adapter pattern converts the interface of a class into another interface clients
+      expect — like a power socket adapter.
+
+      ```python
+      # Legacy payment gateway with an awkward interface
+      class LegacyPaymentGateway:
+          def make_payment(self, amount_cents: int, card_number: str,
+                           expiry_yyyymm: str) -> str:
+              """Returns 'APPROVED' or 'DECLINED'."""
+              return "APPROVED" if amount_cents > 0 else "DECLINED"
+
+      # Modern interface our application code depends on
+      from abc import ABC, abstractmethod
+
+      class PaymentProcessor(ABC):
+          @abstractmethod
+          def charge(self, amount: float, card_token: str) -> bool:
+              """Returns True on success, False on failure."""
+
+      # Adapter bridges the gap — our code only ever sees PaymentProcessor
+      class LegacyPaymentAdapter(PaymentProcessor):
+          def __init__(self, gateway: LegacyPaymentGateway):
+              self._gateway = gateway
+
+          def charge(self, amount: float, card_token: str) -> bool:
+              amount_cents = int(amount * 100)
+              # Translate our clean interface to the legacy interface
+              expiry = "202512"            # simplified — real code would decode token
+              result = self._gateway.make_payment(amount_cents, card_token, expiry)
+              return result == "APPROVED"
+
+      # Application code — completely decoupled from the legacy gateway:
+      def checkout(processor: PaymentProcessor, amount: float, token: str) -> None:
+          if processor.charge(amount, token):
+              print(f"Payment of ${amount:.2f} successful")
+          else:
+              raise RuntimeError("Payment failed")
+
+      checkout(LegacyPaymentAdapter(LegacyPaymentGateway()), 49.99, "tok_visa_1234")
+      ```
+
+      ---
+
+      ### Decorator — Add Behaviour Without Subclassing
+
+      The Decorator pattern wraps an object to add new behaviour dynamically. Note the
+      distinction between the *design pattern* Decorator and Python's `@decorator` syntax —
+      they are related in concept but different in mechanism.
+
+      ```python
+      from abc import ABC, abstractmethod
+      import time
+      import functools
+
+      # === Class-based Decorator pattern (GoF) ===
+      class DataSource(ABC):
+          @abstractmethod
+          def read(self) -> str: ...
+
+          @abstractmethod
+          def write(self, data: str) -> None: ...
+
+      class FileDataSource(DataSource):
+          def __init__(self, filename: str):
+              self.filename = filename
+
+          def read(self) -> str:
+              with open(self.filename) as f:
+                  return f.read()
+
+          def write(self, data: str) -> None:
+              with open(self.filename, "w") as f:
+                  f.write(data)
+
+      class DataSourceDecorator(DataSource):
+          """Base decorator — wraps another DataSource."""
+          def __init__(self, wrappee: DataSource):
+              self._wrappee = wrappee
+
+          def read(self) -> str:
+              return self._wrappee.read()
+
+          def write(self, data: str) -> None:
+              self._wrappee.write(data)
+
+      class EncryptionDecorator(DataSourceDecorator):
+          def write(self, data: str) -> None:
+              encrypted = data[::-1]   # trivial Caesar-style for illustration
+              self._wrappee.write(encrypted)
+
+          def read(self) -> str:
+              return self._wrappee.read()[::-1]  # decrypt on read
+
+      class CompressionDecorator(DataSourceDecorator):
+          def write(self, data: str) -> None:
+              compressed = f"[COMPRESSED:{len(data)}]{data}"
+              self._wrappee.write(compressed)
+
+      # Stack decorators at runtime — order matters:
+      # source = CompressionDecorator(EncryptionDecorator(FileDataSource("data.txt")))
+      # source.write("Hello World")
+      # Reading reverses the chain automatically
+
+      # === Python function decorator for cross-cutting concerns ===
+      def retry(max_attempts: int = 3, delay: float = 1.0):
+          """Decorator factory — retry a function on exception."""
+          def decorator(func):
+              @functools.wraps(func)
+              def wrapper(*args, **kwargs):
+                  last_exc = None
+                  for attempt in range(1, max_attempts + 1):
+                      try:
+                          return func(*args, **kwargs)
+                      except Exception as exc:
+                          last_exc = exc
+                          print(f"Attempt {attempt} failed: {exc}. Retrying...")
+                          time.sleep(delay)
+                  raise last_exc
+              return wrapper
+          return decorator
+
+      @retry(max_attempts=3, delay=0.5)
+      def fetch_user_from_api(user_id: int) -> dict:
+          import random
+          if random.random() < 0.6:
+              raise ConnectionError("Transient network error")
+          return {"id": user_id, "name": "Alice"}
+      ```
+
+      ---
+
+      ### Facade — Simplify a Complex Subsystem
+
+      ```python
+      # Imagine a complex home theatre with many subsystems:
+      class Projector:
+          def on(self): print("Projector: ON")
+          def set_input(self, source): print(f"Projector: input set to {source}")
+
+      class SoundSystem:
+          def on(self): print("Sound: ON")
+          def set_volume(self, level): print(f"Sound: volume at {level}")
+          def set_surround(self): print("Sound: surround mode enabled")
+
+      class StreamingDevice:
+          def on(self): print("Streaming: ON")
+          def play(self, title): print(f"Streaming: playing '{title}'")
+
+      class Lights:
+          def dim(self, level): print(f"Lights: dimmed to {level}%")
+
+      # Facade — one simple interface for a common complex operation:
+      class HomeTheatreFacade:
+          def __init__(self):
+              self._projector = Projector()
+              self._sound = SoundSystem()
+              self._streaming = StreamingDevice()
+              self._lights = Lights()
+
+          def watch_movie(self, title: str) -> None:
+              print("--- Preparing movie night ---")
+              self._lights.dim(20)
+              self._projector.on()
+              self._projector.set_input("HDMI-1")
+              self._sound.on()
+              self._sound.set_volume(40)
+              self._sound.set_surround()
+              self._streaming.on()
+              self._streaming.play(title)
+
+          def end_movie(self) -> None:
+              print("--- Shutting down ---")
+              self._lights.dim(100)
+
+      theatre = HomeTheatreFacade()
+      theatre.watch_movie("Dune: Part Two")
+      # Client interacts with ONE method rather than six subsystems
+      ```
+
+      ---
+
+      ### Proxy — Control Access to an Object
+
+      ```python
+      from abc import ABC, abstractmethod
+
+      class ImageLoader(ABC):
+          @abstractmethod
+          def display(self, filename: str) -> None: ...
+
+      class RealImageLoader(ImageLoader):
+          def display(self, filename: str) -> None:
+              print(f"[DISK IO] Loading and displaying {filename}")
+
+      class LazyImageProxy(ImageLoader):
+          """Virtual proxy — defers expensive loading until first use."""
+          def __init__(self):
+              self._real: RealImageLoader | None = None
+              self._cache: dict[str, bool] = {}
+
+          def display(self, filename: str) -> None:
+              if filename not in self._cache:
+                  if self._real is None:
+                      self._real = RealImageLoader()
+                  self._real.display(filename)
+                  self._cache[filename] = True
+              else:
+                  print(f"[CACHE HIT] Showing cached {filename}")
+
+      proxy = LazyImageProxy()
+      proxy.display("hero.jpg")   # triggers real load
+      proxy.display("hero.jpg")   # served from cache
+      ```
+
+  - heading: "Behavioural Patterns"
+    content: |
+      ## Behavioural Patterns
+
+      Behavioural patterns define how objects interact and distribute responsibility.
+
+      ### Observer — Decouple Event Publishers from Subscribers
+
+      ```python
+      from __future__ import annotations
+      from abc import ABC, abstractmethod
+      from typing import Any
+
+      class Observer(ABC):
+          @abstractmethod
+          def update(self, event: str, data: Any) -> None: ...
+
+      class EventEmitter:
+          """Subject / Publisher"""
+          def __init__(self):
+              self._listeners: dict[str, list[Observer]] = {}
+
+          def subscribe(self, event: str, observer: Observer) -> None:
+              self._listeners.setdefault(event, []).append(observer)
+
+          def unsubscribe(self, event: str, observer: Observer) -> None:
+              self._listeners.get(event, []).remove(observer)
+
+          def emit(self, event: str, data: Any = None) -> None:
+              for observer in self._listeners.get(event, []):
+                  observer.update(event, data)
+
+      class EmailNotifier(Observer):
+          def update(self, event: str, data: Any) -> None:
+              print(f"[EMAIL] Event '{event}': sending notification with data={data}")
+
+      class AuditLogger(Observer):
+          def update(self, event: str, data: Any) -> None:
+              print(f"[AUDIT] {event} occurred: {data}")
+
+      class InventoryService(EventEmitter):
+          def __init__(self):
+              super().__init__()
+              self._stock: dict[str, int] = {}
+
+          def update_stock(self, product_id: str, qty: int) -> None:
+              self._stock[product_id] = qty
+              self.emit("stock_updated", {"product_id": product_id, "qty": qty})
+              if qty == 0:
+                  self.emit("out_of_stock", {"product_id": product_id})
+
+      inventory = InventoryService()
+      inventory.subscribe("out_of_stock", EmailNotifier())
+      inventory.subscribe("stock_updated", AuditLogger())
+      inventory.update_stock("SKU-001", 5)
+      inventory.update_stock("SKU-001", 0)
+      ```
+
+      ---
+
+      ### Strategy — Select an Algorithm at Runtime
+
+      ```python
+      from abc import ABC, abstractmethod
+      from typing import Callable
+
+      class SortStrategy(ABC):
+          @abstractmethod
+          def sort(self, data: list) -> list: ...
+
+      class QuickSort(SortStrategy):
+          def sort(self, data: list) -> list:
+              if len(data) <= 1:
+                  return data
+              pivot = data[len(data) // 2]
+              left  = [x for x in data if x < pivot]
+              mid   = [x for x in data if x == pivot]
+              right = [x for x in data if x > pivot]
+              return self.sort(left) + mid + self.sort(right)
+
+      class MergeSort(SortStrategy):
+          def sort(self, data: list) -> list:
+              if len(data) <= 1:
+                  return data
+              mid = len(data) // 2
+              left  = self.sort(data[:mid])
+              right = self.sort(data[mid:])
+              return self._merge(left, right)
+
+          def _merge(self, left: list, right: list) -> list:
+              result = []
+              i = j = 0
+              while i < len(left) and j < len(right):
+                  if left[i] <= right[j]:
+                      result.append(left[i]); i += 1
+                  else:
+                      result.append(right[j]); j += 1
+              return result + left[i:] + right[j:]
+
+      class Sorter:
+          """Context — delegates to a Strategy."""
+          def __init__(self, strategy: SortStrategy):
+              self._strategy = strategy
+
+          def set_strategy(self, strategy: SortStrategy) -> None:
+              self._strategy = strategy
+
+          def sort(self, data: list) -> list:
+              return self._strategy.sort(data)
+
+      sorter = Sorter(QuickSort())
+      print(sorter.sort([5, 2, 8, 1, 9]))   # [1, 2, 5, 8, 9]
+      sorter.set_strategy(MergeSort())
+      print(sorter.sort([5, 2, 8, 1, 9]))   # [1, 2, 5, 8, 9]
+      ```
+
+      ---
+
+      ### Command — Encapsulate Operations for Undo/Redo
+
+      ```python
+      from abc import ABC, abstractmethod
+
+      class Command(ABC):
+          @abstractmethod
+          def execute(self) -> None: ...
+
+          @abstractmethod
+          def undo(self) -> None: ...
+
+      class TextEditor:
+          def __init__(self):
+              self.text = ""
+
+          def insert(self, position: int, content: str) -> None:
+              self.text = self.text[:position] + content + self.text[position:]
+
+          def delete(self, position: int, length: int) -> None:
+              self.text = self.text[:position] + self.text[position + length:]
+
+      class InsertCommand(Command):
+          def __init__(self, editor: TextEditor, pos: int, content: str):
+              self.editor = editor
+              self.pos = pos
+              self.content = content
+
+          def execute(self) -> None:
+              self.editor.insert(self.pos, self.content)
+
+          def undo(self) -> None:
+              self.editor.delete(self.pos, len(self.content))
+
+      class CommandHistory:
+          def __init__(self):
+              self._history: list[Command] = []
+
+          def execute(self, cmd: Command) -> None:
+              cmd.execute()
+              self._history.append(cmd)
+
+          def undo(self) -> None:
+              if self._history:
+                  self._history.pop().undo()
+
+      editor = TextEditor()
+      history = CommandHistory()
+      history.execute(InsertCommand(editor, 0, "Hello"))
+      history.execute(InsertCommand(editor, 5, " World"))
+      print(editor.text)  # "Hello World"
+      history.undo()
+      print(editor.text)  # "Hello"
+      ```
+
+      ---
+
+      ### Template Method — Define a Skeleton Algorithm
+
+      ```python
+      from abc import ABC, abstractmethod
+
+      class DataMigration(ABC):
+          """Template Method: fixed skeleton with customisable steps."""
+
+          def run(self) -> None:
+              """The template method — invariant steps in fixed order."""
+              self._connect()
+              data = self._extract()
+              transformed = self._transform(data)
+              self._load(transformed)
+              self._disconnect()
+
+          def _connect(self) -> None:
+              print("Connecting to source and destination...")
+
+          def _disconnect(self) -> None:
+              print("Closing connections.")
+
+          @abstractmethod
+          def _extract(self) -> list: ...
+
+          @abstractmethod
+          def _transform(self, data: list) -> list: ...
+
+          @abstractmethod
+          def _load(self, data: list) -> None: ...
+
+      class StudentMigration(DataMigration):
+          def _extract(self) -> list:
+              return [{"name": "Alice", "grade": "A"}, {"name": "Bob", "grade": "B"}]
+
+          def _transform(self, data: list) -> list:
+              return [{"student_name": d["name"], "letter_grade": d["grade"]} for d in data]
+
+          def _load(self, data: list) -> None:
+              print(f"Loaded {len(data)} students into new schema")
+
+      StudentMigration().run()
+      ```
+
+  - heading: "Code Smells & Refactoring Techniques"
+    content: |
+      ## Code Smells & Refactoring Techniques
+
+      A **code smell** (Fowler, *Refactoring: Improving the Design of Existing Code*, 1999) is
+      a surface symptom of a deeper design problem. Smells don't necessarily represent bugs, but
+      they signal that the code will be hard to change, test, and understand.
+
+      ### Long Method
+
+      **Smell:** A method with more than 20–30 lines usually does too many things.
+
+      ```python
+      # BAD: 40-line method doing extraction, validation, transformation, and persistence
+      def process_order(order_data: dict) -> str:
+          # Step 1: Extract fields (10 lines)
+          user_id   = order_data.get("user_id")
+          items     = order_data.get("items", [])
+          coupon    = order_data.get("coupon")
+          address   = order_data.get("shipping_address")
+
+          # Step 2: Validate (10 lines)
+          if not user_id:
+              raise ValueError("user_id required")
+          if not items:
+              raise ValueError("order must have at least one item")
+          for item in items:
+              if item.get("qty", 0) <= 0:
+                  raise ValueError(f"Invalid qty for {item['sku']}")
+
+          # Step 3: Calculate total (10 lines)
+          subtotal = sum(i["price"] * i["qty"] for i in items)
+          discount = 0
+          if coupon == "SAVE10":
+              discount = subtotal * 0.10
+          elif coupon == "SAVE20":
+              discount = subtotal * 0.20
+          total = subtotal - discount
+
+          # Step 4: Persist and return confirmation
+          order_id = f"ORD-{user_id}-{int(total*100)}"
+          print(f"Order {order_id} saved for ${total:.2f}")
+          return order_id
+      ```
+
+      **Refactoring — Extract Method:**
+
+      ```python
+      # GOOD: Each private method does one thing and is independently testable
+      def _validate_order(order_data: dict) -> None:
+          if not order_data.get("user_id"):
+              raise ValueError("user_id required")
+          items = order_data.get("items", [])
+          if not items:
+              raise ValueError("order must have at least one item")
+          for item in items:
+              if item.get("qty", 0) <= 0:
+                  raise ValueError(f"Invalid qty for {item['sku']}")
+
+      def _calculate_total(items: list, coupon: str | None) -> float:
+          subtotal = sum(i["price"] * i["qty"] for i in items)
+          discounts = {"SAVE10": 0.10, "SAVE20": 0.20}
+          discount_rate = discounts.get(coupon, 0.0)
+          return subtotal * (1 - discount_rate)
+
+      def process_order(order_data: dict) -> str:
+          _validate_order(order_data)
+          total    = _calculate_total(order_data["items"], order_data.get("coupon"))
+          order_id = f"ORD-{order_data['user_id']}-{int(total*100)}"
+          print(f"Order {order_id} saved for ${total:.2f}")
+          return order_id
+      ```
+
+      ---
+
+      ### God Class (Large Class)
+
+      **Smell:** A class with too many responsibilities, methods, and instance variables.
+      It "knows too much" and "does too much". Typically a sign that SRP was ignored.
+
+      **Refactoring — Extract Class:** Move cohesive groups of fields and methods into new classes.
+
+      ---
+
+      ### Feature Envy
+
+      **Smell:** A method uses more data from *another* class than from its own class — it
+      "envies" that other class and probably belongs there.
+
+      ```python
+      # BAD: ShippingCostCalculator is obsessed with Order internals
+      class Order:
+          def __init__(self, weight_kg, destination_country, is_express):
+              self.weight_kg = weight_kg
+              self.destination_country = destination_country
+              self.is_express = is_express
+
+      class ShippingCostCalculator:
+          def calculate(self, order: Order) -> float:
+              base = order.weight_kg * 2.5        # accessing order fields...
+              if order.destination_country != "US":
+                  base *= 1.5                     # ...again...
+              if order.is_express:
+                  base *= 2.0                     # ...and again
+              return base
+
+      # GOOD: Move Method — behaviour belongs on Order
+      class Order:
+          def __init__(self, weight_kg, destination_country, is_express):
+              self.weight_kg = weight_kg
+              self.destination_country = destination_country
+              self.is_express = is_express
+
+          def shipping_cost(self) -> float:
+              """Cohesive — lives with the data it needs."""
+              base = self.weight_kg * 2.5
+              if self.destination_country != "US":
+                  base *= 1.5
+              if self.is_express:
+                  base *= 2.0
+              return base
+      ```
+
+      ---
+
+      ### Primitive Obsession
+
+      **Smell:** Using primitive types (str, int, float) to represent domain concepts that
+      deserve their own class. Leads to scattered validation and no encapsulation.
+
+      ```python
+      # BAD: money represented as raw float — no currency, precision issues, no validation
+      def transfer(amount: float, from_account: str, to_account: str): ...
+
+      # GOOD: Introduce a Value Object
+      from decimal import Decimal
+
+      class Money:
+          def __init__(self, amount: Decimal | int | str, currency: str = "USD"):
+              self.amount = Decimal(str(amount)).quantize(Decimal("0.01"))
+              self.currency = currency.upper()
+              if self.amount < 0:
+                  raise ValueError("Money amount cannot be negative")
+
+          def __add__(self, other: "Money") -> "Money":
+              if self.currency != other.currency:
+                  raise ValueError(f"Cannot add {self.currency} and {other.currency}")
+              return Money(self.amount + other.amount, self.currency)
+
+          def __repr__(self) -> str:
+              return f"{self.currency} {self.amount:.2f}"
+
+      price = Money("19.99")
+      tax   = Money("1.60")
+      total = price + tax          # Money: USD 21.59
+      ```
+
+      ---
+
+      ### Replace Conditional with Polymorphism
+
+      ```python
+      # BAD: type-switch pattern — adding new shapes requires modifying this function
+      def area(shape_type: str, **dims) -> float:
+          if shape_type == "circle":
+              return 3.14159 * dims["radius"] ** 2
+          elif shape_type == "rectangle":
+              return dims["width"] * dims["height"]
+          elif shape_type == "triangle":
+              return 0.5 * dims["base"] * dims["height"]
+          raise ValueError(f"Unknown shape: {shape_type}")
+
+      # GOOD: Each shape knows how to compute its own area (OCP + polymorphism)
+      from abc import ABC, abstractmethod
+      import math
+
+      class Shape(ABC):
+          @abstractmethod
+          def area(self) -> float: ...
+
+      class Circle(Shape):
+          def __init__(self, radius: float): self.radius = radius
+          def area(self) -> float: return math.pi * self.radius ** 2
+
+      class Rectangle(Shape):
+          def __init__(self, w: float, h: float): self.w = w; self.h = h
+          def area(self) -> float: return self.w * self.h
+
+      class Triangle(Shape):
+          def __init__(self, base: float, height: float):
+              self.base = base; self.height = height
+          def area(self) -> float: return 0.5 * self.base * self.height
+
+      shapes: list[Shape] = [Circle(5), Rectangle(4, 6), Triangle(3, 8)]
+      for shape in shapes:
+          print(f"{type(shape).__name__}: area = {shape.area():.2f}")
+      ```
+
+  - heading: "DRY, KISS, YAGNI & Clean Code Metrics"
+    content: |
+      ## DRY, KISS, YAGNI & Clean Code Metrics
+
+      ### The Three Companion Principles
+
+      | Principle | Full Name | Core Idea |
+      |-----------|-----------|-----------|
+      | **DRY** | Don't Repeat Yourself | Every piece of knowledge must have a single, unambiguous, authoritative representation in the system |
+      | **KISS** | Keep It Simple, Stupid | Simplicity should be a key goal; avoid unnecessary complexity |
+      | **YAGNI** | You Aren't Gonna Need It | Don't add functionality until it is needed; over-engineering is waste |
+
+      **DRY violation example and fix:**
+
+      ```python
+      # BAD: Validation logic duplicated in three places
+      def register_user(email: str):
+          if "@" not in email or "." not in email.split("@")[-1]:
+              raise ValueError("Invalid email")
+          # ...
+
+      def update_email(email: str):
+          if "@" not in email or "." not in email.split("@")[-1]:
+              raise ValueError("Invalid email")
+          # ...
+
+      # GOOD: Single source of truth
+      import re
+
+      _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+
+      def validate_email(email: str) -> None:
+          if not _EMAIL_RE.match(email):
+              raise ValueError(f"Invalid email address: {email!r}")
+
+      def register_user(email: str):
+          validate_email(email)
+          # ...
+
+      def update_email(email: str):
+          validate_email(email)
+          # ...
+      ```
+
+      ### Cyclomatic Complexity
+
+      **Cyclomatic Complexity (CC)** (McCabe, 1976) measures the number of linearly independent
+      paths through a piece of code. It is defined as:
+
+      ```
+      CC = E - N + 2P
+      ```
+
+      Where E = edges in the control flow graph, N = nodes, P = connected components (usually 1).
+
+      A simpler rule of thumb: **CC = 1 + number of decision points** (each `if`, `elif`,
+      `for`, `while`, `and`, `or`, `except` adds 1).
+
+      ```python
+      def classify_bmi(weight_kg: float, height_m: float) -> str:
+          bmi = weight_kg / (height_m ** 2)      # CC starts at 1
+          if bmi < 18.5:                          # +1 → CC = 2
+              return "Underweight"
+          elif bmi < 25.0:                        # +1 → CC = 3
+              return "Normal"
+          elif bmi < 30.0:                        # +1 → CC = 4
+              return "Overweight"
+          else:
+              return "Obese"                      # Final CC = 4
+      ```
+
+      **CC guidelines (SEI / NIST):**
+
+      | CC | Risk Level | Action |
+      |----|-----------|--------|
+      | 1–10 | Simple | No action needed |
+      | 11–20 | Moderate | Consider refactoring |
+      | 21–50 | Complex | Refactor; add tests |
+      | > 50 | Untestable | Rewrite |
+
+      ### Measuring with radon
+
+      ```bash
+      pip install radon
+
+      # Cyclomatic complexity per function:
+      radon cc src/ -s -a
+      # Output:
+      # src/pricing.py
+      #     F 12:0 calculate_discount - A (2)
+      #     F 34:0 process_order - C (14)  ← flag for refactoring
+      # Average complexity: B (6.3)
+
+      # Maintainability Index (0–100, higher is better):
+      radon mi src/ -s
+      # src/pricing.py - A (82.4)
+
+      # Raw metrics (LOC, LLOC, comments):
+      radon raw src/ -s
+      ```
+
+      ### Naming Conventions (PEP 8)
+
+      ```python
+      # Variables and functions: snake_case
+      total_price = 0.0
+      def calculate_shipping_cost(weight_kg: float) -> float: ...
+
+      # Classes: PascalCase
+      class OrderRepository: ...
+
+      # Constants: SCREAMING_SNAKE_CASE
+      MAX_RETRY_ATTEMPTS = 3
+      DEFAULT_TIMEOUT_SECONDS = 30
+
+      # Private members: leading underscore convention
+      class Cart:
+          def __init__(self):
+              self._items: list = []       # private by convention
+              self.__total: float = 0.0    # name-mangled (stronger privacy)
+
+      # Type aliases: PascalCase
+      UserId = int
+      ProductSKU = str
+      ```
+
+      ### Function Length Guidelines
+
+      - **≤ 20 lines**: ideal — fits on one screen, easily tested
+      - **20–40 lines**: acceptable if logic is cohesive
+      - **> 40 lines**: strong refactoring candidate (Extract Method)
+
+      **SonarQube** is a popular static analysis platform that tracks CC, code duplication,
+      security hotspots, and technical debt across a codebase over time. It integrates with
+      CI/CD pipelines via Quality Gates — failing the gate blocks a merge if metrics degrade.
+
+quiz:
+  - question: "The Open/Closed Principle states that software entities should be open for extension but closed for modification. Which Python mechanism most directly enables this principle for a family of related algorithms?"
+    options:
+      - "Using global variables so subclasses can read parent state"
+      - "Defining an abstract base class (ABC) with abstract methods that concrete subclasses implement"
+      - "Using multiple inheritance so every class inherits all possible behaviours"
+      - "Storing logic in configuration files rather than code"
+    answer: 1
+    explanation: "Abstract base classes define the extension point (the interface contract) while concrete subclasses provide the implementation. New behaviour is added by writing a new subclass — no existing code is modified. This is the classic OCP enabler in Python, directly supported by the `abc` module. Global variables violate encapsulation; multiple inheritance adds complexity; config files cannot replace polymorphic behaviour."
+
+  - question: "A colleague's `ReportGenerator` class has 15 methods, 400 lines, handles database queries, PDF rendering, email delivery, and caching. Which SOLID principle does it most severely violate, and what is the primary refactoring technique?"
+    options:
+      - "LSP — use correct subtyping hierarchies throughout"
+      - "ISP — split the class into narrow interfaces"
+      - "SRP — extract cohesive groups of methods into separate, focused classes"
+      - "DIP — inject all four concerns as dependencies"
+    answer: 2
+    explanation: "The class has multiple reasons to change (database schema changes, PDF library updates, email provider changes, cache invalidation policy changes) — a direct SRP violation. The fix is Extract Class: move cohesive groups of fields and methods (DB access → Repository, PDF → ReportRenderer, email → NotificationService, cache → CacheService) into focused classes. DIP can then be applied to inject these via constructor."
+
+  - question: "You are implementing the Observer pattern for an order management system. The `OrderService` notifies `EmailNotifier`, `InventoryUpdater`, and `AuditLogger` when an order is placed. What is the key advantage over calling those three classes directly from `OrderService.place_order()`?"
+    options:
+      - "The Observer pattern makes the code faster by parallelising the three notifications"
+      - "OrderService is decoupled from its observers — new notification types can be added without modifying OrderService"
+      - "Observers can be written in a different programming language than the Subject"
+      - "The pattern ensures notifications are delivered in a guaranteed order"
+    answer: 1
+    explanation: "The core benefit of Observer is decoupling the Subject from its Observers. `OrderService.place_order()` calls `emit('order_placed', data)` and has no knowledge of what observers are registered. Adding a new `SlackNotifier` requires only registering it — zero changes to `OrderService`. Direct method calls create tight coupling: every new notification type requires editing `place_order()`, violating OCP."
+
+  - question: "Which code smell is demonstrated by this Python code: `if employee.department.budget.fiscal_year == 2024:`?"
+    options:
+      - "Primitive Obsession — fiscal_year should be a typed object"
+      - "Feature Envy — this code navigates too deeply through another object's structure (Law of Demeter violation)"
+      - "Duplicate Code — the chain is likely repeated elsewhere"
+      - "Long Method — the condition is part of a method that is too long"
+    answer: 1
+    explanation: "This is a Law of Demeter (LoD) violation, closely related to Feature Envy. The code 'reaches through' three objects to get a value, creating hidden coupling to the internal structure of `employee.department.budget`. If `Budget` renames `fiscal_year` or `Department` changes how it holds a budget, this distant call breaks. The fix is to move the relevant behaviour closer to the data: e.g., `employee.is_in_fiscal_year(2024)` which delegates appropriately."
+
+  - question: "A function has cyclomatic complexity of 18. According to McCabe's scale, what does this mean and what should the team do?"
+    options:
+      - "CC of 18 is acceptable (within 1–20 range) — no action needed"
+      - "CC of 18 is in the 'moderate' range (11–20) — consider refactoring to reduce the number of decision paths"
+      - "CC of 18 exceeds the maximum allowed by PEP 8 — the linter will fail"
+      - "CC of 18 means the function has 18 unit tests, which is sufficient coverage"
+    answer: 1
+    explanation: "McCabe's CC scale places 11–20 in the 'moderate' risk range. The team should consider refactoring by extracting cohesive sub-routines (Extract Method), simplifying conditionals (consolidate boolean expressions, Replace Conditional with Polymorphism), or breaking the function into a pipeline of smaller functions. PEP 8 does not define CC limits — that is enforced by tools like radon, flake8-cognitive-complexity, or SonarQube. CC does not equal number of tests."

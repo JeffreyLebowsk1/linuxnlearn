@@ -1,0 +1,791 @@
+title: "Agile Development & Professional Git Workflow"
+order: 1
+summary: "Master the Scrum framework, agile sprint mechanics, GitFlow and trunk-based branching strategies, pull-request workflows, conventional commits, and merge-conflict resolution."
+learning_objectives:
+  - "Plan a sprint by decomposing epics into user stories, estimating story points using Fibonacci sizing, and building a prioritised Sprint Backlog."
+  - "Execute the GitFlow branching model — creating feature, release, and hotfix branches against main and develop — following industry naming conventions."
+  - "Write a meaningful pull request (title, description, linked issue, reviewable diff) and apply a structured code-review checklist."
+  - "Resolve merge conflicts using both the CLI (conflict markers + git mergetool) and VS Code's three-way merge editor."
+  - "Apply Conventional Commits syntax (feat/fix/docs/refactor/BREAKING CHANGE) and explain how it drives semantic versioning and automated changelogs."
+builds_on:
+  - "Python programming (CS 215) — Python scripts are used in CI pipeline examples throughout this lesson"
+  - "Database Systems (CS 310) — schema migrations under version control are referenced as a practical Git use-case"
+sections:
+  - heading: "The Software Development Lifecycle & Agile Manifesto"
+    content: |
+      ## The Software Development Lifecycle & Agile Manifesto
+
+      ### Why Waterfall Falls Short
+
+      The **Waterfall** model (Royce, 1970) organises work into strictly sequential phases:
+      Requirements → Design → Implementation → Verification → Maintenance. Each phase must be
+      completed and signed off before the next begins. This works well when requirements are
+      perfectly stable — rare in practice. The fundamental problems are:
+
+      | Waterfall Weakness | Consequence |
+      |--------------------|-------------|
+      | Requirements frozen upfront | Changes late in the project are expensive or impossible |
+      | Working software delivered only at the end | Stakeholders cannot give feedback until it is too late |
+      | Long feedback loops | Defects introduced in design surface months later during testing |
+      | Big-bang integration | Merging six months of parallel development causes catastrophic failures |
+
+      Studies by the Standish Group (CHAOS Report) consistently show that only ~30% of IT
+      projects succeed on traditional plan-driven approaches. Most overrun budget, miss deadlines,
+      or are cancelled entirely.
+
+      ### The Agile Manifesto (2001)
+
+      In February 2001, seventeen practitioners met in Snowbird, Utah and signed the
+      [Agile Manifesto](https://agilemanifesto.org/). Its four core values are:
+
+      > **Individuals and interactions** over processes and tools
+      > **Working software** over comprehensive documentation
+      > **Customer collaboration** over contract negotiation
+      > **Responding to change** over following a plan
+
+      The right side has value, but the left side is valued *more*. This is a statement of
+      **priorities**, not a rejection of process or documentation.
+
+      The manifesto is supported by **12 principles**, the most important of which are:
+
+      1. Deliver working software frequently (weeks rather than months).
+      2. Welcome changing requirements, even late in development.
+      3. Business people and developers work together daily.
+      4. The best architectures emerge from self-organising teams.
+      5. Sustainable pace — agile processes promote sustainable development indefinitely.
+      6. Simplicity — the art of maximising the amount of work NOT done.
+
+      ### Agile Frameworks at a Glance
+
+      | Framework | Cadence | Planning Horizon | Best For |
+      |-----------|---------|-----------------|----------|
+      | **Scrum** | 1–4 week sprints | Sprint-by-sprint | Feature product teams (3–9 people) |
+      | **Kanban** | Continuous flow | Work-in-progress (WIP) limits | Operations, support, maintenance |
+      | **SAFe** (Scaled Agile Framework) | Program Increments (8–12 weeks) | Enterprise portfolio | Large organisations (100+ engineers) |
+      | **XP** (Extreme Programming) | 1–2 week iterations | Story-by-story | High-quality, technically-driven teams |
+
+      **Key insight:** Scrum and Kanban are *complementary*, not competing. Many teams use
+      "Scrumban" — Scrum ceremonies with Kanban-style WIP limits on the board.
+
+  - heading: "Scrum Framework in Depth"
+    content: |
+      ## Scrum Framework in Depth
+
+      Scrum is a lightweight framework defined by three **roles**, three **artefacts**, and four
+      **ceremonies**. The current authoritative definition is the
+      [Scrum Guide](https://scrumguides.org/) (Schwaber & Sutherland, 2020).
+
+      ### Roles
+
+      | Role | Accountabilities |
+      |------|-----------------|
+      | **Product Owner (PO)** | Maximises product value; owns and orders the Product Backlog; the single voice of the stakeholders |
+      | **Scrum Master (SM)** | Serves the team by removing impediments, coaching Scrum adoption, facilitating ceremonies — NOT a project manager |
+      | **Developers** | Self-organising cross-functional group (designers, engineers, QA) who do the work; typically 3–9 people |
+
+      ### Artefacts
+
+      **Product Backlog** — an ordered list of everything that might be needed in the product.
+      Items are expressed as **User Stories**:
+
+      ```
+      As a [type of user],
+      I want to [perform some action],
+      so that [I achieve some goal / value].
+
+      Acceptance Criteria:
+        - Given [context], when [action], then [expected outcome]
+        - ...
+      ```
+
+      Example:
+      ```
+      As a registered student,
+      I want to filter course listings by department,
+      so that I can quickly find relevant courses without scrolling through hundreds of results.
+
+      Acceptance Criteria:
+        - Given I am on the course catalogue page,
+          when I select "Computer Science" from the department dropdown,
+          then only CS courses are displayed within 500 ms.
+        - Given no courses match the selected filter,
+          when the filter is applied,
+          then an empty-state message "No courses found" is shown.
+      ```
+
+      **Story Points (Fibonacci sizing):** Rather than estimating in hours (which introduces
+      false precision), teams use abstract story points on the Fibonacci scale: 1, 2, 3, 5, 8,
+      13, 21. Larger numbers signal uncertainty and should trigger story splitting.
+
+      | Story Points | Interpretation |
+      |-------------|----------------|
+      | 1 | Trivial — a config change or minor copy update |
+      | 2–3 | Small — straightforward feature, well-understood |
+      | 5–8 | Medium — moderate complexity, some unknowns |
+      | 13 | Large — significant unknowns; consider splitting |
+      | 21+ | Too big — must be split before entering a sprint |
+
+      **Velocity** = the average number of story points completed per sprint over the last 3–5
+      sprints. Used to forecast how many backlog items fit in the next sprint. Velocity is a
+      *planning tool*, not a performance metric.
+
+      **Definition of Done (DoD)** — a shared checklist that every Increment must satisfy before
+      it can be called "Done". Example DoD:
+
+      ```
+      ✅ Code written and self-reviewed
+      ✅ Unit tests written (≥ 80% branch coverage)
+      ✅ Integration tests pass in CI
+      ✅ Code reviewed and approved by ≥ 1 peer
+      ✅ Linting and type checks pass
+      ✅ Documentation updated (docstrings, README, ADR if needed)
+      ✅ Feature tested in staging environment
+      ✅ Product Owner accepted the story
+      ```
+
+      ### Ceremonies
+
+      | Ceremony | Time-box | Purpose |
+      |----------|----------|---------|
+      | **Sprint Planning** | ≤ 8 h for 4-week sprint | Select stories from backlog; decompose into tasks; commit to Sprint Goal |
+      | **Daily Standup** | ≤ 15 min | Synchronise; surface impediments. Three questions: What did I do? What will I do? What's blocking me? |
+      | **Sprint Review** | ≤ 4 h | Demo working software to stakeholders; gather feedback; update backlog |
+      | **Retrospective** | ≤ 3 h | Inspect team process; identify improvements (Start/Stop/Continue) |
+
+      ### Scrum Cycle (Mermaid)
+
+      ```mermaid
+      flowchart LR
+          PB[(Product\nBacklog)] -->|Sprint Planning| SB[(Sprint\nBacklog)]
+          SB --> SP[Sprint\n1–4 weeks]
+          SP -->|Daily Standup| SP
+          SP -->|Increment| REV[Sprint\nReview]
+          REV --> RETRO[Retrospective]
+          RETRO -->|Refined Backlog| PB
+          REV -->|Stakeholder Feedback| PB
+      ```
+
+      ### Burn-Down Chart
+
+      A burn-down chart tracks remaining story points against calendar days in the sprint. The
+      ideal line goes from total sprint points on Day 0 to 0 on the last day. Teams use burn-down
+      to detect whether they are on track early enough to react.
+
+      ```
+      Sprint Burn-Down (20 points, 10 days)
+
+      Points │20 ●
+      Left   │18  ╲ ideal line
+             │16   ●
+             │14    ╲
+             │12  ●  ╲
+             │10      ●  ← actual progress
+             │ 8         ●
+             │ 6            ●
+             │ 4               ●
+             │ 2                  ●
+             │ 0                     ╲●
+             └─────────────────────────
+               1  2  3  4  5  6  7  8  9 10
+                                      Sprint Day
+      ```
+
+  - heading: "Git Internals & Branching Models"
+    content: |
+      ## Git Internals & Branching Models
+
+      ### The Git Object Model
+
+      Git is a **content-addressable filesystem** layered with a version control interface.
+      Everything stored in `.git/objects/` is addressed by the SHA-1 (now SHA-256 in new
+      repositories) hash of its content. There are four object types:
+
+      | Object | Description | Created By |
+      |--------|-------------|-----------|
+      | **blob** | Raw file contents (no filename or metadata) | `git add` |
+      | **tree** | Directory listing — maps filenames to blob/tree SHAs | `git commit` |
+      | **commit** | Snapshot pointer (tree SHA + parent SHA + author + message) | `git commit` |
+      | **tag** | Named, signed reference to a commit | `git tag -a` |
+
+      ```bash
+      # Inspect the type and content of any object:
+      git cat-file -t HEAD          # → commit
+      git cat-file -p HEAD          # → commit object: tree, parent, author, message
+      git cat-file -p HEAD^{tree}   # → tree object: mode, type, SHA, filename for each entry
+      ```
+
+      ### The Directed Acyclic Graph (DAG)
+
+      Git's history is a **DAG of commit objects**. Each commit (except the initial one) has one
+      or more parent pointers. Merges create commits with two parents. Branches are simply
+      lightweight, mutable pointers to commit SHAs stored in `.git/refs/heads/`.
+
+      `HEAD` is a symbolic reference pointing to the current branch (or directly to a commit
+      in "detached HEAD" state):
+
+      ```bash
+      cat .git/HEAD            # → ref: refs/heads/main
+      cat .git/refs/heads/main # → a3f7c91...  (commit SHA)
+      ```
+
+      ### GitFlow Branching Model
+
+      GitFlow (Driessen, 2010) defines a strict branching strategy around two eternal branches
+      and three supporting branch types:
+
+      | Branch | Lifetime | Purpose |
+      |--------|----------|---------|
+      | `main` (formerly `master`) | Permanent | Only production-ready, tagged releases |
+      | `develop` | Permanent | Integration branch; latest delivered development changes |
+      | `feature/*` | Per feature | New functionality branched from `develop` |
+      | `release/*` | Per release | Release preparation; only bug fixes, no new features |
+      | `hotfix/*` | Per critical bug | Urgent fixes branched from `main` |
+
+      ```bash
+      # Initialize GitFlow (requires git-flow tool or manual setup):
+      git flow init -d
+
+      # Start a new feature:
+      git flow feature start user-authentication
+      # equivalent to:
+      git checkout -b feature/user-authentication develop
+
+      # Finish a feature (merges back to develop, deletes branch):
+      git flow feature finish user-authentication
+
+      # Start a release:
+      git flow release start 1.2.0
+
+      # Finish a release (merges to main AND develop, tags main):
+      git flow release finish 1.2.0
+
+      # Emergency hotfix from production:
+      git flow hotfix start fix-login-crash
+      git flow hotfix finish fix-login-crash
+      ```
+
+      ### GitFlow Graph (Mermaid)
+
+      ```mermaid
+      gitGraph
+         commit id: "Initial commit" tag: "v0.1.0"
+         branch develop
+         checkout develop
+         commit id: "Setup project structure"
+         branch feature/user-auth
+         checkout feature/user-auth
+         commit id: "Add login endpoint"
+         commit id: "Add JWT middleware"
+         checkout develop
+         merge feature/user-auth id: "Merge user-auth"
+         branch release/1.0.0
+         checkout release/1.0.0
+         commit id: "Bump version to 1.0.0"
+         commit id: "Fix edge case in login"
+         checkout main
+         merge release/1.0.0 id: "Release 1.0.0" tag: "v1.0.0"
+         checkout develop
+         merge release/1.0.0 id: "Sync release fixes"
+         branch hotfix/fix-null-pointer
+         checkout hotfix/fix-null-pointer
+         commit id: "Fix null pointer in session"
+         checkout main
+         merge hotfix/fix-null-pointer id: "Hotfix" tag: "v1.0.1"
+         checkout develop
+         merge hotfix/fix-null-pointer id: "Sync hotfix"
+      ```
+
+      ### Trunk-Based Development (TBD)
+
+      GitFlow's long-lived branches can cause "merge hell". High-velocity teams (Google, Facebook)
+      use **Trunk-Based Development**: everyone commits to `main` at least once per day, using
+      **feature flags** to hide incomplete work:
+
+      ```python
+      # Feature flag pattern — new code is deployed but hidden
+      FEATURE_FLAGS = {
+          "new_dashboard": os.getenv("FF_NEW_DASHBOARD", "false") == "true",
+      }
+
+      def render_dashboard(user):
+          if FEATURE_FLAGS["new_dashboard"] and user.is_beta_tester:
+              return render_new_dashboard(user)
+          return render_legacy_dashboard(user)
+      ```
+
+      **Branch naming conventions (both models):**
+
+      ```
+      feature/JIRA-123-add-user-profile
+      fix/JIRA-456-null-pointer-in-checkout
+      docs/update-api-reference
+      chore/upgrade-django-4.2
+      release/2.1.0
+      hotfix/critical-sql-injection-fix
+      ```
+
+  - heading: "Pull Requests & Code Review"
+    content: |
+      ## Pull Requests & Code Review
+
+      A **Pull Request (PR)** — called a Merge Request (MR) in GitLab — is a request to merge
+      one branch into another. It is the primary mechanism for asynchronous code review,
+      knowledge sharing, and quality gatekeeping in distributed teams.
+
+      ### Anatomy of an Effective Pull Request
+
+      A good PR has five components:
+
+      1. **Title** — imperative mood, concise, references issue number.
+         ✅ `feat(auth): add JWT refresh token endpoint (#42)`
+         ❌ `various fixes`
+
+      2. **Description** — answers *what*, *why*, and *how*. Includes screenshots for UI changes.
+
+      3. **Linked issue** — `Closes #42` in the description triggers GitHub to close the issue
+         automatically on merge.
+
+      4. **Reviewable diff** — ideally < 400 lines changed. Large PRs are reviewed poorly.
+         Consider stacking PRs or feature flags to keep them small.
+
+      5. **Checklist** — self-review before requesting others' time.
+
+      ### PR Template (`.github/pull_request_template.md`)
+
+      ```markdown
+      ## Summary
+      <!-- What does this PR do? Link the related issue. -->
+      Closes #
+
+      ## Motivation
+      <!-- Why is this change necessary? What problem does it solve? -->
+
+      ## Changes
+      <!-- Bullet-point list of changes made -->
+      -
+      -
+
+      ## Testing
+      <!-- How was this tested? Include commands to reproduce. -->
+      - [ ] Unit tests added / updated
+      - [ ] Manual testing performed in local environment
+      - [ ] Tested against staging environment
+
+      ## Screenshots (if applicable)
+      <!-- Before / After screenshots for UI changes -->
+
+      ## Checklist
+      - [ ] Code follows the project style guide (PEP 8)
+      - [ ] Self-review completed
+      - [ ] Tests pass locally (`pytest -q`)
+      - [ ] Documentation updated
+      - [ ] No secrets or credentials committed
+      - [ ] No TODO comments left in code (or tracked as issues)
+      ```
+
+      ### Code Review Checklist
+
+      Reviewers should evaluate six dimensions:
+
+      | Dimension | Questions to Ask |
+      |-----------|-----------------|
+      | **Correctness** | Does the logic handle edge cases (empty input, None, overflow)? Are error paths handled? |
+      | **Readability** | Would a new team member understand this in 5 minutes? Are names meaningful? |
+      | **Tests** | Are tests present? Do they actually test the behaviour described? Is coverage adequate? |
+      | **Performance** | Are there O(n²) algorithms that could be O(n log n)? Are DB queries inside loops (N+1 problem)? |
+      | **Security** | Is user input validated and sanitised? Are credentials/secrets absent from code? SQL injection risk? |
+      | **Documentation** | Are public APIs docstring'd? Is the README or ADR updated if architecture changed? |
+
+      **Tone matters.** Code review is a conversation between professionals, not a judgment of
+      the author. Use the [Conventional Comments](https://conventionalcomments.org/) format:
+
+      ```
+      # Blocking issue — must be resolved before merge:
+      blocker: This loop will raise an IndexError on an empty list.
+                Consider checking `if not items: return []` first.
+
+      # Non-blocking suggestion:
+      suggestion: Consider using a dict comprehension here for readability:
+                  `{k: v for k, v in pairs}` instead of the for loop.
+
+      # Genuine praise — important for morale:
+      praise: Excellent use of the Strategy pattern here — this will make
+              adding new payment providers trivial.
+      ```
+
+      ### GitHub PR Workflow
+
+      ```
+      1. Push feature branch
+         git push origin feature/JIRA-123-add-profile
+
+      2. Open PR as Draft (work in progress, CI runs but no review yet)
+         gh pr create --draft --title "feat(profile): add user profile page" \
+                      --body "$(cat .github/pr_body.md)"
+
+      3. Mark Ready for Review when self-review and CI pass
+         gh pr ready
+
+      4. Request reviewers (auto-assigned via CODEOWNERS)
+         gh pr edit --add-reviewer alice,bob
+
+      5. Address review comments — push new commits
+         git add . && git commit -m "fix: address review comments on error handling"
+         git push
+
+      6. Squash and merge once approved
+         gh pr merge --squash --delete-branch
+      ```
+
+      ### CODEOWNERS & Branch Protection
+
+      `.github/CODEOWNERS` automatically assigns reviewers by path:
+
+      ```
+      # Global fallback — all files require review from a senior engineer
+      *                   @org/senior-engineers
+
+      # Backend API requires backend team review
+      src/api/            @org/backend-team
+
+      # Security-sensitive files require security team sign-off
+      src/auth/           @org/security-team
+      .github/workflows/  @org/devops-team
+
+      # Documentation can be reviewed by any engineer
+      docs/               @org/all-engineers
+      ```
+
+      **Branch protection rules** (GitHub Settings → Branches → Protection rules):
+      - Require pull request reviews before merging (minimum 1 approval)
+      - Require status checks to pass (CI/CD pipeline)
+      - Require branches to be up to date before merging
+      - Restrict who can push to `main` / `develop`
+
+  - heading: "Conventional Commits & Semantic Versioning"
+    content: |
+      ## Conventional Commits & Semantic Versioning
+
+      ### The Conventional Commits Specification
+
+      [Conventional Commits](https://www.conventionalcommits.org/) is a lightweight convention
+      for commit messages that makes the history machine-readable and human-scannable. Format:
+
+      ```
+      <type>[optional scope][!]: <description>
+
+      [optional body]
+
+      [optional footers]
+      ```
+
+      **Commit types:**
+
+      | Type | Purpose | Version Bump |
+      |------|---------|-------------|
+      | `feat` | New user-visible feature | MINOR |
+      | `fix` | Bug fix | PATCH |
+      | `docs` | Documentation only | none |
+      | `refactor` | Code change that is neither fix nor feat | none |
+      | `test` | Adding or correcting tests | none |
+      | `chore` | Build process, dependency updates | none |
+      | `perf` | Performance improvement | PATCH |
+      | `ci` | CI/CD configuration changes | none |
+      | `BREAKING CHANGE` | Footer or `!` suffix — incompatible API change | MAJOR |
+
+      **Real-world examples:**
+
+      ```bash
+      # Simple feature commit
+      git commit -m "feat(auth): add OAuth2 Google login endpoint"
+
+      # Bug fix with issue reference
+      git commit -m "fix(cart): prevent negative quantity when item removed
+
+      Previously, removing an item that wasn't in the cart would set
+      quantity to -1, causing downstream pricing errors.
+
+      Closes #117"
+
+      # Breaking change — two ways to signal it
+      git commit -m "feat(api)!: rename /users endpoint to /accounts
+
+      BREAKING CHANGE: All clients must update their base URL from
+      /api/v2/users to /api/v2/accounts. A redirect is NOT provided.
+      See migration guide in docs/migration-v3.md."
+
+      # Chore — no version bump
+      git commit -m "chore(deps): upgrade pytest from 7.3.1 to 7.4.3"
+      ```
+
+      ### commitlint Setup
+
+      ```bash
+      npm install --save-dev @commitlint/cli @commitlint/config-conventional
+      echo "module.exports = {extends: ['@commitlint/config-conventional']}" \
+           > commitlint.config.js
+
+      # Hook into git commit-msg hook via Husky:
+      npm install --save-dev husky
+      npx husky install
+      npx husky add .husky/commit-msg 'npx --no -- commitlint --edit "$1"'
+      ```
+
+      With this in place, a badly-formatted commit message is rejected immediately:
+
+      ```bash
+      $ git commit -m "various fixes"
+      ✖ subject may not be empty [subject-empty]
+      ✖ type may not be empty [type-empty]
+      ✖ found 2 problems, 0 warnings
+      ```
+
+      ### Semantic Versioning (SemVer)
+
+      SemVer ([semver.org](https://semver.org/)) defines version numbers as `MAJOR.MINOR.PATCH`:
+
+      | Component | Increment When |
+      |-----------|---------------|
+      | **MAJOR** | Incompatible API change (BREAKING CHANGE commit) |
+      | **MINOR** | New backwards-compatible functionality (`feat` commit) |
+      | **PATCH** | Backwards-compatible bug fix (`fix` / `perf` commit) |
+
+      ```
+      v1.4.2  →  fix commit  →  v1.4.3
+      v1.4.3  →  feat commit →  v1.5.0
+      v1.5.0  →  BREAKING CHANGE → v2.0.0
+      ```
+
+      Pre-release and build metadata:
+      ```
+      1.0.0-alpha.1      # pre-release: alpha, build 1
+      1.0.0-beta.3       # pre-release: beta, build 3
+      1.0.0-rc.1         # release candidate
+      1.0.0+20231215     # stable with build metadata (does not affect precedence)
+      ```
+
+      ### Tagging Releases and Automated CHANGELOG
+
+      ```bash
+      # Lightweight tag:
+      git tag v1.5.0
+
+      # Annotated tag (preferred — stored as a Git object, can be signed):
+      git tag -a v1.5.0 -m "Release v1.5.0: add OAuth2 login, fix cart pricing"
+      git push origin v1.5.0
+
+      # Generate CHANGELOG with git-cliff (reads conventional commits):
+      pip install git-cliff
+      git cliff --output CHANGELOG.md
+      git cliff --tag v1.5.0 --output CHANGELOG.md  # only up to a specific tag
+      ```
+
+      **Sample generated CHANGELOG.md entry:**
+
+      ```markdown
+      ## [1.5.0] - 2024-03-15
+
+      ### Features
+      - **auth:** add OAuth2 Google login endpoint (#201) — @alice
+      - **profile:** add avatar upload with S3 storage (#198) — @bob
+
+      ### Bug Fixes
+      - **cart:** prevent negative quantity when item removed (#117) — @alice
+      - **email:** retry on transient SMTP failures (#203) — @charlie
+
+      ### Documentation
+      - add migration guide for v1.5 API changes
+      ```
+
+  - heading: "Resolving Merge Conflicts"
+    content: |
+      ## Resolving Merge Conflicts
+
+      ### How Conflicts Arise
+
+      A merge conflict occurs when Git cannot automatically reconcile changes because **two
+      branches have modified the same lines of the same file** in different, incompatible ways.
+      Git's three-way merge algorithm compares:
+      1. The **common ancestor** (the commit where the branches diverged)
+      2. The **ours** side (current branch, typically `develop` / `main`)
+      3. The **theirs** side (the branch being merged in)
+
+      When all three versions of a region are different with no clear winner, Git inserts
+      **conflict markers** and halts the merge.
+
+      ### Conflict Markers Explained
+
+      ```python
+      # File: src/pricing.py  — after `git merge feature/discount-engine` on develop
+
+      def calculate_total(cart_items):
+      <<<<<<< HEAD                          # ← current branch (develop) starts here
+          subtotal = sum(item.price for item in cart_items)
+          tax = subtotal * 0.08
+          return subtotal + tax
+      =======                               # ← divider
+          subtotal = sum(item.price * item.qty for item in cart_items)
+          discount = apply_discount(subtotal)
+          return (subtotal - discount) * 1.08
+      >>>>>>> feature/discount-engine       # ← incoming branch ends here
+      ```
+
+      | Marker | Meaning |
+      |--------|---------|
+      | `<<<<<<< HEAD` | Start of the current branch's version |
+      | `=======` | Divider between the two conflicting versions |
+      | `>>>>>>> branch-name` | End of the incoming branch's version |
+
+      ### Step-by-Step Conflict Resolution (CLI)
+
+      ```bash
+      # 1. Attempt the merge — it will pause with conflicts
+      git checkout develop
+      git merge feature/discount-engine
+
+      # Output:
+      # Auto-merging src/pricing.py
+      # CONFLICT (content): Merge conflict in src/pricing.py
+      # Automatic merge failed; fix conflicts and then commit the result.
+
+      # 2. See which files have conflicts
+      git status
+      # both modified:   src/pricing.py
+
+      # 3. Open the file and edit out the markers, writing the correct code:
+      # (manually edit src/pricing.py to combine both changes correctly)
+
+      # 4. Correct resolution — preserves qty multiplication AND discount/tax logic:
+      ```
+
+      ```python
+      def calculate_total(cart_items):
+          subtotal = sum(item.price * item.qty for item in cart_items)
+          discount = apply_discount(subtotal)
+          return (subtotal - discount) * 1.08
+      ```
+
+      ```bash
+      # 5. Mark as resolved and complete the merge
+      git add src/pricing.py
+      git status   # "All conflicts fixed but you are still merging."
+      git commit   # Opens editor with auto-generated merge commit message
+
+      # 6. Verify tests still pass
+      pytest -q
+      ```
+
+      ### Resolving with `git mergetool` (VS Code)
+
+      Configure VS Code as your mergetool once:
+
+      ```bash
+      git config --global merge.tool vscode
+      git config --global mergetool.vscode.cmd 'code --wait $MERGED'
+      ```
+
+      Then during a conflict:
+
+      ```bash
+      git mergetool   # Opens VS Code's three-way merge editor
+      # VS Code shows: Current Change | Both Changes | Incoming Change
+      # Click "Accept Current", "Accept Incoming", or "Accept Both" per hunk
+      # Save the file and close VS Code
+      git commit
+      ```
+
+      ### Rebase vs Merge — Trade-offs
+
+      | | `git merge` | `git rebase` |
+      |-|-------------|--------------|
+      | History | Preserves branching topology with merge commits | Creates a linear, clean history |
+      | Conflicts | Resolved once, in the merge commit | Resolved once per commit being replayed |
+      | Safety | Safe to use on shared branches | **Never rebase commits already pushed to a shared branch** — rewrites SHA history |
+      | When to use | Integrating feature → develop | Updating a local feature branch from develop before PR |
+
+      ```bash
+      # Safe rebase workflow — update feature branch BEFORE opening a PR:
+      git checkout feature/my-feature
+      git fetch origin
+      git rebase origin/develop
+      # Resolve any conflicts per commit, then:
+      # git add <resolved files>
+      # git rebase --continue
+      git push --force-with-lease origin feature/my-feature
+      # --force-with-lease is safer than --force: it refuses if someone else pushed
+      ```
+
+      ### `git bisect` — Finding the Commit That Introduced a Bug
+
+      When a regression appears and you don't know which commit caused it, `git bisect` performs
+      a **binary search** through the commit history:
+
+      ```bash
+      git bisect start
+      git bisect bad              # current commit is broken
+      git bisect good v1.4.0      # this tag was known good
+
+      # Git checks out the midpoint commit automatically
+      # Run your test to determine if this commit is good or bad:
+      pytest tests/test_pricing.py -q
+
+      git bisect good   # or: git bisect bad
+
+      # Repeat until git reports:
+      # "a3f7c91 is the first bad commit"
+      # commit a3f7c91
+      # Author: bob <bob@example.com>
+      # Date:   Mon Mar 11 14:22:01 2024
+      #     feat(discount): change discount calculation to use floor rounding
+
+      git bisect reset  # restore HEAD to original position
+      ```
+
+      With 1,000 commits between good and bad, `git bisect` narrows it down in just
+      **10 steps** (log₂(1000) ≈ 10) — far more efficient than manual inspection.
+
+quiz:
+  - question: "In Scrum, who is solely responsible for ordering the Product Backlog and maximising the value of the work performed by the Developers?"
+    options:
+      - "Scrum Master"
+      - "Stakeholders"
+      - "Product Owner"
+      - "Lead Developer"
+    answer: 2
+    explanation: "The Product Owner (PO) owns and orders the Product Backlog. Only the PO can reprioritise items — though they gather input from stakeholders and developers. The Scrum Master serves the team by removing impediments. Stakeholders provide requirements and feedback through the Sprint Review, but cannot directly order the backlog."
+
+  - question: "A team has completed sprints with velocities of 34, 29, 38, 31, and 32 story points. A new sprint has 5 stories estimated at 5, 8, 3, 13, and 5 points. Based on average velocity, what should the team do?"
+    options:
+      - "Accept all stories — the total (34 points) matches the average velocity of 32.8"
+      - "Accept only the 5-, 8-, 3-, and 5-point stories (21 points) to stay safely under velocity"
+      - "Reject the 13-point story as it exceeds the Fibonacci threshold of 8"
+      - "Accept all stories because the Scrum Master approves sprint scope"
+    answer: 0
+    explanation: "Average velocity = (34+29+38+31+32)/5 = 32.8 points. The total of the proposed stories is 5+8+3+13+5 = 34, which is within a reasonable range of the average. Velocity is a guide, not a hard cap — teams may accept slightly more or less based on upcoming holidays, team availability, etc. The Scrum Master does not approve scope; the Developers do."
+
+  - question: "In GitFlow, you need to deploy an emergency fix for a critical SQL injection vulnerability found in production. Which branch should you create the hotfix from, and where should it be merged when complete?"
+    options:
+      - "Branch from `develop`; merge back into `develop` only"
+      - "Branch from `main`; merge into both `main` (tagged) and `develop`"
+      - "Branch from `main`; merge into `main` only and redeploy"
+      - "Branch from `release/*`; merge into `main` and `develop`"
+    answer: 1
+    explanation: "Hotfix branches are always created from `main` (the production branch) because `develop` may contain unreleased, unstable features that should not go to production. On completion, the hotfix is merged into BOTH `main` (tagged with the new patch version, e.g. v1.0.1) AND `develop` (to ensure the fix is not lost when the next feature release is cut)."
+
+  - question: "A developer writes the commit message: `updated stuff in checkout module`. Which Conventional Commits-compliant message best replaces it, given the change was fixing a bug where coupons with 100% discount caused a zero-division error?"
+    options:
+      - "`bugfix: zero division in checkout when 100% coupon applied`"
+      - "`fix(checkout): prevent ZeroDivisionError when coupon discount is 100%`"
+      - "`fix: updated checkout to handle 100% discount coupons`"
+      - "`feat(coupon): handle 100% discount in checkout`"
+    answer: 1
+    explanation: "The Conventional Commits spec requires `<type>(<optional scope>): <description>` in imperative mood. Option B correctly uses `fix` (bug correction), the optional scope `(checkout)` to locate the change, and an imperative description that names the specific error. Option A uses a non-standard type `bugfix`. Option C omits the scope and uses past tense. Option D misclassifies a bug fix as a feature."
+
+  - question: "During a `git merge`, conflict markers appear in `auth/session.py`. After editing the file to the correct resolution, what is the exact sequence of commands to complete the merge?"
+    options:
+      - "`git commit -m 'fix conflict'` — Git detects the markers are gone automatically"
+      - "`git resolve auth/session.py` then `git merge --continue`"
+      - "`git add auth/session.py` then `git commit`"
+      - "`git checkout auth/session.py` then `git merge --continue`"
+    answer: 2
+    explanation: "`git add <file>` stages the resolved file and signals to Git that the conflict has been resolved. Then `git commit` completes the merge (Git pre-fills the merge commit message). `git commit` without `git add` will fail because the file is still in a conflicted state in the index. `git resolve` is not a valid Git command. `git checkout` would discard your resolution."

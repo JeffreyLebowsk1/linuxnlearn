@@ -1,0 +1,669 @@
+title: "Advanced SQL & Query Optimisation"
+order: 2
+summary: "A deep dive into advanced SQL techniques including subqueries, CTEs, window functions, indexing strategies, EXPLAIN ANALYZE, transactions, ACID properties, isolation levels, database normalisation through BCNF, and stored procedures and views."
+learning_objectives:
+  - "Write correlated and non-correlated subqueries, and refactor them into Common Table Expressions (CTEs)."
+  - "Apply window functions (ROW_NUMBER, RANK, LAG, LEAD, PARTITION BY) to solve ranking and time-series problems."
+  - "Explain the internal structure of B-tree and hash indexes and choose the appropriate index type for a given query."
+  - "Interpret EXPLAIN and EXPLAIN ANALYZE output to identify and eliminate sequential scans and expensive operations."
+  - "Implement transactions with correct isolation levels and explain the ACID properties."
+  - "Normalise a relation to Third Normal Form (3NF) and Boyce-Codd Normal Form (BCNF), identifying and eliminating functional dependencies."
+  - "Create and query views and stored procedures to encapsulate business logic in the database layer."
+builds_on:
+  - "Lesson 1 of this course — SQL Fundamentals (tables, JOIN, GROUP BY, aggregate functions)"
+  - "Linux terminal — you will use psql with EXPLAIN ANALYZE to inspect query plans"
+sections:
+  - heading: "Subqueries: Scalar, Row, Table, and Correlated"
+    content: |
+      ## Subqueries: Scalar, Row, Table, and Correlated
+
+      A **subquery** (also called a nested query or inner query) is a SELECT statement embedded
+      within another SQL statement. The outer query uses the result of the inner query as part
+      of its filtering or projection logic. Subqueries can appear in SELECT, FROM, WHERE, and
+      HAVING clauses.
+
+      ### Scalar Subquery (returns one value)
+
+      ```sql
+      -- Find students whose GPA is above the department average
+      SELECT first_name, last_name, gpa
+      FROM   student
+      WHERE  gpa > (
+          SELECT AVG(gpa)
+          FROM   student
+          WHERE  dept_id = 1      -- Computer Science dept
+      )
+      AND dept_id = 1;
+      ```
+
+      ### Table Subquery in FROM (derived table)
+
+      ```sql
+      -- Rank departments by average student GPA
+      SELECT dept_rank, dept_name, avg_gpa
+      FROM (
+          SELECT d.dept_name,
+                 ROUND(AVG(s.gpa), 2) AS avg_gpa,
+                 RANK() OVER (ORDER BY AVG(s.gpa) DESC) AS dept_rank
+          FROM   department d
+          JOIN   student    s ON d.dept_id = s.dept_id
+          GROUP BY d.dept_name
+      ) AS dept_stats
+      WHERE dept_rank <= 5;
+      ```
+
+      ### Correlated Subquery
+
+      A **correlated subquery** references a column from the outer query. It is re-evaluated
+      once for **each row** processed by the outer query, making it potentially expensive —
+      but sometimes the most readable option.
+
+      ```sql
+      -- For each student, show how their GPA compares to their department's average
+      SELECT s.first_name,
+             s.last_name,
+             s.gpa,
+             (SELECT ROUND(AVG(s2.gpa), 2)
+              FROM   student s2
+              WHERE  s2.dept_id = s.dept_id) AS dept_avg_gpa,
+             s.gpa - (SELECT AVG(s2.gpa)
+                      FROM   student s2
+                      WHERE  s2.dept_id = s.dept_id) AS diff_from_avg
+      FROM   student s
+      ORDER BY s.dept_id, diff_from_avg DESC;
+      ```
+
+      ### EXISTS and NOT EXISTS
+
+      `EXISTS` is often more efficient than `IN` for correlated checks because it short-circuits
+      as soon as one matching row is found:
+
+      ```sql
+      -- Find courses that have at least one enrollment in Fall2024
+      SELECT c.course_code, c.title
+      FROM   course c
+      WHERE  EXISTS (
+          SELECT 1
+          FROM   enrollment e
+          WHERE  e.course_id = c.course_id
+            AND  e.semester  = 'Fall2024'
+      );
+
+      -- Find students who have NEVER enrolled in any course
+      SELECT first_name, last_name
+      FROM   student s
+      WHERE  NOT EXISTS (
+          SELECT 1
+          FROM   enrollment e
+          WHERE  e.student_id = s.student_id
+      );
+      ```
+
+  - heading: "Common Table Expressions (CTEs) and Recursive CTEs"
+    content: |
+      ## Common Table Expressions (CTEs) and Recursive CTEs
+
+      A **Common Table Expression (CTE)**, introduced with the `WITH` keyword, is a named
+      temporary result set that exists for the duration of a single SQL statement. CTEs improve
+      readability by decomposing a complex query into named logical steps and can be referenced
+      multiple times within the same query. PostgreSQL's query planner treats a CTE as an
+      **optimisation fence** in older versions (pre-12), materialising it once — in PostgreSQL
+      12+ the planner can inline non-recursive CTEs.
+
+      ```sql
+      -- Refactor the correlated subquery above using CTEs
+      WITH dept_averages AS (
+          SELECT dept_id,
+                 ROUND(AVG(gpa), 2) AS avg_gpa
+          FROM   student
+          GROUP BY dept_id
+      ),
+      student_vs_avg AS (
+          SELECT s.first_name,
+                 s.last_name,
+                 s.gpa,
+                 da.avg_gpa                  AS dept_avg,
+                 ROUND(s.gpa - da.avg_gpa, 2) AS delta
+          FROM   student s
+          JOIN   dept_averages da ON s.dept_id = da.dept_id
+      )
+      SELECT *
+      FROM   student_vs_avg
+      WHERE  delta > 0.5     -- significantly above department average
+      ORDER BY delta DESC;
+      ```
+
+      ### Recursive CTE
+
+      Recursive CTEs are the standard SQL mechanism for traversing hierarchical or graph-
+      structured data (organisational charts, file systems, bill-of-materials). The recursive
+      CTE has two parts joined by `UNION ALL`: the **anchor member** (base case) and the
+      **recursive member** (references the CTE itself).
+
+      ```sql
+      -- Schema: employee table with self-referencing manager_id
+      CREATE TABLE employee (
+          emp_id      SERIAL PRIMARY KEY,
+          name        VARCHAR(100) NOT NULL,
+          manager_id  INT REFERENCES employee(emp_id),
+          dept        VARCHAR(50)
+      );
+
+      -- Traverse the entire management hierarchy from the CEO down
+      WITH RECURSIVE org_chart AS (
+          -- Anchor: start with the CEO (no manager)
+          SELECT emp_id, name, manager_id, 0 AS depth, name AS path
+          FROM   employee
+          WHERE  manager_id IS NULL
+
+          UNION ALL
+
+          -- Recursive: find direct reports of each processed employee
+          SELECT e.emp_id,
+                 e.name,
+                 e.manager_id,
+                 oc.depth + 1,
+                 oc.path || ' → ' || e.name
+          FROM   employee    e
+          JOIN   org_chart   oc ON e.manager_id = oc.emp_id
+      )
+      SELECT depth,
+             LPAD('', depth * 4, ' ') || name AS indented_name,
+             path
+      FROM   org_chart
+      ORDER BY path;
+      ```
+
+  - heading: "Window Functions"
+    content: |
+      ## Window Functions
+
+      **Window functions** perform calculations across a set of table rows that are somehow
+      related to the current row — called the *window* — **without collapsing the rows into a
+      group**. This distinguishes them from aggregate functions: you get one output row per
+      input row, plus the calculated window value. Window functions use the `OVER()` clause,
+      optionally with `PARTITION BY` (to define groups within the window) and `ORDER BY` (to
+      define the ordering within each partition).
+
+      ```sql
+      -- Syntax template:
+      -- function_name(args) OVER (
+      --     [PARTITION BY partition_expression]
+      --     [ORDER BY sort_expression [ASC|DESC]]
+      --     [ROWS | RANGE frame_clause]
+      -- )
+      ```
+
+      ### Ranking Functions
+
+      ```sql
+      -- Rank students within their department by GPA
+      SELECT s.first_name,
+             s.last_name,
+             d.dept_name,
+             s.gpa,
+             ROW_NUMBER() OVER (PARTITION BY s.dept_id ORDER BY s.gpa DESC) AS row_num,
+             RANK()       OVER (PARTITION BY s.dept_id ORDER BY s.gpa DESC) AS rnk,
+             DENSE_RANK() OVER (PARTITION BY s.dept_id ORDER BY s.gpa DESC) AS dense_rnk
+      FROM   student s
+      JOIN   department d ON s.dept_id = d.dept_id;
+      ```
+
+      | Function | Behaviour on ties |
+      |----------|------------------|
+      | `ROW_NUMBER()` | Always assigns unique sequential integers; ties get arbitrary ordering |
+      | `RANK()` | Tied rows share the same rank; next rank skips (1, 1, 3, 4) |
+      | `DENSE_RANK()` | Tied rows share the same rank; no gaps (1, 1, 2, 3) |
+      | `NTILE(n)` | Divides the partition into n buckets, assigning each row a bucket number |
+      | `PERCENT_RANK()` | Relative rank as a fraction (0.0 to 1.0) |
+
+      ### LAG and LEAD: Accessing Adjacent Rows
+
+      `LAG()` and `LEAD()` access the value from a row *before* or *after* the current row
+      within the partition, without a self-join — indispensable for time-series analysis.
+
+      ```sql
+      -- Monthly enrollment counts with month-over-month change
+      WITH monthly AS (
+          SELECT DATE_TRUNC('month', enrolled_at)::DATE AS enroll_month,
+                 COUNT(*) AS enrollments
+          FROM   enrollment
+          GROUP BY 1
+          ORDER BY 1
+      )
+      SELECT enroll_month,
+             enrollments,
+             LAG(enrollments)  OVER (ORDER BY enroll_month) AS prev_month,
+             enrollments - LAG(enrollments) OVER (ORDER BY enroll_month) AS mom_change,
+             LEAD(enrollments) OVER (ORDER BY enroll_month) AS next_month
+      FROM   monthly;
+      ```
+
+      ### SUM / AVG as Window Functions (Running Totals)
+
+      ```sql
+      -- Running total of completed credits per student, ordered by semester
+      SELECT s.first_name,
+             e.semester,
+             c.credits,
+             SUM(c.credits) OVER (
+                 PARTITION BY s.student_id
+                 ORDER BY e.semester
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+             ) AS running_credits
+      FROM   enrollment e
+      JOIN   student s ON e.student_id = s.student_id
+      JOIN   course  c ON e.course_id  = c.course_id
+      WHERE  e.grade IS NOT NULL
+      ORDER BY s.last_name, e.semester;
+      ```
+
+  - heading: "Indexes: B-Tree, Hash, and Composite"
+    content: |
+      ## Indexes: B-Tree, Hash, and Composite
+
+      An **index** is a data structure maintained by the database engine that allows rows to be
+      located quickly without scanning the entire table (a full table scan or *Seq Scan*). The
+      trade-off: indexes consume disk space and must be updated on every INSERT/UPDATE/DELETE,
+      adding write overhead. The query planner automatically decides whether to use an available
+      index based on statistics and estimated row counts.
+
+      ### B-Tree Index (PostgreSQL default)
+
+      A **B-tree (Balanced Tree)** index maintains data in sorted order, supporting equality
+      lookups (`=`), range queries (`<`, `>`, `BETWEEN`), `LIKE 'prefix%'`, and `IS NULL`/`IS
+      NOT NULL`. The tree height is O(log n), so even a table with 1 billion rows requires
+      fewer than 30 node reads to locate a specific value.
+
+      ```sql
+      -- Create a B-tree index (default type)
+      CREATE INDEX idx_student_gpa ON student(gpa);
+
+      -- Composite index: useful when queries filter on both columns
+      CREATE INDEX idx_enrollment_student_course
+      ON enrollment(student_id, course_id);
+
+      -- Partial index: only index rows satisfying a condition (smaller, faster)
+      CREATE INDEX idx_high_gpa_students
+      ON student(gpa DESC)
+      WHERE gpa >= 3.5;
+
+      -- Unique index (enforces uniqueness AND speeds up lookups)
+      CREATE UNIQUE INDEX idx_student_email ON student(email);
+      ```
+
+      ### Hash Index
+
+      A **hash index** stores a hash of the indexed column value. It supports **only equality
+      comparisons** (`=`) and is slightly faster than B-tree for equality-only lookups on large
+      tables. It cannot support range queries, ORDER BY, or partial matches.
+
+      ```sql
+      -- Hash index: appropriate for UUID or natural-key equality lookups
+      CREATE INDEX idx_course_code_hash
+      ON course USING HASH (course_code);
+      ```
+
+      ### Index Usage Guidelines
+
+      ```mermaid
+      graph TD
+          Q["Query pattern?"] --> EQ{"Equality only?"}
+          EQ -->|Yes| HASH["Hash index\n(slightly faster)"]
+          EQ -->|No| RANGE{"Range / sort / LIKE?"}
+          RANGE -->|Yes| BTREE["B-tree index\n(default, versatile)"]
+          RANGE -->|No, multi-col| COMP["Composite B-tree\n(leading columns rule)"]
+          Q --> PARTIAL{"Low-selectivity\n(e.g. active=true)?"}
+          PARTIAL -->|Yes| PARTIDX["Partial index\nWHERE condition"]
+      ```
+
+      **The leading-column rule:** For a composite index on `(a, b, c)`, the planner can use
+      it for queries filtering on `a`, `(a, b)`, or `(a, b, c)`, but **not** for queries
+      filtering only on `b` or `c` alone.
+
+  - heading: "EXPLAIN and EXPLAIN ANALYZE: Reading Query Plans"
+    content: |
+      ## EXPLAIN and EXPLAIN ANALYZE: Reading Query Plans
+
+      `EXPLAIN` shows the **estimated** query execution plan without running the query.
+      `EXPLAIN ANALYZE` **actually executes** the query and shows both estimated and actual
+      statistics. Always use `EXPLAIN ANALYZE` on non-production or with a ROLLBACK wrapper
+      for DML statements.
+
+      ```sql
+      -- Basic EXPLAIN
+      EXPLAIN SELECT * FROM student WHERE gpa > 3.8;
+
+      -- Full analysis (runs the query — wrap DML in a transaction and rollback)
+      EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
+      SELECT s.first_name, s.last_name, c.title, e.grade
+      FROM   enrollment e
+      JOIN   student s ON e.student_id = s.student_id
+      JOIN   course  c ON e.course_id  = c.course_id
+      WHERE  e.semester = 'Fall2024';
+      ```
+
+      **Sample output to understand:**
+
+      ```
+      Hash Join  (cost=18.50..45.20 rows=120 width=72)
+                 (actual time=0.382..1.204 rows=118 loops=1)
+        Hash Cond: (e.student_id = s.student_id)
+        ->  Seq Scan on enrollment e
+              (cost=0.00..12.80 rows=200 width=20)
+              (actual time=0.010..0.180 rows=200 loops=1)
+              Filter: ((semester)::text = 'Fall2024')
+              Rows Removed by Filter: 80
+        ->  Hash  (cost=11.00..11.00 rows=300 width=52)
+              ->  Index Scan using idx_student_pk on student s
+                    (cost=0.14..11.00 rows=300 width=52)
+      Planning Time: 0.524 ms
+      Execution Time: 1.381 ms
+      ```
+
+      | Term | Meaning |
+      |------|---------|
+      | `Seq Scan` | Full table scan — reads every row; appropriate only for small tables or high selectivity |
+      | `Index Scan` | Uses an index to locate rows; efficient for selective predicates |
+      | `Index Only Scan` | Satisfied entirely from the index without touching the heap; fastest |
+      | `Bitmap Heap Scan` | Builds a bitmap of matching pages via an index, then fetches them in heap order |
+      | `Hash Join` | Builds a hash table from the smaller relation, probes it with the larger; good for large unsorted inputs |
+      | `Nested Loop` | For each row in the outer relation, scans the inner; excellent when inner is indexed and outer is small |
+      | `Merge Join` | Merges two pre-sorted inputs; efficient when both sides have an index on the join column |
+      | `cost=X..Y` | X = startup cost (before first row), Y = total cost; units are arbitrary but consistent |
+      | `rows=N` | Estimated (EXPLAIN) or actual (ANALYZE) row count |
+      | `Rows Removed by Filter` | Rows read but discarded; high values suggest a missing index |
+
+      **Optimisation workflow:**
+      1. Run `EXPLAIN ANALYZE` on a slow query.
+      2. Look for `Seq Scan` on large tables — consider adding an index.
+      3. Look for large discrepancies between *estimated* and *actual* row counts — run
+         `ANALYZE tablename` to update statistics.
+      4. Look for high `Rows Removed by Filter` — the predicate column needs an index.
+      5. Check `Execution Time` and `Buffers: hit/read` — high read counts indicate I/O-bound queries.
+
+  - heading: "Transactions, ACID, and Isolation Levels"
+    content: |
+      ## Transactions, ACID, and Isolation Levels
+
+      A **transaction** is a sequence of SQL operations treated as a single logical unit of
+      work. Either all operations succeed and their changes are permanently written to the
+      database (`COMMIT`), or all are undone as if they never happened (`ROLLBACK`). This
+      all-or-nothing guarantee prevents partial updates that would leave the database in an
+      inconsistent state.
+
+      ```sql
+      -- Transfer 3 credits from one course record to another atomically
+      BEGIN;
+
+      UPDATE course SET credits = credits - 1 WHERE course_id = 5;
+      UPDATE course SET credits = credits + 1 WHERE course_id = 7;
+
+      -- If both succeeded, commit permanently
+      COMMIT;
+
+      -- If something went wrong, undo everything:
+      -- ROLLBACK;
+      ```
+
+      ### ACID Properties
+
+      The **ACID** properties, formalised by Haerder and Reuter (1983), define the guarantees
+      a DBMS must provide for transactions to be reliable:
+
+      | Property | Definition | PostgreSQL Mechanism |
+      |----------|-----------|---------------------|
+      | **Atomicity** | All operations in a transaction succeed or all are rolled back — no partial commits | Write-Ahead Log (WAL) + rollback records |
+      | **Consistency** | A transaction brings the database from one valid state to another; all constraints remain satisfied | Constraint checking (PK, FK, CHECK, NOT NULL) at commit time |
+      | **Isolation** | Concurrent transactions execute as if they were serialised — one cannot see uncommitted changes from another (at default levels) | MVCC (Multi-Version Concurrency Control) |
+      | **Durability** | Once committed, changes survive system failures (crashes, power loss) | WAL flushed to disk before COMMIT returns |
+
+      ### Isolation Levels and Concurrency Anomalies
+
+      SQL standard defines four isolation levels (weakest to strongest). PostgreSQL implements
+      all four using MVCC, meaning readers never block writers:
+
+      ```sql
+      -- Set isolation level for the current transaction
+      BEGIN ISOLATION LEVEL REPEATABLE READ;
+      -- ... queries ...
+      COMMIT;
+      ```
+
+      | Isolation Level | Dirty Read | Non-Repeatable Read | Phantom Read | Use Case |
+      |----------------|-----------|--------------------|-----------| ---------|
+      | `READ UNCOMMITTED` | Possible | Possible | Possible | Not supported in PostgreSQL (treated as READ COMMITTED) |
+      | `READ COMMITTED` | Prevented | Possible | Possible | Default in PostgreSQL; suitable for most OLTP |
+      | `REPEATABLE READ` | Prevented | Prevented | Prevented* | Consistent snapshot reads; reporting queries |
+      | `SERIALIZABLE` | Prevented | Prevented | Prevented | Financial transactions; strict correctness required |
+
+      *PostgreSQL's REPEATABLE READ also prevents phantom reads due to MVCC snapshot semantics.
+
+      **Anomaly definitions:**
+      - **Dirty Read:** Transaction T1 reads uncommitted changes from T2; if T2 rolls back, T1
+        has read data that never existed.
+      - **Non-Repeatable Read:** T1 reads a row, T2 modifies and commits it, T1 re-reads the row
+        and gets a different value.
+      - **Phantom Read:** T1 queries a range of rows, T2 inserts a new row in that range and
+        commits, T1 re-queries and gets an extra row.
+
+      ```sql
+      -- Demonstrating SAVEPOINT (partial rollback within a transaction)
+      BEGIN;
+      INSERT INTO department (dept_name, location) VALUES ('Quantum Computing', 'Lab B');
+      SAVEPOINT after_dept_insert;
+
+      INSERT INTO course (course_code, title, dept_id) VALUES ('QC101', 'Intro to QC', 5);
+      -- Oops, wrong dept_id — rollback to savepoint without aborting the whole transaction
+      ROLLBACK TO SAVEPOINT after_dept_insert;
+
+      INSERT INTO course (course_code, title, dept_id) VALUES ('QC101', 'Intro to QC', 6);
+      COMMIT;
+      ```
+
+  - heading: "Normalisation: 1NF through BCNF"
+    content: |
+      ## Normalisation: 1NF through BCNF
+
+      **Database normalisation** is the process of organising a relational schema to reduce data
+      redundancy and improve data integrity. Normalisation proceeds through a series of **Normal
+      Forms (NF)**, each eliminating a specific category of **anomaly** (update anomaly, insertion
+      anomaly, deletion anomaly). The theory was developed by E.F. Codd (1NF–3NF, 1971–1972)
+      and refined by Boyce and Codd (BCNF, 1974).
+
+      Consider this denormalised table:
+
+      ```
+      ┌────────────┬──────────┬────────────┬─────────────┬────────────┬──────────┐
+      │ student_id │ s_name   │ course_ids │ course_names│ dept_name  │ advisor  │
+      ├────────────┼──────────┼────────────┼─────────────┼────────────┼──────────┤
+      │ 1          │ Alice    │ {CS310,    │ {Databases, │ Comp. Sci. │ Dr. Lee  │
+      │            │          │  CS201}    │  Algorithms}│            │          │
+      └────────────┴──────────┴────────────┴─────────────┴────────────┴──────────┘
+      ```
+
+      ### First Normal Form (1NF)
+
+      A relation is in **1NF** if every attribute contains only **atomic (indivisible) values**
+      — no repeating groups, no arrays, no multi-valued attributes. Each row must be uniquely
+      identifiable (have a primary key).
+
+      **Violation:** `course_ids = {CS310, CS201}` is a multi-valued attribute.
+      **Fix:** Create one row per student-course combination.
+
+      ### Second Normal Form (2NF)
+
+      A relation is in **2NF** if it is in 1NF and every non-key attribute is **fully
+      functionally dependent** on the **entire** primary key (no partial dependencies). Partial
+      dependencies only arise when the primary key is composite.
+
+      **Violation:** In a table with PK `(student_id, course_id)`, if `student_name` depends
+      only on `student_id` (not on the full composite key), that is a partial dependency.
+      **Fix:** Move `student_name` to a separate `student` table keyed by `student_id`.
+
+      ### Third Normal Form (3NF)
+
+      A relation is in **3NF** if it is in 2NF and there are **no transitive dependencies** —
+      no non-key attribute depends on another non-key attribute.
+
+      **Violation:** `advisor` depends on `dept_name` (not directly on `student_id`):
+      `student_id → dept_name → advisor`.
+      **Fix:** Move `advisor` to a `department` table keyed by `dept_name` (or `dept_id`).
+
+      ### Boyce-Codd Normal Form (BCNF)
+
+      A relation is in **BCNF** if it is in 3NF and for every functional dependency `X → Y`,
+      `X` is a **superkey** (uniquely identifies each row). BCNF is slightly stronger than 3NF
+      and eliminates anomalies that 3NF misses when a relation has multiple overlapping
+      candidate keys.
+
+      ```mermaid
+      graph LR
+          UNF["Unnormalised\n(UNF)"] --> |"Eliminate repeating groups\nEnsure atomic values"| NF1["1NF"]
+          NF1 --> |"Eliminate partial\nfunctional dependencies"| NF2["2NF"]
+          NF2 --> |"Eliminate transitive\nfunctional dependencies"| NF3["3NF"]
+          NF3 --> |"Every determinant\nis a superkey"| BCNF["BCNF"]
+          style UNF fill:#C0392B,color:#fff
+          style NF1 fill:#D4A017,color:#fff
+          style NF2 fill:#5BA35B,color:#fff
+          style NF3 fill:#4A90D9,color:#fff
+          style BCNF fill:#8E44AD,color:#fff
+      ```
+
+      **Normalised university schema (already shown in Lesson 1) satisfies BCNF** because:
+      - Every table has a single-column surrogate PK (no partial dependencies possible).
+      - No non-key column depends on another non-key column (no transitive dependencies).
+      - Every non-trivial FD has a superkey on the left-hand side.
+
+  - heading: "Views and Stored Procedures"
+    content: |
+      ## Views and Stored Procedures
+
+      ### Views
+
+      A **view** is a named, stored SELECT query. It behaves like a virtual table: you can
+      query it with SELECT (and sometimes INSERT/UPDATE/DELETE on updatable views). Views
+      are used to simplify complex queries, enforce column-level access control, and present
+      a stable interface to applications even as the underlying schema evolves.
+
+      ```sql
+      -- Create a view showing active enrollment details
+      CREATE OR REPLACE VIEW v_active_enrollments AS
+      SELECT e.enrollment_id,
+             s.student_id,
+             s.first_name || ' ' || s.last_name AS student_name,
+             c.course_code,
+             c.title       AS course_title,
+             d.dept_name,
+             e.semester,
+             e.grade
+      FROM   enrollment e
+      JOIN   student    s ON e.student_id = s.student_id
+      JOIN   course     c ON e.course_id  = c.course_id
+      JOIN   department d ON c.dept_id    = d.dept_id;
+
+      -- Query the view like a table
+      SELECT * FROM v_active_enrollments WHERE semester = 'Fall2024';
+
+      -- Materialised view: pre-computes and stores the result (faster reads)
+      CREATE MATERIALIZED VIEW mv_dept_stats AS
+      SELECT d.dept_name,
+             COUNT(s.student_id)      AS student_count,
+             ROUND(AVG(s.gpa), 2)     AS avg_gpa,
+             SUM(c.credits)           AS total_course_credits
+      FROM   department d
+      LEFT JOIN student s ON d.dept_id = s.dept_id
+      LEFT JOIN course  c ON d.dept_id = c.dept_id
+      GROUP BY d.dept_name;
+
+      -- Refresh the materialised view when underlying data changes
+      REFRESH MATERIALIZED VIEW mv_dept_stats;
+      ```
+
+      ### Stored Procedures and Functions
+
+      A **stored procedure** (or function in PostgreSQL) is a named, reusable block of
+      procedural SQL code stored in the database. It encapsulates business logic, reduces
+      network round-trips, and can be granted execution privileges independently of table access.
+
+      ```sql
+      -- PostgreSQL function: enroll a student and return the new enrollment_id
+      CREATE OR REPLACE FUNCTION enroll_student(
+          p_student_id  INT,
+          p_course_id   INT,
+          p_semester    VARCHAR(10)
+      ) RETURNS INT
+      LANGUAGE plpgsql
+      AS $$
+      DECLARE
+          v_enrollment_id INT;
+          v_capacity      INT;
+          v_current       INT;
+      BEGIN
+          -- Check course capacity (assume max 30 students)
+          SELECT COUNT(*) INTO v_current
+          FROM   enrollment
+          WHERE  course_id = p_course_id AND semester = p_semester;
+
+          IF v_current >= 30 THEN
+              RAISE EXCEPTION 'Course % is full for semester %',
+                              p_course_id, p_semester;
+          END IF;
+
+          INSERT INTO enrollment (student_id, course_id, semester)
+          VALUES (p_student_id, p_course_id, p_semester)
+          RETURNING enrollment_id INTO v_enrollment_id;
+
+          RETURN v_enrollment_id;
+      END;
+      $$;
+
+      -- Call the function
+      SELECT enroll_student(1, 3, 'Spring2025');
+      ```
+
+quiz:
+  - question: "What is the key difference between a CTE (WITH clause) and a subquery in the FROM clause (derived table)?"
+    options:
+      - "CTEs can only be used once per query; subqueries can be reused multiple times"
+      - "A CTE is named and can be referenced multiple times in the same query; a derived table is anonymous and inline"
+      - "CTEs always materialise their result; subqueries are always inlined by the optimiser"
+      - "Subqueries support recursive queries; CTEs do not"
+    answer: 1
+    explanation: "A CTE is assigned a name in the WITH clause and can be referenced multiple times in the main query and other CTEs. A derived table (subquery in FROM) is anonymous and must be repeated if needed. Regarding materialisation: in PostgreSQL 12+ non-recursive CTEs can be inlined; recursive CTEs are always CTEs and subqueries cannot be recursive."
+
+  - question: "Given: RANK() OVER (PARTITION BY dept_id ORDER BY gpa DESC). For three students in the same department with GPAs 3.9, 3.9, 3.7 — what rank values are assigned?"
+    options:
+      - "1, 2, 3"
+      - "1, 1, 2"
+      - "1, 1, 3"
+      - "0, 0, 1"
+    answer: 2
+    explanation: "RANK() assigns the same rank to tied rows (both 3.9 get rank 1) and skips the next rank (the 3.7 student gets rank 3, not 2). If you want no gaps, use DENSE_RANK(), which would return 1, 1, 2."
+
+  - question: "A table has 10 million rows. EXPLAIN ANALYZE shows a Seq Scan with 9.8 million 'Rows Removed by Filter' on a WHERE email = 'x@y.com' predicate. What is the most appropriate fix?"
+    options:
+      - "Increase the PostgreSQL work_mem setting"
+      - "Run VACUUM ANALYZE on the table"
+      - "Create a B-tree index on the email column"
+      - "Rewrite the query using a CTE"
+    answer: 2
+    explanation: "The query is doing a full table scan and discarding 9.8 million rows to find a single email. An equality predicate on a high-cardinality column (email is unique) is the canonical B-tree index use case. After creating the index, the planner will use an Index Scan (or Index Only Scan) instead of Seq Scan. VACUUM/ANALYZE helps statistics but does not eliminate the scan."
+
+  - question: "A banking transaction debits account A and credits account B. The system crashes after the debit but before the credit. Which ACID property ensures the debit is rolled back on recovery?"
+    options:
+      - "Consistency — constraints ensure both accounts remain valid"
+      - "Isolation — concurrent transactions cannot see the partial update"
+      - "Atomicity — the entire transaction is either committed or rolled back"
+      - "Durability — committed data survives failures"
+    answer: 2
+    explanation: "Atomicity guarantees that all operations in a transaction succeed or all are undone. If the system crashes mid-transaction, the database uses the Write-Ahead Log (WAL) during recovery to roll back the uncommitted partial transaction, ensuring neither the debit nor the credit takes effect."
+
+  - question: "A table TEACHING(professor, subject, room) has two candidate keys: (professor, subject) and (subject, room). The FD room → professor exists (each room is assigned to one professor). Is this table in BCNF? Why or why not?"
+    options:
+      - "Yes — both candidate keys are identified and the table is in 3NF"
+      - "No — the FD room → professor violates BCNF because 'room' alone is not a superkey"
+      - "Yes — BCNF only applies to tables with a single candidate key"
+      - "No — the table violates 2NF because of a partial dependency"
+    answer: 1
+    explanation: "BCNF requires that for every non-trivial FD X → Y, X must be a superkey. Here, 'room' is not a superkey (it does not uniquely identify a row — multiple subjects can be in the same room on different days). Therefore room → professor violates BCNF. The table is in 3NF (the dependency passes through a candidate key attribute) but not BCNF."

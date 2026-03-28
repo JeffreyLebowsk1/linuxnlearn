@@ -1,0 +1,522 @@
+title: "Relational Databases & SQL Fundamentals"
+order: 1
+summary: "A thorough introduction to the relational model and SQL, covering table design, primary/foreign keys, DDL and DML statements, filtering, all JOIN types, aggregate functions, and GROUP BY — illustrated with PostgreSQL and SQLite examples."
+learning_objectives:
+  - "Model a real-world domain using tables, primary keys, and foreign keys following Codd's relational model."
+  - "Write correct DDL statements (CREATE TABLE, ALTER TABLE, DROP TABLE) with appropriate data types and constraints."
+  - "Construct SELECT queries using WHERE filters, all four JOIN types, ORDER BY, GROUP BY, and HAVING clauses."
+  - "Apply aggregate functions (COUNT, SUM, AVG, MIN, MAX) to summarise data sets."
+  - "Read and interpret an Entity-Relationship (ER) diagram and translate it into a working SQL schema."
+builds_on:
+  - "Basic Linux command-line (SYS 202) — you will run psql and sqlite3 from the terminal"
+  - "General programming concepts — understanding of variables and data types is helpful"
+sections:
+  - heading: "The Relational Model: Codd's Foundation"
+    content: |
+      ## The Relational Model: Codd's Foundation
+
+      The relational model was introduced by E.F. Codd in his landmark 1970 paper **"A Relational
+      Model of Data for Large Shared Data Banks"** (Communications of the ACM, 13(6):377–387).
+      Codd, working at IBM, proposed organising data into **relations** (tables), where each
+      relation is a set of **tuples** (rows) sharing the same **attributes** (columns). The model
+      is grounded in set theory and first-order predicate logic, giving it a rigorous mathematical
+      foundation that distinguishes it from earlier hierarchical (IMS) and network (CODASYL)
+      database models.
+
+      The core insight is that data should be stored **independently of the application** that uses
+      it, and accessed through a high-level, declarative language rather than low-level navigational
+      code. You tell the database *what* you want, not *how* to find it — the query optimiser
+      determines the execution plan. This independence means the same database can serve a web
+      application, a reporting tool, and a batch-processing script simultaneously, each issuing
+      different queries without interfering with the others.
+
+      The relational model defines several key concepts that underpin everything in SQL:
+
+      | Term | Definition |
+      |------|-----------|
+      | **Relation** | A table with a fixed set of named columns (the schema) and zero or more rows (the data) |
+      | **Tuple** | A single row in a relation; represents one entity instance |
+      | **Attribute** | A named column with a defined data type and optional constraints |
+      | **Domain** | The set of permissible values for an attribute (e.g., positive integers, valid email addresses) |
+      | **Primary Key (PK)** | A minimal set of attributes whose values uniquely identify each tuple; must be NOT NULL and unique |
+      | **Foreign Key (FK)** | An attribute (or set of attributes) in one table that references the primary key of another table, enforcing referential integrity |
+      | **Degree** | The number of columns in a relation |
+      | **Cardinality** | The number of rows currently in a relation |
+
+      Modern relational database management systems (RDBMS) that implement this model include
+      **PostgreSQL**, **MySQL/MariaDB**, **SQLite**, **Oracle Database**, and **Microsoft SQL
+      Server**. PostgreSQL is the most feature-complete open-source option and is used throughout
+      this course. SQLite is used for lightweight local examples because it requires no server
+      process — the entire database is a single file.
+
+      **To start a PostgreSQL interactive session:**
+      ```bash
+      psql -U postgres -d mydb
+      ```
+
+      **To start a SQLite session:**
+      ```bash
+      sqlite3 university.db
+      ```
+
+  - heading: "SQL DDL: Defining Your Schema"
+    content: |
+      ## SQL DDL: Defining Your Schema
+
+      **Data Definition Language (DDL)** statements define and modify the structure of database
+      objects. DDL statements are not transactional in some databases (DDL in PostgreSQL *is*
+      transactional, which is unusual and very useful). The three essential DDL statements are
+      `CREATE`, `ALTER`, and `DROP`.
+
+      ### CREATE TABLE
+
+      The `CREATE TABLE` statement defines a new table with its columns, data types, and
+      constraints. Consider a simple university schema:
+
+      ```sql
+      -- PostgreSQL / SQLite compatible schema
+      CREATE TABLE department (
+          dept_id     SERIAL PRIMARY KEY,          -- auto-incrementing integer PK
+          dept_name   VARCHAR(100) NOT NULL UNIQUE, -- must be provided; no duplicates
+          building    VARCHAR(50),
+          budget      NUMERIC(12, 2) CHECK (budget >= 0)
+      );
+
+      CREATE TABLE student (
+          student_id  SERIAL PRIMARY KEY,
+          first_name  VARCHAR(50)  NOT NULL,
+          last_name   VARCHAR(50)  NOT NULL,
+          email       VARCHAR(120) NOT NULL UNIQUE,
+          dob         DATE,
+          gpa         NUMERIC(3, 2) CHECK (gpa BETWEEN 0.00 AND 4.00),
+          dept_id     INT REFERENCES department(dept_id) ON DELETE SET NULL
+      );
+
+      CREATE TABLE course (
+          course_id   SERIAL PRIMARY KEY,
+          course_code VARCHAR(10)  NOT NULL UNIQUE,  -- e.g. 'CS310'
+          title       VARCHAR(150) NOT NULL,
+          credits     SMALLINT     NOT NULL DEFAULT 3 CHECK (credits IN (1, 2, 3, 4)),
+          dept_id     INT NOT NULL REFERENCES department(dept_id) ON DELETE RESTRICT
+      );
+
+      CREATE TABLE enrollment (
+          enrollment_id SERIAL PRIMARY KEY,
+          student_id    INT NOT NULL REFERENCES student(student_id)  ON DELETE CASCADE,
+          course_id     INT NOT NULL REFERENCES course(course_id)    ON DELETE CASCADE,
+          semester      VARCHAR(10) NOT NULL,        -- e.g. 'Fall2024'
+          grade         CHAR(2),                     -- NULL until graded
+          enrolled_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+          UNIQUE (student_id, course_id, semester)   -- no duplicate enrollments
+      );
+      ```
+
+      Key constraint types demonstrated above:
+
+      | Constraint | Purpose |
+      |-----------|---------|
+      | `PRIMARY KEY` | Uniquely identifies each row; implies NOT NULL + UNIQUE |
+      | `NOT NULL` | Rejects INSERT/UPDATE that would leave the column empty |
+      | `UNIQUE` | Enforces column-level or multi-column uniqueness |
+      | `CHECK` | Validates that a condition is true; rejects violating rows |
+      | `REFERENCES` | Declares a foreign key; the referenced row must exist |
+      | `ON DELETE CASCADE` | When the parent row is deleted, child rows are deleted too |
+      | `ON DELETE SET NULL` | When the parent row is deleted, FK column is set to NULL |
+      | `ON DELETE RESTRICT` | Prevents deletion of a parent row that has children |
+      | `DEFAULT` | Supplies a value when the INSERT omits the column |
+
+      ### ALTER TABLE
+
+      `ALTER TABLE` modifies an existing table without dropping it:
+
+      ```sql
+      -- Add a new column (existing rows get NULL for this column)
+      ALTER TABLE student ADD COLUMN phone VARCHAR(20);
+
+      -- Set a default on an existing column
+      ALTER TABLE student ALTER COLUMN phone SET DEFAULT 'N/A';
+
+      -- Add a NOT NULL constraint (all existing rows must already satisfy it)
+      ALTER TABLE course ADD COLUMN description TEXT NOT NULL DEFAULT '';
+
+      -- Rename a column (PostgreSQL 9.6+)
+      ALTER TABLE department RENAME COLUMN building TO location;
+
+      -- Add a named CHECK constraint
+      ALTER TABLE student ADD CONSTRAINT chk_gpa CHECK (gpa BETWEEN 0.00 AND 4.00);
+
+      -- Drop a constraint
+      ALTER TABLE student DROP CONSTRAINT chk_gpa;
+      ```
+
+      ### DROP TABLE
+
+      ```sql
+      -- DROP removes the table and ALL its data permanently
+      DROP TABLE enrollment;          -- fails if other tables reference it
+      DROP TABLE enrollment CASCADE;  -- also drops dependent objects (views, FKs)
+
+      -- Safe pattern: only drop if the table exists
+      DROP TABLE IF EXISTS enrollment;
+      ```
+
+      > **Warning:** `DROP TABLE` is irreversible without a backup. Always verify the table name
+      > and consider running in a transaction with `BEGIN; DROP TABLE ...; ROLLBACK;` first to
+      > preview the operation.
+
+  - heading: "ER Diagram: University Schema"
+    content: |
+      ## ER Diagram: University Schema
+
+      The following Entity-Relationship diagram illustrates the university schema defined above.
+      Crow's-foot notation is used: `||` means exactly one, `|{` means one-or-more, `}|` means
+      zero-or-more on either end.
+
+      ```mermaid
+      erDiagram
+          DEPARTMENT {
+              int    dept_id    PK
+              string dept_name
+              string location
+              decimal budget
+          }
+          STUDENT {
+              int    student_id  PK
+              string first_name
+              string last_name
+              string email
+              date   dob
+              decimal gpa
+              int    dept_id    FK
+          }
+          COURSE {
+              int    course_id   PK
+              string course_code
+              string title
+              int    credits
+              int    dept_id    FK
+          }
+          ENROLLMENT {
+              int       enrollment_id  PK
+              int       student_id     FK
+              int       course_id      FK
+              string    semester
+              string    grade
+              timestamp enrolled_at
+          }
+
+          DEPARTMENT ||--o{ STUDENT    : "has"
+          DEPARTMENT ||--o{ COURSE     : "offers"
+          STUDENT    ||--o{ ENROLLMENT : "makes"
+          COURSE     ||--o{ ENROLLMENT : "receives"
+      ```
+
+      **Reading the diagram:** A `DEPARTMENT` may have zero or more `STUDENT` rows (students are
+      optionally assigned to a department). A `DEPARTMENT` must have at least one `COURSE` (or
+      conceptually can offer many). Each `ENROLLMENT` row ties exactly one `STUDENT` to exactly
+      one `COURSE` for a given semester — this is a classic **associative entity** (junction table)
+      that resolves the many-to-many relationship between students and courses.
+
+  - heading: "SQL DML: Manipulating Data"
+    content: |
+      ## SQL DML: Manipulating Data
+
+      **Data Manipulation Language (DML)** statements read and modify the rows within tables.
+      The four fundamental DML operations correspond directly to the **CRUD** acronym used in
+      application development (Create, Read, Update, Delete).
+
+      ### INSERT
+
+      ```sql
+      -- Insert a single row (explicit column list is best practice)
+      INSERT INTO department (dept_name, location, budget)
+      VALUES ('Computer Science', 'Engineering Hall', 1500000.00);
+
+      -- Insert multiple rows in one statement (more efficient than separate INSERTs)
+      INSERT INTO student (first_name, last_name, email, gpa, dept_id)
+      VALUES
+          ('Alice',   'Chen',     'achen@uni.edu',   3.92, 1),
+          ('Bob',     'Mensah',   'bmen@uni.edu',    3.45, 1),
+          ('Carla',   'Oliveira', 'coliv@uni.edu',   3.78, 1),
+          ('David',   'Kim',      'dkim@uni.edu',    2.90, 1);
+
+      -- INSERT … SELECT: copy rows from another table
+      INSERT INTO enrollment (student_id, course_id, semester)
+      SELECT student_id, 1, 'Fall2024'
+      FROM   student
+      WHERE  dept_id = 1;
+      ```
+
+      ### SELECT and Filtering with WHERE
+
+      ```sql
+      -- Select all columns (avoid in production — use explicit column list)
+      SELECT * FROM student;
+
+      -- Select specific columns with a WHERE filter
+      SELECT student_id, first_name, last_name, gpa
+      FROM   student
+      WHERE  gpa >= 3.5
+      ORDER BY gpa DESC;
+
+      -- Compound conditions
+      SELECT first_name, last_name, email
+      FROM   student
+      WHERE  dept_id = 1
+         AND gpa BETWEEN 3.0 AND 4.0
+         AND last_name LIKE 'C%';   -- last name starts with C
+
+      -- IN operator (shorthand for multiple OR conditions)
+      SELECT course_code, title
+      FROM   course
+      WHERE  credits IN (3, 4);
+
+      -- IS NULL check (not = NULL — that never matches)
+      SELECT student_id, first_name
+      FROM   student
+      WHERE  phone IS NULL;
+      ```
+
+      ### UPDATE and DELETE
+
+      ```sql
+      -- UPDATE: always include a WHERE clause unless updating ALL rows is intentional
+      UPDATE student
+      SET    gpa = 3.95
+      WHERE  student_id = 1;
+
+      -- Update multiple columns
+      UPDATE course
+      SET    title = 'Advanced Database Systems', credits = 4
+      WHERE  course_code = 'CS310';
+
+      -- DELETE: without WHERE, ALL rows are removed
+      DELETE FROM enrollment
+      WHERE  semester = 'Fall2023'
+         AND grade IS NULL;  -- remove students who never received a grade
+      ```
+
+      > **Best practice:** Before running UPDATE or DELETE on production data, first run the
+      > equivalent SELECT with the same WHERE clause to verify which rows will be affected.
+
+  - heading: "JOINs: Combining Data Across Tables"
+    content: |
+      ## JOINs: Combining Data Across Tables
+
+      A **JOIN** combines rows from two (or more) tables based on a related column. Understanding
+      all four standard JOIN types is essential for writing correct queries against normalised
+      schemas.
+
+      ```mermaid
+      graph LR
+          subgraph "INNER JOIN"
+              A1["Table A"] --- M1(("∩"))
+              B1["Table B"] --- M1
+          end
+          subgraph "LEFT JOIN"
+              A2["Table A ✓"] --- M2(("∪L"))
+              B2["Table B"] --- M2
+          end
+          subgraph "RIGHT JOIN"
+              A3["Table A"] --- M3(("∪R"))
+              B3["Table B ✓"] --- M3
+          end
+          subgraph "FULL OUTER JOIN"
+              A4["Table A ✓"] --- M4(("∪"))
+              B4["Table B ✓"] --- M4
+          end
+      ```
+
+      ### INNER JOIN (default JOIN)
+
+      Returns only rows where the join condition matches in **both** tables. Unmatched rows from
+      either side are excluded.
+
+      ```sql
+      -- Students WITH their department name (students without a dept are excluded)
+      SELECT s.first_name, s.last_name, d.dept_name
+      FROM   student s
+      INNER JOIN department d ON s.dept_id = d.dept_id
+      ORDER BY d.dept_name, s.last_name;
+
+      -- Three-table join: enrollment details with student and course names
+      SELECT s.first_name, s.last_name, c.course_code, c.title, e.semester, e.grade
+      FROM   enrollment e
+      INNER JOIN student s ON e.student_id = s.student_id
+      INNER JOIN course  c ON e.course_id  = c.course_id
+      WHERE  e.semester = 'Fall2024'
+      ORDER BY s.last_name;
+      ```
+
+      ### LEFT (OUTER) JOIN
+
+      Returns **all rows from the left table** and matching rows from the right table. Where no
+      match exists in the right table, NULL is returned for the right table's columns. Use this
+      to find "A with or without B" — especially useful to detect orphaned or unassigned records.
+
+      ```sql
+      -- ALL students, showing their department name (or NULL if unassigned)
+      SELECT s.first_name, s.last_name, d.dept_name
+      FROM   student s
+      LEFT JOIN department d ON s.dept_id = d.dept_id;
+
+      -- Find students who have NEVER enrolled in any course
+      SELECT s.student_id, s.first_name, s.last_name
+      FROM   student s
+      LEFT JOIN enrollment e ON s.student_id = e.student_id
+      WHERE  e.enrollment_id IS NULL;   -- the NULL signals no matching enrollment
+      ```
+
+      ### RIGHT (OUTER) JOIN
+
+      The mirror of LEFT JOIN: returns **all rows from the right table**. In practice, a RIGHT
+      JOIN can always be rewritten as a LEFT JOIN by swapping table order; most teams standardise
+      on LEFT JOIN for consistency.
+
+      ```sql
+      -- All departments, even those with no enrolled students
+      SELECT d.dept_name, COUNT(s.student_id) AS student_count
+      FROM   student s
+      RIGHT JOIN department d ON s.dept_id = d.dept_id
+      GROUP BY d.dept_name;
+      ```
+
+      ### FULL OUTER JOIN
+
+      Returns **all rows from both tables**. Where a row in one table has no match in the other,
+      NULLs are filled in for the other side's columns. Not supported in older MySQL (use UNION
+      of LEFT and RIGHT JOINs as a workaround).
+
+      ```sql
+      -- All students and all departments, showing unmatched rows from both sides
+      SELECT s.first_name, s.last_name, d.dept_name
+      FROM   student s
+      FULL OUTER JOIN department d ON s.dept_id = d.dept_id;
+      ```
+
+      | JOIN Type | Rows Returned |
+      |-----------|--------------|
+      | INNER JOIN | Only rows matching the condition on BOTH sides |
+      | LEFT JOIN | All left-table rows + matching right-table rows (NULL for no match) |
+      | RIGHT JOIN | All right-table rows + matching left-table rows (NULL for no match) |
+      | FULL OUTER JOIN | All rows from both tables (NULL where unmatched on either side) |
+
+  - heading: "Aggregation: GROUP BY, HAVING, and Aggregate Functions"
+    content: |
+      ## Aggregation: GROUP BY, HAVING, and Aggregate Functions
+
+      Aggregate functions collapse multiple rows into a single summary value. They are almost
+      always used with `GROUP BY`, which partitions the result set into groups before the
+      aggregate is applied.
+
+      | Function | Description |
+      |----------|-------------|
+      | `COUNT(*)` | Counts all rows in the group (including NULLs) |
+      | `COUNT(col)` | Counts non-NULL values in the column |
+      | `COUNT(DISTINCT col)` | Counts distinct non-NULL values |
+      | `SUM(col)` | Sum of non-NULL numeric values |
+      | `AVG(col)` | Arithmetic mean of non-NULL numeric values |
+      | `MIN(col)` | Minimum value (works on numbers, dates, strings) |
+      | `MAX(col)` | Maximum value |
+
+      ```sql
+      -- How many students are in each department?
+      SELECT d.dept_name, COUNT(s.student_id) AS student_count
+      FROM   department d
+      LEFT JOIN student s ON d.dept_id = s.dept_id
+      GROUP BY d.dept_name
+      ORDER BY student_count DESC;
+
+      -- Average GPA per department, only for departments with > 5 students
+      -- NOTE: WHERE filters BEFORE grouping; HAVING filters AFTER grouping
+      SELECT d.dept_name,
+             COUNT(s.student_id)      AS student_count,
+             ROUND(AVG(s.gpa), 2)     AS avg_gpa,
+             MIN(s.gpa)               AS min_gpa,
+             MAX(s.gpa)               AS max_gpa
+      FROM   department d
+      JOIN   student s ON d.dept_id = s.dept_id
+      GROUP BY d.dept_name
+      HAVING COUNT(s.student_id) > 5
+      ORDER BY avg_gpa DESC;
+
+      -- Grade distribution for a specific course
+      SELECT e.grade,
+             COUNT(*) AS student_count,
+             ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 1) AS percentage
+      FROM   enrollment e
+      WHERE  e.course_id = 1
+         AND e.grade IS NOT NULL
+      GROUP BY e.grade
+      ORDER BY e.grade;
+
+      -- Total credits each student has completed (grade not NULL)
+      SELECT s.first_name, s.last_name,
+             SUM(c.credits) AS completed_credits
+      FROM   student s
+      JOIN   enrollment e ON s.student_id = e.student_id
+      JOIN   course      c ON e.course_id  = c.course_id
+      WHERE  e.grade IS NOT NULL
+      GROUP BY s.student_id, s.first_name, s.last_name
+      ORDER BY completed_credits DESC;
+      ```
+
+      **Execution order of a SELECT statement** (important for understanding WHERE vs HAVING):
+
+      ```
+      1. FROM / JOIN      — identify the source tables and join them
+      2. WHERE            — filter individual rows (before grouping)
+      3. GROUP BY         — partition rows into groups
+      4. Aggregate funcs  — apply COUNT/SUM/AVG/MIN/MAX within each group
+      5. HAVING           — filter groups (after aggregation)
+      6. SELECT           — compute output expressions
+      7. DISTINCT         — remove duplicate rows
+      8. ORDER BY         — sort the result set
+      9. LIMIT / OFFSET   — restrict number of returned rows
+      ```
+
+quiz:
+  - question: "Which SQL constraint prevents a column from containing NULL values and also ensures no two rows have the same value in that column?"
+    options:
+      - "NOT NULL"
+      - "UNIQUE"
+      - "PRIMARY KEY"
+      - "CHECK"
+    answer: 2
+    explanation: "PRIMARY KEY implies both NOT NULL and UNIQUE. NOT NULL alone allows duplicates. UNIQUE alone allows NULL (in most databases, multiple NULLs are permitted in a UNIQUE column because NULL ≠ NULL). CHECK validates a condition but does not enforce uniqueness or non-nullability."
+
+  - question: "You run: SELECT dept_id, AVG(gpa) FROM student GROUP BY dept_id HAVING AVG(gpa) > 3.5; — What does the HAVING clause do here, and why can't WHERE be used instead?"
+    options:
+      - "HAVING filters individual rows; WHERE cannot be used because it runs after GROUP BY"
+      - "HAVING filters groups after aggregation; WHERE cannot reference aggregate functions because it runs before GROUP BY"
+      - "HAVING and WHERE are interchangeable; WHERE cannot be used here due to a syntax restriction"
+      - "HAVING filters the source table; WHERE filters the result set"
+    answer: 1
+    explanation: "WHERE is evaluated before GROUP BY and cannot reference aggregate expressions like AVG(gpa). HAVING is evaluated after grouping and aggregation, making it the correct clause for filtering on aggregate results. This is governed by SQL's logical processing order."
+
+  - question: "A LEFT JOIN between tables A and B returns 150 rows. An INNER JOIN of the same tables on the same condition returns 120 rows. What does this difference indicate?"
+    options:
+      - "There are 30 rows in B that have no matching row in A"
+      - "There are 30 rows in A that have no matching row in B"
+      - "There are 30 duplicate rows in A"
+      - "The join condition is incorrect in one of the queries"
+    answer: 1
+    explanation: "A LEFT JOIN returns all rows from A plus matching rows from B. The 30 extra rows (150 − 120) are rows in A that had no matching row in B; these appear in the LEFT JOIN result with NULL values for B's columns but are excluded by the INNER JOIN."
+
+  - question: "Which of the following correctly finds all courses that have NEVER been enrolled in? (Tables: course(course_id, title), enrollment(enrollment_id, course_id))"
+    options:
+      - "SELECT c.title FROM course c INNER JOIN enrollment e ON c.course_id = e.course_id WHERE e.course_id IS NULL;"
+      - "SELECT c.title FROM course c LEFT JOIN enrollment e ON c.course_id = e.course_id WHERE e.enrollment_id IS NULL;"
+      - "SELECT c.title FROM course c WHERE c.course_id NOT IN (SELECT course_id FROM enrollment WHERE course_id IS NOT NULL);"
+      - "Both B and C are correct"
+    answer: 3
+    explanation: "Both the LEFT JOIN / IS NULL pattern (option B) and the NOT IN subquery (option C) correctly identify courses with no enrollments. Option A uses INNER JOIN, which only returns matched rows, so the WHERE IS NULL condition can never be true. Options B and C are equivalent and both valid — option B is often more efficient."
+
+  - question: "Given the university schema, write (conceptually) the SELECT statement that returns each department name and the total number of students enrolled in ALL courses offered by that department in Fall2024."
+    options:
+      - "JOIN department → student only, GROUP BY dept_name, COUNT students WHERE semester = 'Fall2024'"
+      - "JOIN department → course → enrollment, filter semester = 'Fall2024', GROUP BY dept_name, COUNT enrollment rows"
+      - "JOIN department → course, GROUP BY dept_name, SUM credits"
+      - "JOIN student → enrollment, GROUP BY dept_id, COUNT DISTINCT course_id"
+    answer: 1
+    explanation: "The correct path is department → course (to get courses offered by each dept) → enrollment (to count enrollments). Filter on semester='Fall2024' in WHERE, then GROUP BY department name and COUNT(*) or COUNT(enrollment_id). This is a three-table join with a WHERE filter and GROUP BY."

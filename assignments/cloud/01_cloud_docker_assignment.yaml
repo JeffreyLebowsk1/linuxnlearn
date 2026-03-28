@@ -1,0 +1,247 @@
+title: "Cloud Fundamentals & Docker Assignment"
+category: "cloud"
+difficulty: "intermediate"
+estimated_minutes: 35
+related_lesson: "02_docker_containers"
+instructions: |
+  Demonstrate your understanding of AWS core services and Docker containerisation by completing
+  the tasks below. Multiple-choice questions are graded instantly. Written and practical answers
+  are graded by AI with detailed feedback explaining what you got right and what to improve.
+  For practical tasks, write production-quality configurations with security best practices in mind.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "Your team needs to run a stateless batch-processing job that reads from an S3 bucket, transforms data, and writes results back to S3. The job completes in under 15 minutes and is triggered by new file uploads. Which AWS compute service is the BEST fit for this workload?"
+    options:
+      - "Amazon EC2 — launch a dedicated instance sized for the workload and run the job as a cron task"
+      - "AWS Lambda — deploy the transformation code as a serverless function triggered by S3 event notifications"
+      - "Amazon S3 — use S3 Select to perform in-place transformations without any compute service"
+      - "Amazon RDS — store the transformation logic as stored procedures and invoke them on a schedule"
+    answer: 1
+    explanation: "AWS Lambda is purpose-built for event-driven, short-lived, stateless workloads. Lambda functions can run up to 15 minutes, are triggered directly by S3 events (PutObject notifications), scale automatically with the number of incoming files, and cost nothing when idle — you pay only per invocation and GB-second of compute. EC2 would require provisioning, managing, and paying for an instance 24/7 even when no jobs are running. S3 Select only filters data within objects, it cannot execute arbitrary transformation logic. RDS is a relational database service, not a compute service for batch jobs."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "A Dockerfile contains these instructions in order:\n\n  COPY requirements.txt .\n  RUN pip install -r requirements.txt\n  COPY . .\n\nA developer changes only app.py (not requirements.txt) and runs docker build again. Which layers does Docker rebuild due to cache invalidation?"
+    options:
+      - "All layers from the first COPY onwards — any file change invalidates the entire cache"
+      - "Only the RUN pip install layer — pip detects that requirements.txt is unchanged and skips reinstalling"
+      - "Only the second COPY . . layer and any layers defined after it"
+      - "No layers are rebuilt — Docker hashes the final image and detects it is identical"
+    answer: 2
+    explanation: "Docker's layer cache is invalidated only when the content of a layer or its inputs change. COPY requirements.txt . produces a cached layer because requirements.txt is unchanged. RUN pip install -r requirements.txt also hits the cache because the previous layer is unchanged. However, COPY . . copies the entire build context including the modified app.py, so Docker detects the content change and invalidates the cache from that point forward — rebuilding COPY . . and every subsequent instruction. This is exactly why you should always COPY dependency manifests and install them before copying source code: it avoids re-running slow installs on every source change."
+
+  - id: 3
+    type: "short_answer"
+    points: 15
+    question: |
+      Explain the difference between Docker ENTRYPOINT and CMD. Address all of the following:
+      (1) What is each instruction's role?
+      (2) What happens when a user supplies arguments to docker run after the image name?
+      (3) What happens when both ENTRYPOINT and CMD are present in the same Dockerfile?
+      Provide a concrete Dockerfile snippet and two docker run examples that illustrate
+      the difference.
+    rubric: |
+      Award full marks (15) if the answer covers all four criteria:
+      1. (4 pts) ENTRYPOINT defines the fixed executable that always runs — it cannot be
+         overridden by arguments passed after the image name in docker run; it can only be
+         replaced with --entrypoint flag.
+      2. (4 pts) CMD provides default arguments/command that CAN be overridden by anything
+         supplied after the image name in docker run. When used alone (no ENTRYPOINT), CMD
+         is the full command to run.
+      3. (4 pts) When both are present: ENTRYPOINT is the executable, CMD supplies the
+         default arguments to that executable. A docker run argument replaces CMD but not
+         ENTRYPOINT — so the ENTRYPOINT always executes with either CMD defaults or the
+         user-supplied override.
+      4. (3 pts) A working Dockerfile example and two docker run invocations demonstrating
+         override behaviour.
+      Award 10/15 if the explanation is correct but the example is missing or incorrect.
+      Award 5/15 if only one instruction is correctly described.
+    sample_answer: |
+      **ENTRYPOINT** defines the executable that is always run when a container starts. It is
+      the "fixed" part of the command. Arguments passed after the image name on docker run are
+      appended to the ENTRYPOINT — they do not replace it. The only way to override ENTRYPOINT
+      is with the `docker run --entrypoint` flag.
+
+      **CMD** specifies the default command or default arguments to pass to ENTRYPOINT. Unlike
+      ENTRYPOINT, CMD is easily overridden: anything you type after the image name in docker run
+      completely replaces CMD.
+
+      **When both are specified**, ENTRYPOINT is the executable and CMD provides the default
+      arguments. The user can supply different arguments at runtime to replace CMD while keeping
+      ENTRYPOINT unchanged.
+
+      Example Dockerfile:
+      ```dockerfile
+      FROM python:3.12-slim
+      COPY app.py .
+      ENTRYPOINT ["python", "app.py"]
+      CMD ["--mode", "production"]
+      ```
+
+      Scenario 1 — use defaults:
+      ```bash
+      docker run myimage
+      # Runs: python app.py --mode production
+      ```
+
+      Scenario 2 — override CMD at runtime:
+      ```bash
+      docker run myimage --mode debug --verbose
+      # Runs: python app.py --mode debug --verbose
+      # CMD is replaced; ENTRYPOINT stays fixed
+      ```
+
+      If only CMD were used (no ENTRYPOINT):
+      ```dockerfile
+      CMD ["python", "app.py", "--mode", "production"]
+      ```
+      Then `docker run myimage bash` would replace the entire command and run bash, not python.
+      With ENTRYPOINT set, `docker run myimage bash` would run `python app.py bash` — the
+      ENTRYPOINT is always honoured.
+
+  - id: 4
+    type: "short_answer"
+    points: 15
+    question: |
+      Describe the AWS Shared Responsibility Model. Your answer must cover:
+      (1) The overall concept — what problem does the model solve?
+      (2) What AWS is responsible for ("security OF the cloud").
+      (3) What the customer is responsible for ("security IN the cloud").
+      (4) Two specific examples of customer responsibilities for an EC2 instance
+          running a public-facing web application.
+    rubric: |
+      Award full marks (15) if the answer covers all four areas:
+      1. (3 pts) Concept: the model clearly divides security duties between AWS and the
+         customer to avoid ambiguity about who is accountable for each layer. AWS cannot
+         see inside customer workloads; customers cannot access AWS physical infrastructure.
+      2. (4 pts) AWS responsibilities: physical data centre security, hardware, hypervisor/
+         virtualisation layer, managed service patching (e.g., RDS engine patches), global
+         network infrastructure, and AWS's own software.
+      3. (4 pts) Customer responsibilities: guest OS patching, application security, IAM
+         user and role configuration, data encryption at rest and in transit, firewall/
+         security group rules, and network ACL configuration.
+      4. (4 pts) Two correct EC2-specific examples from: OS patching (applying kernel and
+         package updates), security group configuration, IAM roles/least-privilege, data
+         encryption (EBS encryption, TLS certificates), application vulnerability management,
+         CloudTrail/logging configuration.
+      Award 10/15 if responsibilities are correctly described but EC2 examples are vague or missing.
+      Award 5/15 if only one party's responsibilities are addressed.
+    sample_answer: |
+      **Concept:** The AWS Shared Responsibility Model defines which security tasks are owned
+      by AWS and which are owned by the customer. Without this clarity, organisations might
+      assume AWS handles all security, leaving critical gaps — or unnecessarily duplicate effort
+      on infrastructure AWS already secures. The boundary varies by service type (IaaS vs PaaS
+      vs SaaS).
+
+      **AWS is responsible for "Security OF the Cloud":**
+      - Physical security of data centres (guards, biometrics, surveillance)
+      - Hardware (servers, networking switches, storage arrays)
+      - Virtualisation / hypervisor layer
+      - AWS global network infrastructure
+      - Patching and security of AWS-managed services (e.g., the RDS database engine,
+        Lambda runtime environment, S3 service itself)
+
+      **The Customer is responsible for "Security IN the Cloud":**
+      - Guest operating system patches and updates
+      - Application-layer security (code vulnerabilities, dependency CVEs)
+      - Identity and Access Management (IAM users, roles, least-privilege policies)
+      - Data encryption at rest and in transit
+      - Security group and network ACL firewall rules
+      - Audit logging, monitoring, and incident response configuration
+
+      **Two EC2-specific customer responsibilities for a web application:**
+
+      1. **OS patching:** AWS provides the EC2 instance and underlying hardware, but the customer
+         is solely responsible for keeping the guest OS (e.g., Ubuntu 22.04) up to date. An
+         unpatched kernel or web server (nginx, Apache) is the customer's risk, not AWS's.
+
+      2. **IAM least-privilege configuration:** If the web app uses an IAM role to access S3 or
+         DynamoDB, the customer must ensure that role grants only the minimum permissions needed.
+         An overly permissive role (e.g., AdministratorAccess attached to an EC2 instance) is
+         entirely the customer's misconfiguration — AWS has no visibility into whether the policy
+         is appropriate for the workload.
+
+  - id: 5
+    type: "practical"
+    points: 50
+    question: |
+      **Part A — Dockerfile (42 pts):**
+      Write a complete, production-quality Dockerfile for a Python Flask REST API that satisfies
+      ALL of the following requirements:
+        1. Uses python:3.12-slim as the base image.
+        2. Creates a non-root user (e.g., appuser) and group before any application files are added.
+        3. Installs Python dependencies from requirements.txt in a separate layer BEFORE copying
+           application source code (to maximise layer cache reuse).
+        4. Copies the application source code into the container.
+        5. Exposes port 5000.
+        6. Includes a HEALTHCHECK instruction that tests the /health endpoint with curl every 30s,
+           allows a 5s timeout, and retries 3 times before marking unhealthy.
+        7. Sets the USER to the non-root user so the application process does not run as root.
+
+      **Part B — docker run command (8 pts):**
+      Write the docker run command to start the container in detached mode, mapping host port 8080
+      to container port 5000, with the container named "flask-api".
+    rubric: |
+      Part A — Dockerfile (42 pts, 6 pts each requirement):
+      1. FROM python:3.12-slim as the exact base image (6 pts).
+      2. RUN groupadd / useradd (or addgroup/adduser) creating a non-root user before COPY/RUN
+         application steps; user should not have sudo or elevated permissions (6 pts).
+      3. COPY requirements.txt then RUN pip install in a layer that appears BEFORE the main
+         application COPY; pip install should include --no-cache-dir for image size (6 pts).
+      4. COPY of application source (. or specific files) placed after the pip install layer (6 pts).
+      5. EXPOSE 5000 instruction present (6 pts).
+      6. HEALTHCHECK with CMD curl -f http://localhost:5000/health (or equivalent), interval and
+         timeout set, retries set (accept reasonable variations in values) (6 pts).
+      7. USER instruction referencing the non-root user created in step 2, placed before CMD/ENTRYPOINT (6 pts).
+
+      Part B — docker run (8 pts):
+      Must include: -d (detached), -p 8080:5000 (port mapping), --name flask-api, and the image name.
+      Award 8 pts for fully correct command; 4 pts if port mapping or detached flag is missing.
+    sample_answer: |
+      **Part A — Dockerfile:**
+
+      ```dockerfile
+      FROM python:3.12-slim
+
+      # Create a non-root group and user
+      RUN groupadd --gid 1001 appgroup && \
+          useradd --uid 1001 --gid appgroup --shell /bin/sh --create-home appuser
+
+      WORKDIR /app
+
+      # Install dependencies in a dedicated layer for cache efficiency
+      COPY requirements.txt .
+      RUN pip install --no-cache-dir -r requirements.txt
+
+      # Copy application source code
+      COPY . .
+
+      # Ensure the non-root user owns the application files
+      RUN chown -R appuser:appgroup /app
+
+      EXPOSE 5000
+
+      HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+        CMD curl -f http://localhost:5000/health || exit 1
+
+      # Drop to non-root user before starting the process
+      USER appuser
+
+      CMD ["python", "-m", "flask", "run", "--host=0.0.0.0", "--port=5000"]
+      ```
+
+      **Part B — docker run command:**
+
+      ```bash
+      docker run -d -p 8080:5000 --name flask-api flask-api-image
+      ```
+
+      Explanation of flags:
+      - `-d`: detached mode — the container runs in the background and the terminal is freed.
+      - `-p 8080:5000`: maps TCP port 8080 on the host to port 5000 inside the container.
+        Requests to http://localhost:8080 on the host reach the Flask app's port 5000.
+      - `--name flask-api`: assigns a human-readable name for use with docker stop/logs/exec.

@@ -1,0 +1,600 @@
+title: "Cryptography & Public Key Infrastructure"
+order: 2
+summary: "A rigorous treatment of modern cryptography: symmetric and asymmetric algorithms, cryptographic hashing, digital signatures, the PKI certificate chain of trust, the TLS 1.3 handshake, X.509 certificates, and practical use of the openssl CLI and Python cryptography library."
+learning_objectives:
+  - "Contrast symmetric and asymmetric encryption, explaining the key management trade-offs of each."
+  - "Describe the operational differences between AES, DES, 3DES, RSA, and ECC and justify algorithm selection."
+  - "Explain why MD5 is cryptographically broken and what properties a secure hash function must have."
+  - "Define and construct a digital signature using asymmetric key pairs and explain its role in non-repudiation."
+  - "Describe the PKI hierarchy — root CA, intermediate CA, end-entity certificate — and the chain of trust."
+  - "Trace the TLS 1.3 handshake step by step, identifying the cryptographic operations at each stage."
+  - "Parse an X.509 certificate's fields using openssl and identify key attributes."
+  - "Demonstrate symmetric encryption, hashing, and digital signatures using the Python cryptography library."
+builds_on:
+  - "Threat Landscape & Attack Vectors (SEC 301 Lesson 1) — CIA triad; MITM context"
+  - "Linux command-line fundamentals (SYS 202) — openssl CLI is used extensively"
+sections:
+  - heading: "Symmetric Encryption — AES, DES, and 3DES"
+    content: |
+      ## Symmetric Encryption — AES, DES, and 3DES
+
+      In **symmetric encryption**, the same key is used for both encryption and decryption.
+      This makes it computationally efficient — modern AES hardware acceleration achieves
+      multi-gigabyte-per-second throughput — but creates a **key distribution problem**: how
+      do two parties securely share a secret key before they have a secure channel? (Answered
+      by asymmetric cryptography, below.)
+
+      ### DES — Data Encryption Standard (1977, deprecated)
+      DES uses a 56-bit key with a 64-bit block size (Feistel structure, 16 rounds). The
+      effective 56-bit key space (2^56 ≈ 72 quadrillion keys) was considered adequate in
+      1977 but became insecure as compute power grew. In 1998, the EFF's **Deep Crack**
+      machine brute-forced a DES key in 56 hours for $250,000. DES was formally withdrawn
+      by NIST in 2005. **Do not use DES in any new system.**
+
+      ### 3DES — Triple DES (1995, legacy)
+      3DES applies DES three times with two or three distinct keys (keying option 1: 3 × 56
+      = 168-bit effective key). This was a pragmatic backward-compatible fix. However, 3DES
+      is vulnerable to **meet-in-the-middle attacks**, reducing effective security to ~112 bits,
+      and suffers the **Sweet32 attack** (birthday attack on 64-bit blocks). NIST deprecated
+      3DES in 2019 and disallows it after 2023. Still found in legacy POS terminals and
+      mainframes — a known risk that security architects must actively phase out.
+
+      ### AES — Advanced Encryption Standard (2001, current standard)
+      AES (Rijndael) was selected by NIST in 2001 after a 5-year public competition. It
+      uses a **substitution-permutation network** (not Feistel), operates on 128-bit blocks,
+      and supports key sizes of **128, 192, or 256 bits**. The number of rounds varies: 10
+      (AES-128), 12 (AES-192), 14 (AES-256). AES-256 has never been broken; the best known
+      attacks are biclique attacks requiring 2^254.4 operations — computationally infeasible.
+
+      #### AES Modes of Operation
+      Raw AES (ECB mode) is deterministic: the same plaintext block always produces the same
+      ciphertext — this leaks structure (the famous ECB penguin). **Modes of operation** solve
+      this by introducing randomness:
+
+      | Mode | Description | IV Required | Authentication | Use Case |
+      |------|-------------|-------------|----------------|----------|
+      | ECB | Each block encrypted independently | No | No | **Never use** |
+      | CBC | XOR with previous ciphertext block | Yes | No | Legacy TLS, disk encryption |
+      | CTR | Turns block cipher into stream cipher | Yes (nonce) | No | High-performance streaming |
+      | **GCM** | CTR + GHASH authentication tag | Yes (nonce) | **Yes** | TLS 1.3, TLS 1.2, AEAD |
+      | CCM | CTR + CBC-MAC | Yes | Yes | IoT, IEEE 802.11i (Wi-Fi) |
+
+      **AES-GCM** (Galois/Counter Mode) is the recommended mode for authenticated encryption
+      with associated data (AEAD). It provides confidentiality *and* integrity/authentication
+      in a single pass. TLS 1.3 mandates AEAD ciphers exclusively; `TLS_AES_256_GCM_SHA384`
+      is the strongest standard cipher suite.
+
+      ```bash
+      # Encrypt a file with AES-256-GCM using openssl (openssl 3.x)
+      openssl enc -aes-256-cbc -pbkdf2 -iter 600000 \
+          -in plaintext.txt -out encrypted.bin \
+          -pass pass:'s3cur3P@ssphrase!'
+
+      # Decrypt
+      openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 \
+          -in encrypted.bin -out decrypted.txt \
+          -pass pass:'s3cur3P@ssphrase!'
+
+      # Benchmark AES-256-GCM throughput on your CPU
+      openssl speed -elapsed aes-256-gcm
+      ```
+
+  - heading: "Asymmetric Encryption — RSA and ECC"
+    content: |
+      ## Asymmetric Encryption — RSA and ECC
+
+      **Asymmetric (public-key) cryptography** uses a mathematically linked **key pair**:
+      a **public key** (freely distributed) and a **private key** (kept secret). Data
+      encrypted with the public key can *only* be decrypted with the corresponding private key.
+      This solves the key distribution problem: you can publish your public key to the world.
+
+      ### RSA — Rivest–Shamir–Adleman (1977)
+      RSA's security is based on the **integer factorisation problem**: given a large number
+      n = p × q (where p and q are large primes), it is computationally infeasible to recover
+      p and q. Key sizes: 1024-bit (broken — do not use), 2048-bit (minimum acceptable today),
+      3072-bit (recommended), 4096-bit (high security). RSA encryption:
+      `ciphertext = plaintext^e mod n` (public exponent e, modulus n).
+
+      **RSA in practice:** RSA is *not* used to encrypt bulk data (it is ~1000× slower than AES)
+      but is used to encrypt or sign small quantities of data — typically an AES session key
+      (hybrid encryption) or a hash digest (digital signature). TLS uses RSA or ECDSA only for
+      the handshake; bulk data is encrypted with AES-GCM.
+
+      ```bash
+      # Generate a 4096-bit RSA key pair
+      openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 \
+          -out private_rsa.pem
+
+      # Extract the public key
+      openssl pkey -in private_rsa.pem -pubout -out public_rsa.pem
+
+      # Inspect the key (see modulus, exponent)
+      openssl pkey -in private_rsa.pem -text -noout | head -20
+      ```
+
+      ### ECC — Elliptic Curve Cryptography
+      ECC is based on the **elliptic curve discrete logarithm problem (ECDLP)**: given points P
+      and Q on an elliptic curve where Q = kP, it is computationally infeasible to recover k.
+      The key advantage is **smaller key sizes for equivalent security**:
+
+      | Security Level | RSA/DH Key Size | ECC Key Size |
+      |---|---|---|
+      | 80-bit (inadequate) | 1024 bits | 160 bits |
+      | 112-bit (legacy) | 2048 bits | 224 bits |
+      | 128-bit (standard) | 3072 bits | 256 bits (P-256 / prime256v1) |
+      | 192-bit (high) | 7680 bits | 384 bits (P-384) |
+      | 256-bit (quantum-resistant boundary) | 15360 bits | 521 bits (P-521) |
+
+      **Curve25519** (designed by Daniel Bernstein) is the modern preferred curve for key
+      exchange (used in X25519 — the ECDH variant). It is specifically designed to resist
+      side-channel attacks and does not use NIST curves (which some cryptographers distrust
+      due to unclear parameter generation). TLS 1.3 uses X25519 as its default key exchange.
+
+      ```bash
+      # Generate an ECDSA key pair using P-384
+      openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 \
+          -out private_ec.pem
+      openssl pkey -in private_ec.pem -pubout -out public_ec.pem
+
+      # Inspect the curve parameters
+      openssl pkey -in private_ec.pem -text -noout
+      ```
+
+      ### Post-Quantum Cryptography (Brief Mention)
+      Shor's algorithm, running on a sufficiently large quantum computer, can break both RSA
+      (factoring) and ECC (discrete log) in polynomial time. NIST finalised the first
+      post-quantum cryptography standards in 2024: **ML-KEM** (CRYSTALS-Kyber, FIPS 203) for
+      key encapsulation and **ML-DSA** (CRYSTALS-Dilithium, FIPS 204) for digital signatures.
+      Migration timelines are a current focus of CISA and CNSA 2.0.
+
+  - heading: "Cryptographic Hashing — SHA-256, SHA-3, and Why MD5 is Broken"
+    content: |
+      ## Cryptographic Hashing — SHA-256, SHA-3, and Why MD5 is Broken
+
+      A **cryptographic hash function** maps an arbitrary-length input to a fixed-length
+      output (the **digest** or **hash**). It must satisfy three security properties:
+
+      1. **Pre-image resistance:** Given a hash H, it is computationally infeasible to find
+         any input m such that hash(m) = H. (One-way property.)
+      2. **Second pre-image resistance:** Given input m₁, it is infeasible to find m₂ ≠ m₁
+         such that hash(m₁) = hash(m₂).
+      3. **Collision resistance:** It is infeasible to find *any* two distinct inputs m₁ and m₂
+         such that hash(m₁) = hash(m₂).
+
+      Hash functions are used for: file integrity verification, password storage (with salt),
+      digital signatures (sign the hash, not the whole message), MAC (HMAC), key derivation
+      (HKDF), and blockchain proof-of-work.
+
+      ### Why MD5 is Broken
+      MD5 produces a 128-bit digest. In 2004, Wang and Yu demonstrated **practical collision
+      attacks** against MD5 — two different inputs producing the same hash. In 2008, Sotirov
+      et al. used MD5 collisions to forge a rogue HTTPS certificate, impersonating any CA.
+      MD5 collisions can now be computed in **seconds on a laptop**. MD5 violates collision
+      resistance completely.
+
+      ```bash
+      # Demonstrate MD5 collision (two different files with identical MD5 hashes)
+      # Download the famous collision files from the fastcoll tool demo
+      echo "MD5 of message1:"
+      echo -n "The quick brown fox" | md5sum
+      # MD5 should NOT be used for security purposes
+
+      # Compare SHA-256 vs MD5 digest lengths
+      echo -n "hello world" | md5sum
+      # 5eb63bbbe01eeed093cb22bb8f5acdc3  -
+      echo -n "hello world" | sha256sum
+      # b94d27b9934d3e08a52e52d7da7dabfac484efe04294e576e4bce37a8b89f5c1  -
+      ```
+
+      **SHA-1** is similarly broken for collision resistance (SHAttered attack, 2017, computed
+      a SHA-1 collision in 2^63.1 operations). Do not use SHA-1 for new systems. All major CAs
+      stopped issuing SHA-1 certificates in 2016.
+
+      ### SHA-2 Family (Current Standard)
+      SHA-2, standardised in FIPS 180-4, includes SHA-224, SHA-256, SHA-384, SHA-512.
+      **SHA-256** (256-bit output) is the workhorse of modern security — used in TLS 1.3
+      certificates, Bitcoin's proof-of-work, and code signing. **SHA-384/SHA-512** are used
+      in high-security contexts (government, classified systems).
+
+      ### SHA-3 / Keccak
+      SHA-3 (FIPS 202, 2015) uses a fundamentally different **sponge construction** (Keccak),
+      making it resistant to length-extension attacks that affect SHA-2. Not yet replacing
+      SHA-256 in practice but recommended for new designs requiring defence against SHA-2's
+      structural weaknesses.
+
+      ### Password Hashing — A Special Case
+      General-purpose hash functions (SHA-256) are *too fast* for password storage — an
+      attacker with a GPU can compute billions of SHA-256 hashes per second, enabling offline
+      brute-force attacks. **Password hashing functions** deliberately add computational cost:
+      - **bcrypt:** Based on Blowfish, with a configurable work factor (cost). Current minimum
+        recommended cost: 12. Produces 60-character output including salt.
+      - **Argon2id:** Winner of the 2015 Password Hashing Competition. Memory-hard (resists
+        GPU/ASIC attacks). OWASP recommends Argon2id with memory=19MB, iterations=2.
+      - **PBKDF2:** NIST-approved, FIPS-compliant; uses HMAC-SHA256 iterated N times (OWASP
+        recommends 600,000 iterations with PBKDF2-HMAC-SHA256).
+
+      ```python
+      import hashlib, os
+      from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+      from cryptography.hazmat.primitives import hashes
+      import base64
+
+      # Compute SHA-256 hash
+      digest = hashlib.sha256(b"SEC 301 is excellent").hexdigest()
+      print(f"SHA-256: {digest}")
+
+      # Password hashing with PBKDF2-HMAC-SHA256 (600k iterations per OWASP)
+      password = b"hunter2"
+      salt = os.urandom(16)                        # 128-bit random salt
+      kdf = PBKDF2HMAC(
+          algorithm=hashes.SHA256(),
+          length=32,
+          salt=salt,
+          iterations=600_000,
+      )
+      key = kdf.derive(password)
+      stored = base64.b64encode(salt + key).decode()
+      print(f"Stored hash: {stored}")
+      ```
+
+  - heading: "Digital Signatures"
+    content: |
+      ## Digital Signatures
+
+      A **digital signature** provides three security services simultaneously:
+      - **Authenticity:** The signature can only be produced by the holder of the private key.
+      - **Integrity:** Any modification to the signed data invalidates the signature.
+      - **Non-repudiation:** The signer cannot later deny having signed (the private key is
+        under their exclusive control).
+
+      ### How a Digital Signature Works (RSA-based)
+      1. **Signing:** The signer computes a hash (H) of the message, then *encrypts H with
+         their private key*: `signature = H^d mod n` (RSA sign operation, where d is the
+         private exponent). The signature is appended to the message.
+      2. **Verification:** The verifier computes H from the received message, then *decrypts
+         the signature with the signer's public key*: `H' = signature^e mod n`. If H == H',
+         the signature is valid.
+
+      ```mermaid
+      sequenceDiagram
+          participant Alice
+          participant Bob
+          Note over Alice: Has private key (d)<br/>and public key (e, n)
+          Alice->>Alice: Compute SHA-256(message) = H
+          Alice->>Alice: signature = H^d mod n (encrypt hash with private key)
+          Alice->>Bob: Send message + signature + public key certificate
+          Note over Bob: Verifies certificate chain (trusted CA)
+          Bob->>Bob: Compute SHA-256(received message) = H'
+          Bob->>Bob: H'' = signature^e mod n (decrypt with Alice's public key)
+          Bob->>Bob: Verify H' == H''
+          Note over Bob: If equal: authentic, unmodified, non-repudiable
+      ```
+
+      ```bash
+      # Sign a file with RSA private key (SHA-256 digest)
+      openssl dgst -sha256 -sign private_rsa.pem \
+          -out document.sig document.txt
+
+      # Verify the signature with the public key
+      openssl dgst -sha256 -verify public_rsa.pem \
+          -signature document.sig document.txt
+      # Output: Verified OK
+
+      # ECDSA signing (faster, smaller signatures)
+      openssl dgst -sha256 -sign private_ec.pem \
+          -out document_ec.sig document.txt
+      openssl dgst -sha256 -verify public_ec.pem \
+          -signature document_ec.sig document.txt
+      ```
+
+      ```python
+      from cryptography.hazmat.primitives.asymmetric import ec
+      from cryptography.hazmat.primitives.asymmetric.utils import (
+          decode_dss_signature, encode_dss_signature
+      )
+      from cryptography.hazmat.primitives import hashes, serialization
+
+      # Generate an ECDSA P-256 key pair
+      private_key = ec.generate_private_key(ec.SECP256R1())
+      public_key = private_key.public_key()
+
+      message = b"Certified: SEC 301 exam passed with distinction"
+
+      # Sign
+      signature = private_key.sign(message, ec.ECDSA(hashes.SHA256()))
+
+      # Verify (raises InvalidSignature if tampered)
+      public_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+      print("Signature verified successfully.")
+      ```
+
+  - heading: "Public Key Infrastructure (PKI) and the Certificate Chain of Trust"
+    content: |
+      ## Public Key Infrastructure (PKI) and the Certificate Chain of Trust
+
+      **PKI** is the framework of policies, procedures, hardware, software, and digital
+      certificates that manages the issuance and revocation of public key certificates. Its
+      core purpose is to solve the *authentication* problem in asymmetric cryptography: how
+      do you know that a public key actually belongs to the entity it claims to? A **Certificate
+      Authority (CA)** solves this by digitally signing certificates that bind a public key to
+      an identity.
+
+      ### X.509 Certificate Structure
+      An X.509 v3 certificate (RFC 5280) contains:
+      | Field | Description |
+      |-------|-------------|
+      | Version | v3 (most certificates) |
+      | Serial Number | Unique per CA, used for revocation |
+      | Signature Algorithm | e.g., `sha256WithRSAEncryption` or `ecdsa-with-SHA256` |
+      | Issuer | Distinguished Name (DN) of the signing CA |
+      | Validity (Not Before / Not After) | Certificate lifetime |
+      | Subject | DN of the certificate owner (e.g., `CN=www.example.com`) |
+      | Subject Public Key Info | Algorithm + the actual public key |
+      | Extensions (v3) | SAN (Subject Alternative Names), Key Usage, Basic Constraints, CRL Distribution Points |
+      | Signature | CA's digital signature over all the above fields |
+
+      ```bash
+      # Inspect a live TLS certificate (fetches cert, displays all fields)
+      openssl s_client -connect google.com:443 -showcerts </dev/null 2>/dev/null \
+        | openssl x509 -noout -text | head -60
+
+      # Key fields to examine:
+      # - Subject: CN (Common Name), SANs (Subject Alternative Names)
+      # - Issuer: Which CA signed it
+      # - Validity: Not After (expiry date)
+      # - Public Key Algorithm and key size
+      # - Basic Constraints: CA:TRUE means this is a CA cert
+
+      # Check certificate expiry quickly
+      echo | openssl s_client -connect google.com:443 2>/dev/null \
+        | openssl x509 -noout -dates
+
+      # Download and parse a certificate file
+      openssl x509 -in /etc/ssl/certs/ca-certificates.crt \
+          -noout -subject -issuer -dates 2>/dev/null | head -20
+      ```
+
+      ### The PKI Hierarchy — Chain of Trust
+      Trust is anchored by **Root CAs** whose self-signed certificates are pre-installed in
+      operating systems and browsers (the "trust store"). Roots sign **Intermediate CAs**
+      (also called subordinate CAs), which in turn sign **end-entity (leaf) certificates**.
+      This multi-tier structure protects Root CA private keys (kept offline in HSMs in
+      physically secured facilities).
+
+      ```mermaid
+      graph TD
+          ROOT["Root CA\n(Self-signed, offline, pre-trusted\nby OS/Browser trust store)"]
+          INT1["Intermediate CA 1\nSigned by Root CA\nOnline, issues end-entity certs"]
+          INT2["Intermediate CA 2\nSigned by Root CA\nOnline, issues end-entity certs"]
+          LEAF1["End-Entity Certificate\nwww.example.com\nSigned by Intermediate CA 1"]
+          LEAF2["End-Entity Certificate\napi.example.com\nSigned by Intermediate CA 1"]
+          LEAF3["End-Entity Certificate\nwww.otherdomain.com\nSigned by Intermediate CA 2"]
+
+          ROOT --> INT1
+          ROOT --> INT2
+          INT1 --> LEAF1
+          INT1 --> LEAF2
+          INT2 --> LEAF3
+
+          style ROOT  fill:#C0392B,color:#fff
+          style INT1  fill:#D35400,color:#fff
+          style INT2  fill:#D35400,color:#fff
+          style LEAF1 fill:#27AE60,color:#fff
+          style LEAF2 fill:#27AE60,color:#fff
+          style LEAF3 fill:#27AE60,color:#fff
+      ```
+
+      **Certificate Revocation:** If a certificate's private key is compromised, it must be
+      revoked before expiry. Mechanisms:
+      - **CRL (Certificate Revocation List):** A signed list of revoked serial numbers,
+        periodically published by the CA. Large and increasingly impractical.
+      - **OCSP (Online Certificate Status Protocol):** Real-time per-certificate status check.
+      - **OCSP Stapling:** The TLS server periodically fetches its OCSP response and "staples"
+        it to the TLS handshake, reducing latency and privacy concerns.
+
+      ### Certificate Transparency (CT)
+      Since 2018, all publicly trusted CAs must log every certificate to public, append-only
+      CT logs (RFC 6962). Browsers verify the Signed Certificate Timestamp (SCT) in the cert.
+      CT enables domain owners to detect mis-issued certificates (e.g., unauthorised certs for
+      their domain) within hours. `crt.sh` is a public CT log search engine.
+
+  - heading: "TLS 1.3 Handshake"
+    content: |
+      ## TLS 1.3 Handshake
+
+      **TLS (Transport Layer Security) 1.3**, standardised in RFC 8446 (2018), is the
+      cryptographic protocol that secures HTTPS, email (SMTPS, IMAPS), and most other
+      internet services. TLS 1.3 eliminated all legacy, weak algorithms mandated in TLS 1.2
+      and reduced the handshake from 2 round-trips to **1 round-trip** (or 0-RTT resumption).
+      All cipher suites must be AEAD (e.g., `TLS_AES_256_GCM_SHA384`, `TLS_CHACHA20_POLY1305_SHA256`).
+
+      ### TLS 1.3 Full Handshake (1-RTT)
+
+      ```mermaid
+      sequenceDiagram
+          participant Client
+          participant Server
+
+          Note over Client,Server: TCP handshake (SYN / SYN-ACK / ACK) already complete
+
+          Client->>Server: ClientHello<br/>{TLS version, cipher suites, key_share (X25519 public key), SNI}
+          Server->>Client: ServerHello<br/>{selected cipher suite, key_share (server X25519 public key)}
+          Note over Client,Server: Both sides derive Handshake Secret<br/>via ECDH(client_priv × server_pub)<br/>then HKDF key derivation
+
+          Server->>Client: {EncryptedExtensions}<br/>{Certificate (X.509 chain)}<br/>{CertificateVerify (ECDSA/RSA signature over handshake hash)}<br/>{Finished (HMAC over handshake transcript)}
+          Note over Client: Verify cert chain (PKI)<br/>Verify CertificateVerify signature<br/>Verify Finished MAC
+
+          Client->>Server: {Finished (HMAC over handshake transcript)}
+          Note over Client,Server: Derive Application Traffic Keys from Master Secret<br/>All subsequent data encrypted with AES-256-GCM
+
+          Client->>Server: {HTTP GET / (encrypted Application Data)}
+          Server->>Client: {HTTP 200 OK (encrypted Application Data)}
+      ```
+
+      ### Key Properties of TLS 1.3
+      - **Forward Secrecy (FS):** Every session uses fresh ephemeral ECDH key pairs
+        (X25519 or P-256). Compromise of the server's long-term RSA/ECDSA private key does
+        *not* decrypt past sessions. TLS 1.2 with RSA key exchange lacked forward secrecy —
+        TLS 1.3 mandates it by removing static RSA.
+      - **Zero Round-Trip Resumption (0-RTT):** For reconnecting clients, TLS 1.3 supports
+        0-RTT data (the client sends application data in its first flight). Security caveat:
+        0-RTT data is vulnerable to **replay attacks** and should not be used for
+        non-idempotent requests.
+      - **Removed from TLS 1.3:** RSA key exchange, DH (non-elliptic), RC4, DES, 3DES,
+        AES-CBC with HMAC (replaced by AEAD), MD5/SHA-1 in signatures, renegotiation,
+        compression (CRIME attack mitigation).
+
+      ```bash
+      # Verify which TLS version and cipher a server negotiates
+      openssl s_client -connect cloudflare.com:443 -tls1_3 </dev/null 2>/dev/null \
+        | grep -E "Protocol|Cipher"
+      # Protocol  : TLSv1.3
+      # Cipher    : TLS_AES_256_GCM_SHA384
+
+      # Test TLS 1.2 cipher downgrade (should be rejected for deprecated ciphers)
+      openssl s_client -connect cloudflare.com:443 \
+          -cipher RC4-SHA 2>&1 | grep -E "alert|error"
+
+      # Full handshake inspection with verbose output
+      openssl s_client -connect github.com:443 \
+          -tls1_3 -showcerts -msg 2>&1 | head -40
+      ```
+
+  - heading: "Practical Cryptography with Python"
+    content: |
+      ## Practical Cryptography with Python
+
+      The **`cryptography`** library (PyCA) is the standard Python library for production
+      cryptography. It provides both high-level recipes and low-level hazardous materials
+      (`cryptography.hazmat`) for expert use. Install: `pip install cryptography`.
+
+      ### Symmetric Encryption with AES-256-GCM
+      ```python
+      import os
+      from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+      # Generate a random 256-bit (32-byte) key — store this securely!
+      key = os.urandom(32)
+
+      # Generate a random 96-bit (12-byte) nonce — unique per encryption operation
+      nonce = os.urandom(12)
+
+      # Associated Data (authenticated but not encrypted — e.g., headers)
+      aad = b"SEC 301 Lab File v1"
+
+      # Encrypt
+      aesgcm = AESGCM(key)
+      plaintext = b"Top secret: exam answers are 42"
+      ciphertext = aesgcm.encrypt(nonce, plaintext, aad)
+      print(f"Ciphertext (hex): {ciphertext.hex()}")
+
+      # Decrypt (raises InvalidTag if ciphertext or AAD was tampered)
+      recovered = aesgcm.decrypt(nonce, ciphertext, aad)
+      assert recovered == plaintext
+      print(f"Decrypted: {recovered.decode()}")
+      ```
+
+      ### RSA Key Generation, Encryption, and Decryption
+      ```python
+      from cryptography.hazmat.primitives.asymmetric import rsa, padding
+      from cryptography.hazmat.primitives import hashes
+
+      # Generate 4096-bit RSA key pair
+      private_key = rsa.generate_private_key(
+          public_exponent=65537,
+          key_size=4096,
+      )
+      public_key = private_key.public_key()
+
+      # Encrypt with public key (OAEP padding — secure; do NOT use PKCS1v15)
+      message = b"AES session key goes here (32 bytes of key material)"
+      ciphertext = public_key.encrypt(
+          message,
+          padding.OAEP(
+              mgf=padding.MGF1(algorithm=hashes.SHA256()),
+              algorithm=hashes.SHA256(),
+              label=None
+          )
+      )
+
+      # Decrypt with private key
+      recovered = private_key.decrypt(
+          ciphertext,
+          padding.OAEP(
+              mgf=padding.MGF1(algorithm=hashes.SHA256()),
+              algorithm=hashes.SHA256(),
+              label=None
+          )
+      )
+      assert recovered == message
+      print("RSA-OAEP encrypt/decrypt successful.")
+      ```
+
+      ### Key Derivation with HKDF
+      ```python
+      from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+      from cryptography.hazmat.primitives import hashes
+      import os
+
+      # Derive multiple keys from a single shared secret (e.g., DH output)
+      shared_secret = os.urandom(32)   # In real use: output of ECDH
+      salt = os.urandom(16)
+
+      hkdf = HKDF(
+          algorithm=hashes.SHA256(),
+          length=64,                   # Derive 64 bytes: 32 for AES key + 32 for HMAC key
+          salt=salt,
+          info=b"tls13 derived",
+      )
+      key_material = hkdf.derive(shared_secret)
+      aes_key  = key_material[:32]
+      hmac_key = key_material[32:]
+      print(f"AES key:  {aes_key.hex()}")
+      print(f"HMAC key: {hmac_key.hex()}")
+      ```
+
+quiz:
+  - question: "A developer is designing a new REST API that must store user passwords in a database. Which of the following is the MOST secure approach?"
+    options:
+      - "Store passwords as MD5 hashes with a per-user salt"
+      - "Store passwords as SHA-256 hashes without a salt"
+      - "Store passwords as AES-256 encrypted values using a server-side key"
+      - "Store passwords using Argon2id with a unique random salt per password"
+    answer: 3
+    explanation: "Argon2id is the recommended password hashing function per OWASP Password Storage Cheat Sheet. It is memory-hard (resists GPU/ASIC cracking), configurable in both time and memory cost, and uses a per-password salt by design. MD5 is cryptographically broken. SHA-256 is too fast for password hashing. AES encryption is reversible — if the server key is compromised, all passwords are exposed."
+
+  - question: "During a TLS 1.3 handshake, a client and server perform an X25519 ECDH key exchange. Which security property does this provide that static RSA key exchange in TLS 1.2 lacked?"
+    options:
+      - "Confidentiality of data in transit"
+      - "Server authentication via certificate"
+      - "Forward secrecy — compromise of the server's long-term key does not expose past sessions"
+      - "Integrity protection via HMAC"
+    answer: 2
+    explanation: "Forward secrecy (FS), also called perfect forward secrecy (PFS), means that compromise of long-term private keys does not compromise previously recorded encrypted sessions, because each session uses ephemeral key pairs. TLS 1.3 mandates ephemeral ECDH (X25519, P-256) for all key exchanges. TLS 1.2's static RSA key exchange had no forward secrecy — an attacker who records encrypted traffic and later obtains the server's RSA private key can decrypt all past sessions."
+
+  - question: "An attacker obtains two different PDF files that produce the same MD5 hash and uses them to forge a CA certificate signature. Which cryptographic property of MD5 has been violated?"
+    options:
+      - "Pre-image resistance"
+      - "Second pre-image resistance"
+      - "Collision resistance"
+      - "The birthday bound"
+    answer: 2
+    explanation: "Collision resistance is the property that it should be computationally infeasible to find any two distinct inputs m₁ ≠ m₂ such that hash(m₁) = hash(m₂). MD5 collision attacks (Wang & Yu 2004; Sotirov et al. rogue CA cert 2008) violate collision resistance. This is distinct from pre-image resistance (finding input from hash) and second pre-image resistance (finding a second input matching a specific existing input)."
+
+  - question: "You receive an email with an attached document and an S/MIME digital signature. The signature verification succeeds. Which TWO security properties are you now assured of? (Select the best combined answer.)"
+    options:
+      - "The document is encrypted and only you can read it"
+      - "The document was sent from the claimed sender's address and has not been modified in transit"
+      - "The sender's private key has not been compromised and is stored in an HSM"
+      - "The document is authentic and the sender cannot deny having signed it (non-repudiation)"
+    answer: 3
+    explanation: "A valid digital signature assures authenticity (the signature can only be produced by the holder of the private key — i.e., the claimed sender) and non-repudiation (the signer cannot later deny having signed). It also assures integrity (any modification to the document would invalidate the signature). Note: a digital signature does NOT provide confidentiality — the document content is readable by anyone. Encryption would be needed separately for confidentiality."
+
+  - question: "An X.509 certificate for www.bank.example has the field 'CA:FALSE' in its Basic Constraints extension. What does this mean?"
+    options:
+      - "The certificate was issued by a free CA and is not trusted by default"
+      - "The certificate cannot be used to sign other certificates — it is an end-entity (leaf) certificate"
+      - "The certificate does not support Certificate Transparency logging"
+      - "The certificate's CA revocation status has not been checked"
+    answer: 1
+    explanation: "The Basic Constraints extension's CA:FALSE (or cA:FALSE) flag indicates that this certificate is an end-entity (leaf) certificate and cannot be used to sign other certificates — it is not a Certificate Authority. CA:TRUE would indicate an intermediate or root CA certificate that can sign subordinate certificates. This constraint is enforced by all compliant TLS implementations to prevent rogue certificates from being used as unauthorised CAs."

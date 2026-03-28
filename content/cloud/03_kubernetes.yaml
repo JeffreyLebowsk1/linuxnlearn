@@ -1,0 +1,469 @@
+title: "Kubernetes & Container Orchestration"
+order: 3
+summary: |
+  A comprehensive study of Kubernetes architecture, core API objects, operational patterns, and Helm — the de facto standard for container orchestration at scale. Students will learn how the control plane schedules and manages containerised workloads, write production-quality YAML manifests, operate clusters with kubectl, configure health probes and resource constraints, and leverage Helm to package and release applications reproducibly.
+learning_objectives:
+  - "Describe the Kubernetes control plane components and their individual responsibilities"
+  - "Write YAML manifests for Deployments, Services, ConfigMaps, Secrets, and Ingress resources"
+  - "Use kubectl to deploy, inspect, scale, and roll back applications"
+  - "Configure resource requests/limits and liveness/readiness probes for production workloads"
+  - "Explain Helm chart structure and use helm to install and upgrade releases"
+builds_on:
+  - "Containerisation with Docker (CS 401 Lesson 2) — all workloads run as containers"
+  - "Cloud Computing Fundamentals (CS 401 Lesson 1) — you will deploy on AWS EKS"
+sections:
+  - heading: "Kubernetes Architecture: Control Plane & Worker Nodes"
+    content: |
+      ## Kubernetes Architecture: Control Plane & Worker Nodes
+
+      Kubernetes (k8s) is an open-source container orchestration system originally designed by Google, donated to the Cloud Native Computing Foundation (CNCF) in 2016. It solves the operational problems that arise at scale: how do you schedule thousands of containers across hundreds of nodes? How do you handle node failures, rolling updates, and load balancing? The architecture is cleanly divided into the **control plane** and **worker nodes**.
+
+      ### Control Plane Components
+
+      The control plane is the brain of the cluster. In managed Kubernetes offerings (AWS EKS, GKE, AKS) the control plane is operated by the cloud provider; you pay for worker nodes only.
+
+      - **kube-apiserver**: The front-end of the control plane. All communication — kubectl, controllers, the scheduler — goes through the REST API. It validates and persists objects to etcd and is the only component that talks to etcd directly. Horizontally scalable for high availability.
+      - **etcd**: A distributed, consistent key-value store that serves as the single source of truth for all cluster state. It uses the Raft consensus algorithm to guarantee consistency across replicas. Backing up etcd is critical — losing it means losing all cluster state.
+      - **kube-scheduler**: Watches for newly created Pods that have no assigned node (`spec.nodeName` is empty) and selects an appropriate node based on resource requests, affinity/anti-affinity rules, taints and tolerations, and topology spread constraints.
+      - **kube-controller-manager**: Runs a set of control loops (controllers) in a single binary: the Deployment controller, ReplicaSet controller, Node controller (detects node failures and evicts Pods), Job controller, and more. Each controller reconciles actual state toward desired state.
+      - **cloud-controller-manager**: Integrates with cloud provider APIs (AWS EKS, GKE, AKS) to provision load balancers for Services, attach EBS volumes for PersistentVolumes, and manage node lifecycle.
+
+      ### Worker Node Components
+
+      - **kubelet**: The primary node agent. Receives PodSpecs from the API server and ensures the described containers are running and healthy. It reports node and pod status back to the control plane continuously.
+      - **kube-proxy**: Maintains network rules (iptables or IPVS) on each node to forward traffic to the correct Pod IPs for Services. Implements the Service virtual IP abstraction.
+      - **Container runtime**: An OCI-compliant runtime — containerd (default in modern Kubernetes), CRI-O. The Docker shim was removed in Kubernetes 1.24; containerd is now the standard.
+
+      ### Architecture Diagram
+
+      ```mermaid
+      graph TB
+          subgraph "Control Plane"
+              API["kube-apiserver"]
+              ETCD["etcd"]
+              SCHED["kube-scheduler"]
+              CM["controller-manager"]
+              API <--> ETCD
+              SCHED --> API
+              CM --> API
+          end
+          subgraph "Worker Node 1"
+              KL1["kubelet"]
+              KP1["kube-proxy"]
+              CR1["containerd"]
+              KL1 --> CR1
+          end
+          subgraph "Worker Node 2"
+              KL2["kubelet"]
+              KP2["kube-proxy"]
+              CR2["containerd"]
+              KL2 --> CR2
+          end
+          API --> KL1
+          API --> KL2
+      ```
+
+      ### Communication Flow
+
+      When you run `kubectl apply -f deployment.yaml`, the following sequence occurs:
+
+      1. kubectl sends a POST/PATCH request to kube-apiserver with your manifest.
+      2. kube-apiserver authenticates, authorises, and validates the object, then persists it to etcd.
+      3. The Deployment controller (in kube-controller-manager) detects the new Deployment object and creates a ReplicaSet.
+      4. The ReplicaSet controller detects the new ReplicaSet and creates Pod objects.
+      5. kube-scheduler detects unscheduled Pods and assigns each to a suitable node (writes `spec.nodeName`).
+      6. The kubelet on the assigned node detects the Pod assigned to it and instructs containerd to pull the image and start the container.
+
+      This **watch-and-reconcile** loop is the foundational pattern of Kubernetes. Every controller does the same thing: watch for objects in a desired state, compare with actual state, take action to reconcile.
+
+  - heading: "Core Kubernetes API Objects"
+    content: |
+      ## Core Kubernetes API Objects
+
+      Everything in Kubernetes is an **object** with a `spec` (desired state declared by the user) and a `status` (observed state reported by the system). The control plane continuously reconciles actual state toward desired state. Every object has four top-level fields: `apiVersion`, `kind`, `metadata`, and `spec`.
+
+      ### Essential API Objects
+
+      **Pod**: The smallest deployable unit in Kubernetes. Encapsulates one or more tightly coupled containers that share a network namespace (same IP address and port space) and can share storage volumes. Pods are ephemeral — they are never restarted in place; a new Pod is created with a new IP. You almost never create Pods directly.
+
+      **Deployment**: Manages a ReplicaSet which manages a set of identical Pods. Provides declarative rolling updates, rollbacks, and horizontal scaling. The `spec.strategy` field controls update behaviour (RollingUpdate or Recreate). The Deployment controller maintains the desired number of healthy replicas at all times.
+
+      **Service**: A stable virtual IP (ClusterIP) and DNS name that load-balances traffic to a dynamically changing set of Pods, selected by label selectors. Services decouple consumers from the ephemeral nature of Pod IPs. Four types exist: ClusterIP (cluster-internal), NodePort (exposes on each node's IP at a static port), LoadBalancer (provisions a cloud load balancer), and ExternalName (CNAME alias).
+
+      **ConfigMap**: Stores non-secret configuration data as key-value pairs or whole file contents. Injected into Pods as environment variables or mounted as files in the container filesystem. Changes to a ConfigMap mounted as a volume are reflected in the Pod without restart (with a short sync delay).
+
+      **Secret**: Functionally similar to ConfigMap but designed for sensitive data — base64-encoded in etcd. Note that base64 is encoding, not encryption. For production security, enable etcd encryption at rest, or use external secret management (AWS Secrets Manager with External Secrets Operator, HashiCorp Vault, or Sealed Secrets).
+
+      **Namespace**: Virtual cluster partitioning within a physical cluster. Provides scope for names, RBAC policies, and ResourceQuotas. Default namespaces: `default`, `kube-system` (system components), `kube-public` (public cluster info), `kube-node-lease` (node heartbeats).
+
+      **Ingress**: A Layer 7 HTTP(S) routing rule that maps URL paths and hostnames to backend Services. Requires an Ingress controller to be deployed in the cluster (nginx-ingress, AWS ALB Ingress Controller, Traefik, Istio Gateway).
+
+      **PersistentVolume (PV) / PersistentVolumeClaim (PVC)**: A storage abstraction layer. A PV represents actual storage (an EBS volume, NFS share, or local disk). A PVC is a user's request for storage with specific capacity and access modes. A StorageClass enables dynamic provisioning — Kubernetes automatically creates a PV when a PVC is submitted.
+
+      ### Quick-Reference Table
+
+      | Object | Purpose | Managed By | Key Spec Fields |
+      |--------|---------|-----------|-----------------|
+      | Pod | Run containers | ReplicaSet / manually | `spec.containers` |
+      | Deployment | Declarative pod management | controller-manager | `spec.replicas`, `spec.strategy` |
+      | Service | Stable network endpoint | kube-proxy | `spec.selector`, `spec.type` |
+      | ConfigMap | Non-sensitive config | manually | `data` |
+      | Secret | Sensitive config | manually | `data` (base64) |
+      | Namespace | Virtual cluster partition | manually | `metadata.name` |
+      | Ingress | HTTP(S) routing | Ingress controller | `spec.rules`, `spec.tls` |
+      | PVC | Storage claim | StorageClass | `spec.storageClassName`, `spec.accessModes` |
+
+      ### Label Selectors — The Glue of Kubernetes
+
+      Labels are arbitrary key-value pairs attached to objects. Selectors filter objects by labels. This is how a Service finds its Pods, how a Deployment owns its ReplicaSet, and how a NetworkPolicy applies to specific Pods. Label discipline is critical in production: adopt a consistent labelling convention such as `app`, `version`, `component`, `environment`, `tier`.
+
+  - heading: "Writing Kubernetes YAML Manifests"
+    content: |
+      ## Writing Kubernetes YAML Manifests
+
+      Every Kubernetes manifest follows the same top-level structure: `apiVersion`, `kind`, `metadata`, and `spec`. The `apiVersion` field identifies which API group and version the object belongs to — core objects (Pod, Service, ConfigMap, Secret) use `v1`; Deployments use `apps/v1`; Ingress uses `networking.k8s.io/v1`.
+
+      ### Production-Quality Deployment + Service
+
+      The following manifest reflects real-world best practices: non-root security context, resource limits, health probes, topology spread constraints, and references to ConfigMap and Secret.
+
+      ```yaml
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: flask-api
+        namespace: production
+        labels:
+          app: flask-api
+          version: "1.2.0"
+      spec:
+        replicas: 3
+        selector:
+          matchLabels:
+            app: flask-api
+        strategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 1
+            maxSurge: 1
+        template:
+          metadata:
+            labels:
+              app: flask-api
+              version: "1.2.0"
+          spec:
+            serviceAccountName: flask-api-sa
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 1001
+              fsGroup: 1001
+            containers:
+              - name: api
+                image: 123456789.dkr.ecr.us-east-1.amazonaws.com/flask-api:1.2.0
+                ports:
+                  - containerPort: 5000
+                env:
+                  - name: DATABASE_URL
+                    valueFrom:
+                      secretKeyRef:
+                        name: flask-api-secrets
+                        key: database-url
+                  - name: LOG_LEVEL
+                    valueFrom:
+                      configMapKeyRef:
+                        name: flask-api-config
+                        key: log-level
+                resources:
+                  requests:
+                    cpu: "100m"
+                    memory: "128Mi"
+                  limits:
+                    cpu: "500m"
+                    memory: "512Mi"
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 5000
+                  initialDelaySeconds: 15
+                  periodSeconds: 20
+                  failureThreshold: 3
+                readinessProbe:
+                  httpGet:
+                    path: /ready
+                    port: 5000
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+            topologySpreadConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: DoNotSchedule
+                labelSelector:
+                  matchLabels:
+                    app: flask-api
+      ---
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: flask-api-svc
+        namespace: production
+      spec:
+        selector:
+          app: flask-api
+        ports:
+          - protocol: TCP
+            port: 80
+            targetPort: 5000
+        type: ClusterIP
+      ```
+
+      ### ConfigMap and Secret
+
+      ```yaml
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: flask-api-config
+        namespace: production
+      data:
+        log-level: "INFO"
+        max-connections: "100"
+        feature-flags: |
+          enable_cache=true
+          enable_metrics=true
+      ---
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: flask-api-secrets
+        namespace: production
+      type: Opaque
+      stringData:
+        database-url: "postgresql://appuser:password@postgres-svc/appdb"
+        jwt-secret: "supersecretkey-replace-in-production"
+      ```
+
+      Note: `stringData` is a write-only convenience field — Kubernetes automatically base64-encodes the values and stores them under `data`. When you `kubectl get secret` you will see base64-encoded values.
+
+      ### Ingress Resource
+
+      ```yaml
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: flask-api-ingress
+        namespace: production
+        annotations:
+          nginx.ingress.kubernetes.io/rewrite-target: /
+          cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      spec:
+        ingressClassName: nginx
+        tls:
+          - hosts:
+              - api.myapp.com
+            secretName: flask-api-tls
+        rules:
+          - host: api.myapp.com
+            http:
+              paths:
+                - path: /api
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: flask-api-svc
+                      port:
+                        number: 80
+      ```
+
+      ### Key Field Explanations
+
+      - `spec.selector.matchLabels` in a Deployment must match `spec.template.metadata.labels` — this is how the Deployment owns its Pods.
+      - `topologySpreadConstraints` with `maxSkew: 1` ensures Pods are spread across nodes, preventing all replicas from sitting on one node.
+      - `securityContext.runAsNonRoot: true` causes Kubernetes to reject containers that run as root (UID 0) at admission time — a basic security hardening measure.
+      - `resources.requests` are used by the scheduler; `resources.limits` are enforced at runtime by the kubelet/cgroups.
+
+  - heading: "kubectl Commands & Rolling Updates"
+    content: |
+      ## kubectl Commands & Rolling Updates
+
+      `kubectl` is the Kubernetes command-line client. It communicates with kube-apiserver using your kubeconfig file (`~/.kube/config`). Every command ultimately translates to an API call.
+
+      ### Essential kubectl Reference
+
+      ```bash
+      # Context & cluster info
+      kubectl config get-contexts
+      kubectl config use-context my-cluster
+      kubectl cluster-info
+      kubectl get nodes -o wide
+
+      # Apply manifests
+      kubectl apply -f deployment.yaml
+      kubectl apply -f ./k8s/           # apply entire directory
+      kubectl diff -f deployment.yaml   # preview changes without applying
+
+      # Get resources
+      kubectl get pods -n production -o wide
+      kubectl get all -n production
+      kubectl get events -n production --sort-by='.lastTimestamp'
+
+      # Describe & debug
+      kubectl describe pod flask-api-xxxxx -n production
+      kubectl logs flask-api-xxxxx -n production --previous --tail=100
+      kubectl exec -it flask-api-xxxxx -n production -- /bin/sh
+      kubectl port-forward svc/flask-api-svc 8080:80 -n production
+
+      # Scaling
+      kubectl scale deployment flask-api --replicas=5 -n production
+
+      # Rolling update & rollback
+      kubectl set image deployment/flask-api api=flask-api:1.3.0 -n production
+      kubectl rollout status deployment/flask-api -n production
+      kubectl rollout history deployment/flask-api -n production
+      kubectl rollout undo deployment/flask-api -n production
+      kubectl rollout undo deployment/flask-api --to-revision=2 -n production
+
+      # Resource management
+      kubectl top nodes
+      kubectl top pods -n production
+
+      # Delete resources
+      kubectl delete -f deployment.yaml
+      kubectl delete pod flask-api-xxxxx -n production --grace-period=0
+      ```
+
+      ### Rolling Update Mechanics
+
+      A RollingUpdate Deployment replaces old Pods with new ones incrementally. The two controlling fields are:
+
+      - **`maxUnavailable`**: The maximum number of Pods that can be unavailable (below `replicas`) during the update. Default is 25%. With `replicas: 4` and `maxUnavailable: 1`, at least 3 Pods must be Ready at all times.
+      - **`maxSurge`**: The maximum number of Pods that can be created above `replicas` during the update. Default is 25%. With `replicas: 4` and `maxSurge: 1`, at most 5 Pods can exist at once.
+
+      During an update, Kubernetes creates `maxSurge` new Pods, waits for them to become Ready, then terminates `maxUnavailable` old Pods. This process repeats until all old Pods are replaced.
+
+      ### Rollback Mechanism
+
+      Kubernetes retains old ReplicaSets (controlled by `spec.revisionHistoryLimit`, default 10). Each `kubectl apply` that changes the Pod template creates a new revision. `kubectl rollout undo` reactivates the previous ReplicaSet. This is instant — no new Pods are built, just the replica counts are swapped between ReplicaSets.
+
+      ### Resource Requests vs Limits
+
+      CPU is measured in millicores: `100m` = 0.1 core, `1000m` = 1 core. Memory uses SI suffixes: `128Mi`, `512Mi`, `2Gi`.
+
+      - **Requests** are the minimum guaranteed resources. The scheduler uses requests (not limits) to find a node with sufficient capacity.
+      - **Limits** are enforced at runtime. CPU is throttled (never killed) when a container exceeds its CPU limit. Memory OOM-kills the container if it exceeds its memory limit.
+      - **QoS Classes**: Guaranteed (requests == limits for all containers — highest priority, last to be evicted), Burstable (requests < limits), BestEffort (no requests or limits — evicted first under pressure).
+
+  - heading: "Health Probes, Resource Management & Helm"
+    content: |
+      ## Health Probes, Resource Management & Helm
+
+      ### Kubernetes Health Probes
+
+      Kubernetes uses three types of probes to manage container lifecycle:
+
+      **Liveness Probe**: Determines if the container is alive. If it fails `failureThreshold` times consecutively, kubelet restarts the container. Use it to detect deadlocks or hung processes that cannot self-recover. Probe types: `httpGet`, `exec` (run a command), `tcpSocket`.
+
+      **Readiness Probe**: Determines if the container is ready to serve traffic. If it fails, the Pod's IP is removed from the Service's Endpoints — the Pod keeps running but receives no new requests. Use it for slow startup, database connection checks, or temporary unavailability.
+
+      **Startup Probe**: Protects slow-starting containers from being killed by the liveness probe during initialisation. Once the startup probe succeeds, the liveness probe takes over. Critical for JVM-based applications or containers that load large models.
+
+      **Best practices:**
+      - Use separate, lightweight endpoints: `/health` for liveness, `/ready` for readiness.
+      - Set `initialDelaySeconds` based on measured startup time (add 20% buffer).
+      - Never set `failureThreshold` too low for liveness — transient latency spikes cause unnecessary restarts.
+      - Readiness probes should check actual dependencies (can the app reach the database?) while liveness should only check if the process is alive.
+
+      ### Helm — The Kubernetes Package Manager
+
+      Helm is the standard way to package, version, and deploy Kubernetes applications. A Helm **chart** is a directory of Go-templated Kubernetes YAML files plus a `values.yaml` file that provides default configuration.
+
+      **Helm chart structure:**
+
+      ```
+      my-chart/
+      ├── Chart.yaml          # metadata (name, version, appVersion)
+      ├── values.yaml         # default configuration values
+      ├── templates/
+      │   ├── deployment.yaml
+      │   ├── service.yaml
+      │   ├── ingress.yaml
+      │   ├── configmap.yaml
+      │   └── _helpers.tpl    # named templates (macros)
+      └── charts/             # sub-chart dependencies
+      ```
+
+      **Core Helm commands:**
+
+      ```bash
+      # Add a chart repository
+      helm repo add bitnami https://charts.bitnami.com/bitnami
+      helm repo update
+
+      # Search and inspect
+      helm search repo nginx
+      helm show values bitnami/nginx
+
+      # Install a release
+      helm install my-nginx bitnami/nginx \
+        --namespace production \
+        --set service.type=LoadBalancer \
+        --set replicaCount=2
+
+      # Upgrade with custom values file
+      helm upgrade my-nginx bitnami/nginx \
+        --namespace production \
+        -f my-values.yaml \
+        --atomic --timeout 5m
+
+      # List and rollback
+      helm list -n production
+      helm history my-nginx -n production
+      helm rollback my-nginx 1 -n production
+
+      # Uninstall
+      helm uninstall my-nginx -n production
+      ```
+
+      **Key Helm concepts:**
+
+      - A **release** is an installed instance of a chart. You can install the same chart multiple times with different release names and values.
+      - `--atomic` makes `helm upgrade` automatically rollback if the deployment fails or times out.
+      - `helm diff` (plugin) previews changes before upgrade — essential for production change management.
+      - Helm values can be overridden at install/upgrade time with `--set key=value` (for simple values) or `-f values.yaml` (for complex overrides). Multiple `-f` flags are merged in order.
+
+quiz:
+  - question: "Which Kubernetes control plane component is responsible for watching for newly created Pods with no assigned node and selecting a node for them to run on?"
+    options:
+      - "kube-controller-manager"
+      - "kube-scheduler"
+      - "kube-apiserver"
+      - "kubelet"
+    answer: 1
+    explanation: |
+      The kube-scheduler watches for Pods that have no node assignment (spec.nodeName is empty) and selects an appropriate node based on resource availability, affinity rules, taints/tolerations, and topology constraints. The kubelet runs on worker nodes and starts containers; the kube-controller-manager runs reconciliation loops; the kube-apiserver is the API gateway.
+  - question: "A Pod's readiness probe starts failing. What is the immediate effect?"
+    options:
+      - "The Pod is restarted immediately"
+      - "The Pod is removed from Service endpoints and receives no traffic"
+      - "The Pod is evicted from the node"
+      - "The Deployment rolls back to the previous version"
+    answer: 1
+    explanation: |
+      A failing readiness probe causes Kubernetes to remove the Pod's IP from the Service's Endpoints list. The Pod continues running but receives no new traffic until the probe passes again. Only a failing liveness probe causes a container restart. Pod eviction is triggered by node resource pressure, not probe failures.
+  - question: "You have a Deployment with maxUnavailable: 1 and maxSurge: 1 and replicas: 4. During a rolling update, what is the maximum number of Pods that can be running simultaneously?"
+    options:
+      - "4"
+      - "5"
+      - "3"
+      - "6"
+    answer: 1
+    explanation: |
+      maxSurge: 1 allows one extra Pod above the desired replica count (4 + 1 = 5). At the same time, maxUnavailable: 1 means at least 3 must be available. So during the update, you can have up to 5 Pods running while 1 old Pod is being terminated, giving a maximum of 5 simultaneously running Pods.
+  - question: "What is the purpose of 'requests' in a Kubernetes container resource specification?"
+    options:
+      - "The maximum CPU/memory the container may consume before being throttled or killed"
+      - "The amount guaranteed to the container and used by the scheduler for placement decisions"
+      - "A soft limit enforced only during resource contention between Pods"
+      - "The average expected resource usage reported to monitoring systems"
+    answer: 1
+    explanation: |
+      Resource requests represent the minimum guaranteed resources. The scheduler uses requests (not limits) to determine which node has sufficient capacity for the Pod. The kubelet guarantees at least the requested resources are available to the container. Limits, not requests, control the maximum — CPU is throttled and memory causes OOM kills when limits are exceeded.

@@ -2,13 +2,49 @@
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/JeffreyLebowsk1/linuxnlearn)
 
-An AI-assisted IT education web application built with Flask. Covers Linux, Networking, Cisco, and Python through structured lessons with an integrated AI chat assistant.
+An AI-assisted IT education web application built with Flask. Provides **five accredited, college-level courses** in Linux, Networking, Cisco, Python, and Edge AI through structured lessons with an integrated AI chat assistant.
+
+## Degree Pathway
+
+All courses carry official course numbers, credit hours, department assignments, prerequisites, catalog descriptions, required textbooks, and faculty credential notes — matching the structure of accredited university programs. Completing the full sequence satisfies the core requirements of a systems/network engineering or AI/robotics degree track.
+
+| Step | Course | Number | Credits | Department |
+|------|--------|--------|---------|------------|
+| 1 | Linux System Administration | SYS 202 | 3 + 1 lab | Systems Administration & Cybersecurity |
+| 2 | Networking Fundamentals | NET 201 | 3 + 1 lab | Computer Science & Network Engineering |
+| 3a *(parallel)* | Enterprise Networking (Cisco) | NET 310 | 3 + 2 lab | Computer Science & Network Engineering |
+| 3b *(parallel)* | Python Programming | CS 215 | 3 + 1 lab | Computer Science & Software Engineering |
+| 4 | Edge AI Development (Jetson) | AI 340 | 3 + 2 lab | Artificial Intelligence & Robotics |
+
+### Prerequisites
+
+```
+CS 101 (Intro to Computing)  +  MATH 110 (College Mathematics)
+              ↓
+         SYS 202 Linux
+              ↓
+         NET 201 Networking
+         ┌────┴────┐
+         ↓         ↓
+      NET 310    CS 215
+      (Cisco)   (Python)
+         ↓         ↓
+         └────┬────┘
+              ↓
+          AI 340 Jetson AI
+```
+
+Each course page displays the full official syllabus including prerequisites, catalog description, assigned textbooks (with ISBN), and faculty credentials.
 
 ## Features
 
-- **Four learning categories**: Linux, Networking, Cisco, Python
+- **Five college-level courses**: Linux (SYS 202), Networking (NET 201), Cisco (NET 310), Python (CS 215), Edge AI (AI 340)
+- **Full course syllabi** — course numbers, credit hours, department, prerequisites, catalog descriptions, required textbooks, and faculty notes
+- **Degree pathway roadmap** — sequenced curriculum from Linux foundations to Edge AI deployment
 - **YAML-based lessons** — easy to add new content without touching code
 - **AI Chat Assistant** — powered by Perplexity Sonar (with OpenAI and Google Gemini also supported), available globally and per-lesson
+- **Interactive labs** — simulated Linux terminal, subnet calculator, chmod calculator, Python sandbox, and Cisco IOS simulator
+- **AI-graded assignments** — open-ended lab reports graded by AI with per-task feedback and letter grades
 - **Clean, responsive UI** — works on desktop and mobile
 
 ## Run in the Cloud — No Local Setup Needed
@@ -59,18 +95,21 @@ python app.py
 
 ```
 linuxnlearn/
-├── app.py                  # Flask application
+├── app.py                  # Flask application (course metadata, routes)
 ├── requirements.txt        # Python dependencies
 ├── .env.example            # Example environment variables
 ├── content/                # YAML lesson files
-│   ├── networking/         # OSI model, TCP/IP, subnetting
-│   ├── cisco/              # IOS basics, VLANs, routing
-│   ├── python/             # Basics, data structures, networking
-│   └── linux/              # Commands, filesystem, networking tools
+│   ├── linux/              # SYS 202 — commands, filesystem, networking tools
+│   ├── networking/         # NET 201 — OSI model, TCP/IP, subnetting
+│   ├── cisco/              # NET 310 — IOS basics, VLANs, routing
+│   ├── python/             # CS 215 — basics, data structures, automation
+│   └── jetson/             # AI 340 — edge AI, TensorRT, computer vision
+├── assignments/            # YAML graded assignment files (per course)
 ├── templates/              # Jinja2 HTML templates
 │   ├── base.html
-│   ├── index.html
-│   ├── category.html
+│   ├── index.html          # Home page with degree pathway roadmap
+│   ├── learning_path.html  # Full degree path with syllabi
+│   ├── category.html       # Category/course page (shows official syllabus card)
 │   ├── lesson.html
 │   └── chat.html
 ├── static/
@@ -88,23 +127,23 @@ Create a YAML file in `content/<category>/` following this structure:
 
 ```yaml
 title: "Your Lesson Title"
-description: "A short description."
+order: 1
+summary: "Short summary shown in course catalog and lesson list."
+learning_objectives:
+  - "Students will be able to..."
+  - "Students will understand..."
+builds_on:
+  - "Prior knowledge requirement"
 sections:
   - heading: "Section Heading"
-    text: "Paragraph text."
-    points:
-      - "Bullet point one"
-      - "Bullet point two"
-    code: |
-      # Code block
-      print("Hello!")
-    table:
-      headers: ["Col 1", "Col 2"]
-      rows:
-        - ["Row 1 A", "Row 1 B"]
-key_takeaways:
-  - "Key point 1"
-  - "Key point 2"
+    content: |
+      # Markdown content here
+      Supports **bold**, `code`, tables, and code blocks.
+quiz:
+  - question: "Question text?"
+    options: ["Option A", "Option B", "Option C", "Option D"]
+    answer: 0      # index of correct option
+    explanation: "Detailed explanation shown after answering."
 ```
 
 ## AI Chat

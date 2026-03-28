@@ -1,0 +1,761 @@
+title: "Cloud Computing Fundamentals & AWS Core Services"
+order: 1
+summary: |
+  Comprehensive introduction to cloud computing service and deployment models, AWS global infrastructure, and the core services every cloud engineer must master: EC2, Lambda, S3, RDS, VPC, and IAM. Students will provision resources from the AWS CLI and Python boto3, design fault-tolerant VPC networks, enforce least-privilege access with IAM, and evaluate architectures against the AWS Well-Architected Framework and shared responsibility model.
+learning_objectives:
+  - "Distinguish IaaS, PaaS, and SaaS and choose the appropriate model for a given workload"
+  - "Provision and configure EC2 instances, Lambda functions, S3 buckets, and RDS databases using the AWS CLI and boto3"
+  - "Design a multi-tier VPC with public and private subnets, internet gateway, NAT gateway, and security groups"
+  - "Apply the principle of least privilege using IAM users, groups, roles, and JSON policies"
+  - "Evaluate an architecture against all five pillars of the AWS Well-Architected Framework and explain the shared responsibility model"
+builds_on:
+  - "Linux CLI fundamentals (SYS 202) — AWS CLI commands are run from the terminal"
+  - "Networking fundamentals (NET 201) — TCP/IP, CIDR notation, and routing underpin VPC design"
+  - "Python scripting (CS 215) — boto3 examples require Python 3.8+"
+sections:
+  - heading: "Cloud Computing Models & AWS Global Infrastructure"
+    content: |
+      ## Cloud Computing Models & AWS Global Infrastructure
+
+      Cloud computing is the on-demand delivery of IT resources over the internet with pay-as-you-go pricing. Rather than owning and operating physical data centres, organisations consume compute, storage, databases, networking, analytics, AI, and more from a cloud provider. The National Institute of Standards and Technology (NIST SP 800-145) defines cloud computing across **three service models** and **four deployment models**.
+
+      ### Service Models
+
+      | Model | Who manages what | Examples | Typical use case |
+      |-------|-----------------|---------|-----------------|
+      | **IaaS** – Infrastructure as a Service | Provider: physical hardware, hypervisor, networking. Customer: OS, middleware, runtime, application, data | AWS EC2, Azure VMs, Google Compute Engine | Full control needed; custom OS configuration, legacy lift-and-shift |
+      | **PaaS** – Platform as a Service | Provider: everything up to runtime/frameworks. Customer: application code and data only | AWS Elastic Beanstalk, Heroku, Google App Engine, Azure App Service | Rapid application development; developers focus on code, not infra |
+      | **SaaS** – Software as a Service | Provider manages everything. Customer uses the software via browser or API | Gmail, Salesforce, Slack, Dropbox | Off-the-shelf functionality; no installation or maintenance |
+
+      A helpful mnemonic: **IaaS = pizza dough** (you assemble everything), **PaaS = take-and-bake pizza** (provider handles the hard parts), **SaaS = restaurant pizza** (fully ready to consume).
+
+      ### Deployment Models
+
+      - **Public cloud**: Infrastructure owned and operated by a third-party provider (AWS, Azure, GCP) and shared among many tenants using strong isolation boundaries. Lowest upfront cost; massive economies of scale.
+      - **Private cloud**: Infrastructure operated solely for one organisation, either on-premises or hosted. Greater control and regulatory compliance; higher capital expenditure.
+      - **Hybrid cloud**: Combination of public and private cloud with orchestration between them — e.g., on-premises LDAP + AWS workloads connected via Direct Connect.
+      - **Multi-cloud**: Using services from two or more public cloud providers simultaneously to avoid vendor lock-in, optimise costs, or leverage best-of-breed services.
+
+      ### AWS Global Infrastructure
+
+      AWS operates the world's largest cloud, spanning **34+ geographic Regions** (as of 2025), **108+ Availability Zones**, and **400+ edge locations** (CloudFront PoPs). Understanding this hierarchy is critical for fault tolerance and latency optimisation.
+
+      - **Region**: A distinct geographic area containing multiple, physically isolated AZs. Examples: `us-east-1` (N. Virginia), `eu-west-1` (Ireland), `ap-southeast-1` (Singapore). Regions are fully independent — a failure in one region does not affect another. Data does not leave a region unless you explicitly configure replication.
+      - **Availability Zone (AZ)**: One or more discrete data centres within a region, each with redundant power, cooling, and networking. AZs within a region are connected by low-latency (< 1 ms), high-bandwidth, fully redundant fiber. Examples: `us-east-1a`, `us-east-1b`, `us-east-1c`.
+      - **Edge Locations / Points of Presence (PoPs)**: Nodes used by Amazon CloudFront (CDN), Route 53 (DNS), and AWS Shield to cache content and route traffic as close to end users as possible.
+      - **Local Zones**: Extensions of AWS Regions placed in metropolitan areas for single-digit millisecond latency (e.g., Los Angeles, Chicago).
+
+      **Why redundancy across AZs matters**: A single AZ can experience a power failure or network partition. By distributing your EC2 instances, RDS replicas, and load balancer nodes across at least two AZs (three is best practice), your application survives an entire AZ outage with zero downtime.
+
+      ```mermaid
+      graph TB
+          subgraph "AWS Region: us-east-1 (N. Virginia)"
+              subgraph "Availability Zone: us-east-1a"
+                  DC1["Data Centre 1"]
+                  DC2["Data Centre 2"]
+              end
+              subgraph "Availability Zone: us-east-1b"
+                  DC3["Data Centre 3"]
+                  DC4["Data Centre 4"]
+              end
+              subgraph "Availability Zone: us-east-1c"
+                  DC5["Data Centre 5"]
+                  DC6["Data Centre 6"]
+              end
+              AZ1_AZ2["Low-latency < 1ms fibre"]
+          end
+          EL1["Edge Location: New York"]
+          EL2["Edge Location: Miami"]
+          EL3["Edge Location: Atlanta"]
+          EL1 --> DC1
+          EL2 --> DC3
+          EL3 --> DC5
+      ```
+
+      **Choosing a Region**: Consider (1) **latency** to your end users, (2) **data sovereignty** requirements (GDPR mandates EU data stays in the EU), (3) **service availability** (new services launch in us-east-1 first), and (4) **cost** (prices vary by 5–20% between regions).
+
+  - heading: "Core AWS Compute: EC2 & Lambda"
+    content: |
+      ## Core AWS Compute: EC2 & Lambda
+
+      AWS offers a spectrum of compute services. **EC2** gives you full control over virtual machines; **Lambda** abstracts away all server management. Understanding both is essential because they serve fundamentally different use cases.
+
+      ### Amazon EC2 (Elastic Compute Cloud)
+
+      EC2 provides resizable virtual machines — called **instances** — running on AWS's hypervisor infrastructure. Key concepts:
+
+      **Instance Families and Types**
+
+      | Family | Optimised for | Examples | Use case |
+      |--------|--------------|---------|---------|
+      | `m` (General Purpose) | Balanced CPU/RAM | m7i.large (2 vCPU, 8 GiB) | Web servers, app tiers, dev environments |
+      | `c` (Compute Optimised) | High CPU:RAM ratio | c7g.2xlarge (8 vCPU, 16 GiB) | HPC, video encoding, ML inference |
+      | `r` (Memory Optimised) | High RAM:CPU ratio | r7i.4xlarge (16 vCPU, 128 GiB) | In-memory databases, SAP HANA, caching |
+      | `p` (Accelerated Computing) | GPU | p4d.24xlarge (96 vCPU, 8× A100 GPU) | Deep learning training, CUDA workloads |
+      | `i` (Storage Optimised) | High IOPS NVMe | i4i.2xlarge (8 vCPU, 64 GiB, 1.25 TB NVMe) | Databases needing extreme IOPS |
+
+      **Amazon Machine Images (AMIs)**: A pre-configured template containing the OS, application software, and configuration. AWS provides official AMIs (Amazon Linux 2023, Ubuntu 22.04 LTS, Windows Server 2022). You can create custom AMIs from running instances using `aws ec2 create-image`.
+
+      **Key Pairs**: EC2 uses asymmetric cryptography for SSH access. AWS stores the public key; you retain the private key (`.pem` file). Never lose this file — AWS cannot recover it.
+
+      **Security Groups**: Stateful virtual firewalls attached to instances (or ENIs). Rules specify protocol, port range, and source/destination (CIDR or another security group ID). All inbound traffic is denied by default; all outbound traffic is allowed by default.
+
+      **User Data**: A shell script (or cloud-init configuration) that runs once at first boot. Used to install packages, configure services, and bootstrap the instance:
+
+      ```bash
+      #!/bin/bash
+      # User data script — runs as root at first boot
+      set -euxo pipefail
+      yum update -y
+      yum install -y httpd
+      systemctl enable --now httpd
+      echo "<h1>Hello from $(hostname)</h1>" > /var/www/html/index.html
+      ```
+
+      **Launching an EC2 instance with the AWS CLI:**
+
+      ```bash
+      # Create a key pair and save the private key
+      aws ec2 create-key-pair \
+        --key-name cs401-key \
+        --query 'KeyMaterial' \
+        --output text > cs401-key.pem
+      chmod 400 cs401-key.pem
+
+      # Find the latest Amazon Linux 2023 AMI in us-east-1
+      AMI_ID=$(aws ec2 describe-images \
+        --owners amazon \
+        --filters "Name=name,Values=al2023-ami-2023*-x86_64" \
+                  "Name=state,Values=available" \
+        --query "sort_by(Images, &CreationDate)[-1].ImageId" \
+        --output text)
+
+      # Create a security group allowing SSH from your IP
+      SG_ID=$(aws ec2 create-security-group \
+        --group-name cs401-sg \
+        --description "CS 401 lab security group" \
+        --query GroupId --output text)
+
+      aws ec2 authorize-security-group-ingress \
+        --group-id "$SG_ID" \
+        --protocol tcp --port 22 \
+        --cidr "$(curl -s https://checkip.amazonaws.com)/32"
+
+      # Launch the instance
+      INSTANCE_ID=$(aws ec2 run-instances \
+        --image-id "$AMI_ID" \
+        --instance-type t3.micro \
+        --key-name cs401-key \
+        --security-group-ids "$SG_ID" \
+        --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=cs401-lab}]' \
+        --query 'Instances[0].InstanceId' --output text)
+
+      echo "Launched: $INSTANCE_ID"
+
+      # Wait until running, then fetch public IP
+      aws ec2 wait instance-running --instance-ids "$INSTANCE_ID"
+      PUBLIC_IP=$(aws ec2 describe-instances \
+        --instance-ids "$INSTANCE_ID" \
+        --query 'Reservations[0].Instances[0].PublicIpAddress' \
+        --output text)
+
+      ssh -i cs401-key.pem ec2-user@"$PUBLIC_IP"
+      ```
+
+      ### AWS Lambda
+
+      Lambda is AWS's **serverless** compute platform. You provide a function handler; Lambda manages the underlying compute fleet, scaling from zero to thousands of concurrent executions automatically. You are billed per 1-ms increment of execution time — there is no cost when the function is idle.
+
+      **Key Concepts:**
+
+      - **Handler**: The entry point function. For Python: `def handler(event, context):`.
+      - **Event**: A JSON-serialisable Python dict describing what triggered the function (e.g., an S3 `PutObject` event, an API Gateway HTTP request, a DynamoDB stream record).
+      - **Context**: A runtime object providing metadata: `context.aws_request_id`, `context.get_remaining_time_in_millis()`, `context.function_name`.
+      - **Cold Start**: When Lambda hasn't served a request recently, it must provision a new execution environment (download code, initialise runtime, run initialisation code outside the handler). This adds 100–500 ms latency. Warm starts reuse an existing environment. Minimise cold starts by: keeping deployment packages small, using Provisioned Concurrency for latency-sensitive functions.
+      - **Execution Role**: An IAM role that the Lambda function assumes at runtime — grants permissions to call other AWS services (S3, DynamoDB, SNS, etc.).
+
+      **Lambda function anatomy (Python 3.12):**
+
+      ```python
+      import json
+      import boto3
+      import logging
+
+      logger = logging.getLogger()
+      logger.setLevel(logging.INFO)
+
+      # Initialisation code outside the handler runs ONCE per cold start.
+      # Reuse expensive objects (SDK clients, DB connections) here.
+      s3_client = boto3.client("s3")
+      dynamodb = boto3.resource("dynamodb")
+      table = dynamodb.Table("cs401-records")
+
+
+      def handler(event: dict, context) -> dict:
+          """
+          Triggered by S3 PutObject events.
+          Reads the uploaded JSON file and writes a summary to DynamoDB.
+          """
+          logger.info("Event: %s", json.dumps(event))
+
+          for record in event["Records"]:
+              bucket = record["s3"]["bucket"]["name"]
+              key = record["s3"]["object"]["key"]
+              size_bytes = record["s3"]["object"]["size"]
+
+              logger.info("Processing s3://%s/%s (%d bytes)", bucket, key, size_bytes)
+
+              # Read the uploaded object
+              response = s3_client.get_object(Bucket=bucket, Key=key)
+              data = json.loads(response["Body"].read())
+
+              # Write a summary record
+              table.put_item(Item={
+                  "pk": key,
+                  "bucket": bucket,
+                  "size": size_bytes,
+                  "record_count": len(data),
+                  "ttl": int(context.get_remaining_time_in_millis()),
+              })
+
+          return {"statusCode": 200, "body": "Processed successfully"}
+      ```
+
+      **Deploying a Lambda function with the AWS CLI:**
+
+      ```bash
+      # Package the function
+      zip function.zip lambda_handler.py
+
+      # Create the function (requires an existing IAM execution role)
+      aws lambda create-function \
+        --function-name cs401-s3-processor \
+        --runtime python3.12 \
+        --role arn:aws:iam::123456789012:role/cs401-lambda-role \
+        --handler lambda_handler.handler \
+        --zip-file fileb://function.zip \
+        --timeout 30 \
+        --memory-size 256
+
+      # Invoke synchronously for testing
+      aws lambda invoke \
+        --function-name cs401-s3-processor \
+        --payload '{"Records":[]}' \
+        --cli-binary-format raw-in-base64-out \
+        response.json
+
+      cat response.json
+      ```
+
+  - heading: "Storage & Databases: S3 and RDS"
+    content: |
+      ## Storage & Databases: S3 and RDS
+
+      ### Amazon S3 (Simple Storage Service)
+
+      S3 is AWS's object storage service — not a file system. Objects are stored in **buckets** identified by a globally unique name. An object consists of: a **key** (the full path-like name, e.g., `data/2024/report.csv`), the **value** (bytes up to 5 TB), **metadata** (system and user-defined key-value pairs), and optional **version ID**.
+
+      **S3 Storage Classes** — choose based on access frequency and retrieval latency requirements:
+
+      | Class | Min storage duration | Retrieval latency | Monthly cost (us-east-1) | Use case |
+      |-------|---------------------|------------------|--------------------------|---------|
+      | **S3 Standard** | None | milliseconds | $0.023/GB | Frequently accessed data |
+      | **S3 Intelligent-Tiering** | None | milliseconds | $0.023/GB + monitoring fee | Unknown or changing access patterns |
+      | **S3 Standard-IA** | 30 days | milliseconds | $0.0125/GB | Infrequent access, rapid retrieval |
+      | **S3 One Zone-IA** | 30 days | milliseconds | $0.01/GB | Reproducible infrequent data |
+      | **S3 Glacier Instant** | 90 days | milliseconds | $0.004/GB | Long-term archive, instant access |
+      | **S3 Glacier Flexible** | 90 days | minutes–hours | $0.0036/GB | Archives, compliance |
+      | **S3 Glacier Deep Archive** | 180 days | 12 hours | $0.00099/GB | 7-year regulatory retention |
+
+      **Essential S3 operations with the AWS CLI:**
+
+      ```bash
+      # Create a bucket (bucket names must be globally unique; no uppercase)
+      aws s3api create-bucket \
+        --bucket cs401-lab-data-$(date +%s) \
+        --region us-east-1
+
+      # Upload a file (sync is recursive and delta-aware)
+      aws s3 cp ./dataset.csv s3://cs401-lab-data-1700000000/raw/dataset.csv
+      aws s3 sync ./data/ s3://cs401-lab-data-1700000000/raw/ --delete
+
+      # Enable versioning (required before enabling MFA Delete or replication)
+      aws s3api put-bucket-versioning \
+        --bucket cs401-lab-data-1700000000 \
+        --versioning-configuration Status=Enabled
+
+      # Configure a lifecycle rule: transition to IA after 30 days, Glacier after 90
+      aws s3api put-bucket-lifecycle-configuration \
+        --bucket cs401-lab-data-1700000000 \
+        --lifecycle-configuration '{
+          "Rules": [{
+            "ID": "archive-raw-data",
+            "Status": "Enabled",
+            "Filter": {"Prefix": "raw/"},
+            "Transitions": [
+              {"Days": 30, "StorageClass": "STANDARD_IA"},
+              {"Days": 90, "StorageClass": "GLACIER"}
+            ],
+            "NoncurrentVersionExpiration": {"NoncurrentDays": 365}
+          }]
+        }'
+
+      # Block all public access (security best practice — enabled by default on new buckets)
+      aws s3api put-public-access-block \
+        --bucket cs401-lab-data-1700000000 \
+        --public-access-block-configuration \
+          "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+      ```
+
+      **Bucket Policy** — resource-based IAM policy attached directly to the bucket. Example: grant a specific IAM role read access while denying everything else:
+
+      ```json
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "AllowCSLambdaRead",
+            "Effect": "Allow",
+            "Principal": {
+              "AWS": "arn:aws:iam::123456789012:role/cs401-lambda-role"
+            },
+            "Action": ["s3:GetObject", "s3:ListBucket"],
+            "Resource": [
+              "arn:aws:s3:::cs401-lab-data-1700000000",
+              "arn:aws:s3:::cs401-lab-data-1700000000/*"
+            ]
+          },
+          {
+            "Sid": "DenyUnencryptedPuts",
+            "Effect": "Deny",
+            "Principal": "*",
+            "Action": "s3:PutObject",
+            "Resource": "arn:aws:s3:::cs401-lab-data-1700000000/*",
+            "Condition": {
+              "StringNotEquals": {
+                "s3:x-amz-server-side-encryption": "aws:kms"
+              }
+            }
+          }
+        ]
+      }
+      ```
+
+      ### Amazon RDS (Relational Database Service)
+
+      RDS is a managed database service supporting: **MySQL 8.0**, **PostgreSQL 16**, **MariaDB**, **Oracle Database**, **Microsoft SQL Server**, and **Amazon Aurora** (MySQL/PostgreSQL-compatible, proprietary storage engine with 5× the throughput of standard MySQL).
+
+      **Key operational features:**
+
+      - **Multi-AZ Deployment**: RDS synchronously replicates data to a standby instance in a different AZ. On primary failure, RDS automatically fails over in 60–120 seconds with no data loss. Multi-AZ is for **high availability**, not performance.
+      - **Read Replicas**: Asynchronously replicated copies of the primary that can serve `SELECT` queries. Up to 5 read replicas for MySQL/PostgreSQL; up to 15 for Aurora. Promotes read-heavy workloads away from the primary. Cross-region read replicas enable disaster recovery across regions.
+      - **Parameter Groups**: A container for DB engine configuration values (e.g., `max_connections`, `innodb_buffer_pool_size`). Applied to an RDS instance; changes may require a reboot.
+      - **Automated Backups**: Daily snapshots and transaction logs retained for 1–35 days, enabling point-in-time recovery.
+
+      ```bash
+      # Create a PostgreSQL 16 RDS instance in a private subnet group
+      aws rds create-db-instance \
+        --db-instance-identifier cs401-postgres \
+        --db-instance-class db.t3.medium \
+        --engine postgres \
+        --engine-version "16.1" \
+        --master-username cs401admin \
+        --master-user-password "$(openssl rand -base64 24)" \
+        --allocated-storage 20 \
+        --storage-type gp3 \
+        --db-subnet-group-name cs401-private-subnet-group \
+        --vpc-security-group-ids sg-0abc1234def56789 \
+        --backup-retention-period 7 \
+        --multi-az \
+        --storage-encrypted \
+        --no-publicly-accessible
+
+      # Wait until the instance is available
+      aws rds wait db-instance-available \
+        --db-instance-identifier cs401-postgres
+
+      # Create a read replica in a second AZ
+      aws rds create-db-instance-read-replica \
+        --db-instance-identifier cs401-postgres-replica \
+        --source-db-instance-identifier cs401-postgres \
+        --db-instance-class db.t3.medium
+      ```
+
+  - heading: "Networking: VPC, Subnets & Security Groups"
+    content: |
+      ## Networking: VPC, Subnets & Security Groups
+
+      ### Amazon VPC (Virtual Private Cloud)
+
+      A VPC is a logically isolated section of the AWS cloud where you launch resources in a virtual network you define. Every VPC has a **CIDR block** (IPv4, e.g., `10.0.0.0/16`) that determines the address space — this gives you 65,536 IP addresses.
+
+      **Core VPC Components:**
+
+      | Component | Purpose |
+      |-----------|---------|
+      | **Subnet** | A subdivision of the VPC CIDR, restricted to a single AZ. `10.0.1.0/24` = 256 IPs (251 usable — AWS reserves 5 per subnet) |
+      | **Internet Gateway (IGW)** | Horizontally scaled, redundant VPC component enabling traffic between the VPC and the internet. One IGW per VPC. |
+      | **NAT Gateway** | Enables instances in private subnets to initiate outbound internet connections (e.g., `yum update`) while blocking inbound. Deployed in a public subnet with an Elastic IP. |
+      | **Route Table** | Set of rules (routes) that determine where network traffic is directed. Every subnet must be associated with exactly one route table. |
+      | **Security Group** | **Stateful** virtual firewall at the ENI (instance) level. Rules based on protocol/port/source. Return traffic is automatically allowed. |
+      | **NACL (Network ACL)** | **Stateless** firewall at the subnet level. Numbered rules evaluated in order. Both inbound and outbound rules required for bi-directional traffic. |
+      | **VPC Peering** | Private network connection between two VPCs (same or different accounts/regions) without using the public internet. Not transitive. |
+      | **VPC Endpoints** | Private connections to AWS services (S3, DynamoDB) without leaving the AWS network. Gateway endpoints (free) for S3/DynamoDB; Interface endpoints (PrivateLink) for other services. |
+
+      **Public vs Private Subnets:**
+      - **Public subnet**: Route table has a route `0.0.0.0/0 → igw-xxxxxxxx`. Resources need an Elastic IP or public IP to be reachable from the internet.
+      - **Private subnet**: No route to the IGW. Outbound internet access (for package updates, API calls) goes through a NAT Gateway in the public subnet.
+
+      **Three-tier architecture VPC design:**
+
+      ```mermaid
+      graph TB
+          Internet["🌐 Internet"]
+          IGW["Internet Gateway"]
+
+          subgraph "VPC: 10.0.0.0/16"
+              subgraph "Public Subnets"
+                  PUB1["Public Subnet A\n10.0.1.0/24\nus-east-1a"]
+                  PUB2["Public Subnet B\n10.0.2.0/24\nus-east-1b"]
+                  ALB["Application\nLoad Balancer"]
+                  NATGW["NAT Gateway\n+ Elastic IP"]
+              end
+
+              subgraph "Private App Subnets"
+                  APP1["App Subnet A\n10.0.11.0/24\nus-east-1a"]
+                  APP2["App Subnet B\n10.0.12.0/24\nus-east-1b"]
+                  EC2A["EC2: App Server"]
+                  EC2B["EC2: App Server"]
+              end
+
+              subgraph "Private DB Subnets"
+                  DB1["DB Subnet A\n10.0.21.0/24\nus-east-1a"]
+                  DB2["DB Subnet B\n10.0.22.0/24\nus-east-1b"]
+                  RDS_PRI["RDS Primary"]
+                  RDS_STB["RDS Standby\n(Multi-AZ)"]
+              end
+          end
+
+          Internet --> IGW --> ALB
+          ALB --> EC2A
+          ALB --> EC2B
+          EC2A --> RDS_PRI
+          EC2B --> RDS_PRI
+          EC2A --> NATGW --> IGW
+          RDS_PRI -.->|"sync replication"| RDS_STB
+      ```
+
+      **Building this VPC with the AWS CLI:**
+
+      ```bash
+      # Create VPC
+      VPC_ID=$(aws ec2 create-vpc --cidr-block 10.0.0.0/16 \
+        --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=cs401-vpc}]' \
+        --query Vpc.VpcId --output text)
+
+      # Enable DNS hostnames (required for RDS and some services)
+      aws ec2 modify-vpc-attribute --vpc-id "$VPC_ID" --enable-dns-hostnames
+
+      # Create and attach Internet Gateway
+      IGW_ID=$(aws ec2 create-internet-gateway \
+        --query InternetGateway.InternetGatewayId --output text)
+      aws ec2 attach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID"
+
+      # Create public subnet in AZ a
+      PUB_SUBNET=$(aws ec2 create-subnet \
+        --vpc-id "$VPC_ID" --cidr-block 10.0.1.0/24 \
+        --availability-zone us-east-1a \
+        --query Subnet.SubnetId --output text)
+
+      # Create public route table with default route to IGW
+      PUB_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
+        --query RouteTable.RouteTableId --output text)
+      aws ec2 create-route --route-table-id "$PUB_RT" \
+        --destination-cidr-block 0.0.0.0/0 --gateway-id "$IGW_ID"
+      aws ec2 associate-route-table --route-table-id "$PUB_RT" --subnet-id "$PUB_SUBNET"
+
+      # Allocate an Elastic IP and create NAT Gateway in the public subnet
+      EIP_ALLOC=$(aws ec2 allocate-address --domain vpc --query AllocationId --output text)
+      NATGW_ID=$(aws ec2 create-nat-gateway \
+        --subnet-id "$PUB_SUBNET" --allocation-id "$EIP_ALLOC" \
+        --query NatGateway.NatGatewayId --output text)
+      aws ec2 wait nat-gateway-available --nat-gateway-ids "$NATGW_ID"
+
+      # Create private subnet and route table (routes outbound to NAT GW)
+      PRIV_SUBNET=$(aws ec2 create-subnet \
+        --vpc-id "$VPC_ID" --cidr-block 10.0.11.0/24 \
+        --availability-zone us-east-1a \
+        --query Subnet.SubnetId --output text)
+      PRIV_RT=$(aws ec2 create-route-table --vpc-id "$VPC_ID" \
+        --query RouteTable.RouteTableId --output text)
+      aws ec2 create-route --route-table-id "$PRIV_RT" \
+        --destination-cidr-block 0.0.0.0/0 --nat-gateway-id "$NATGW_ID"
+      aws ec2 associate-route-table --route-table-id "$PRIV_RT" --subnet-id "$PRIV_SUBNET"
+
+      echo "VPC: $VPC_ID | Public subnet: $PUB_SUBNET | Private subnet: $PRIV_SUBNET"
+      ```
+
+      **Security Group vs NACL — when to use each:**
+
+      Security groups are the primary tool; use them to restrict traffic between tiers (allow port 5432 only from the app security group ID). NACLs are a secondary, subnet-level control useful for blocking specific IP ranges or as a defence-in-depth measure, but their stateless nature makes them operationally complex for granular rules.
+
+  - heading: "IAM: Identity & Access Management"
+    content: |
+      ## IAM: Identity & Access Management
+
+      IAM is the AWS service that controls **who** (identity) can do **what** (actions) on **which resources** under **what conditions**. IAM is global — not region-specific. A misconfigured IAM policy is one of the most common causes of cloud security breaches; understanding it deeply is non-negotiable.
+
+      ### IAM Entity Types
+
+      | Entity | Description |
+      |--------|-------------|
+      | **IAM User** | A permanent identity representing a person or application. Has long-term credentials: password (console) and/or access keys (programmatic). Avoid using root account. |
+      | **IAM Group** | A collection of IAM users. Policies attached to the group apply to all members. Use groups for team-based access (e.g., `Developers`, `DBAdmins`). |
+      | **IAM Role** | An identity that can be **assumed** by trusted entities (EC2, Lambda, another account, a federated user). No long-term credentials — uses temporary STS tokens (max 12 hours). Preferred over access keys for AWS workloads. |
+      | **IAM Policy** | A JSON document defining allowed or denied actions. Attached to users, groups, or roles. |
+
+      ### Policy Types
+
+      - **AWS Managed Policies**: Pre-built by AWS (e.g., `AmazonS3ReadOnlyAccess`, `AdministratorAccess`). Convenient but often too broad.
+      - **Customer Managed Policies**: Policies you create and manage. Version-controlled; can be attached to multiple entities.
+      - **Inline Policies**: Embedded directly in a single user, group, or role. Not reusable; useful for strict 1:1 relationships.
+      - **Resource-Based Policies**: Attached to a resource (S3 bucket policy, Lambda resource policy). Specifies `Principal`.
+
+      ### Policy Evaluation Logic
+
+      AWS evaluates all applicable policies and uses the following precedence:
+      1. **Explicit Deny** (always wins, regardless of any Allow)
+      2. **Explicit Allow** (grants access)
+      3. **Implicit Deny** (default — everything not explicitly allowed is denied)
+
+      ### Principle of Least Privilege
+
+      Grant only the permissions required to perform a specific task — nothing more. Start with zero permissions and add incrementally. Use **IAM Access Analyzer** to identify unused permissions and tighten policies.
+
+      **A well-scoped IAM policy for a Lambda function processing S3 data:**
+
+      ```json
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "ReadSourceBucket",
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject",
+              "s3:ListBucket"
+            ],
+            "Resource": [
+              "arn:aws:s3:::cs401-lab-data-1700000000",
+              "arn:aws:s3:::cs401-lab-data-1700000000/raw/*"
+            ]
+          },
+          {
+            "Sid": "WriteDestinationBucket",
+            "Effect": "Allow",
+            "Action": "s3:PutObject",
+            "Resource": "arn:aws:s3:::cs401-processed-data/output/*"
+          },
+          {
+            "Sid": "WriteDynamoDB",
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:PutItem",
+              "dynamodb:UpdateItem"
+            ],
+            "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/cs401-records"
+          },
+          {
+            "Sid": "CloudWatchLogs",
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:us-east-1:123456789012:log-group:/aws/lambda/cs401-*:*"
+          }
+        ]
+      }
+      ```
+
+      **Trust Policy** (attached to a role — defines who can assume it):
+
+      ```json
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "lambda.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+      ```
+
+      **IAM operations with the AWS CLI:**
+
+      ```bash
+      # Create a custom policy from a JSON file
+      aws iam create-policy \
+        --policy-name cs401-lambda-s3-policy \
+        --policy-document file://lambda-policy.json
+
+      # Create the execution role with a trust policy for Lambda
+      aws iam create-role \
+        --role-name cs401-lambda-role \
+        --assume-role-policy-document file://trust-policy.json
+
+      # Attach the custom policy to the role
+      aws iam attach-role-policy \
+        --role-name cs401-lambda-role \
+        --policy-arn arn:aws:iam::123456789012:policy/cs401-lambda-s3-policy
+
+      # Assume a role via STS (useful for cross-account access or testing)
+      CREDS=$(aws sts assume-role \
+        --role-arn arn:aws:iam::987654321098:role/CrossAccountReadRole \
+        --role-session-name cs401-session \
+        --query Credentials --output json)
+
+      export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['AccessKeyId'])")
+      export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['SecretAccessKey'])")
+      export AWS_SESSION_TOKEN=$(echo "$CREDS" | python3 -c "import sys,json; print(json.load(sys.stdin)['SessionToken'])")
+
+      # Generate an IAM credential report (lists all users, key ages, MFA status)
+      aws iam generate-credential-report
+      aws iam get-credential-report --query Content --output text | base64 -d
+      ```
+
+      **Access Keys vs Role-Based Auth**: Never embed access keys in application code or Docker images — they are long-term credentials and a high-value target. EC2 instance profiles and Lambda execution roles provide short-lived STS tokens automatically rotated by AWS. Use access keys only for local development, and store them in `~/.aws/credentials` (never in environment variables in production).
+
+  - heading: "The Well-Architected Framework & Shared Responsibility"
+    content: |
+      ## The Well-Architected Framework & Shared Responsibility
+
+      ### The AWS Well-Architected Framework
+
+      AWS published the Well-Architected Framework to help cloud architects build secure, high-performing, resilient, and efficient infrastructure. It is organised into **six pillars** (five original + Sustainability added in 2021). Each pillar has design principles, questions, and best practices. AWS offers the **Well-Architected Tool** in the console — a free review service based on this framework.
+
+      | Pillar | Core question | Key best practice |
+      |--------|--------------|-------------------|
+      | **Operational Excellence** | Can you run and monitor systems to deliver business value, and continually improve? | Perform operations as code (IaC with CloudFormation/Terraform); make frequent, small, reversible changes; anticipate failure with game days |
+      | **Security** | How do you protect data, systems, and assets? | Enable traceability (CloudTrail, Config); apply security at all layers; automate security best practices; protect data at rest and in transit (KMS, TLS) |
+      | **Reliability** | How do you recover from infrastructure or service failures? | Test recovery procedures; automatically recover from failure; scale horizontally; stop guessing capacity; manage change through automation |
+      | **Performance Efficiency** | How do you use computing resources efficiently? | Democratise advanced technologies; go global in minutes; use serverless architectures; experiment more often |
+      | **Cost Optimisation** | How do you avoid unnecessary costs? | Implement cloud financial management; adopt a consumption model; measure overall efficiency; stop spending on undifferentiated heavy lifting; analyse and attribute expenditure |
+      | **Sustainability** | How do you minimise environmental impact? | Understand your environmental impact; establish sustainability goals; maximise utilisation; anticipate and adopt more efficient offerings |
+
+      **Using the Well-Architected Tool:**
+      ```bash
+      # Create a workload review via CLI
+      aws wellarchitected create-workload \
+        --workload-name "CS401 Lab Application" \
+        --description "Three-tier web app on AWS" \
+        --environment PRODUCTION \
+        --aws-regions us-east-1 \
+        --lenses "wellarchitected"
+      ```
+
+      ### The Shared Responsibility Model
+
+      The shared responsibility model defines the boundary between what AWS secures and what the customer is responsible for. Misunderstanding this boundary is a leading cause of cloud security incidents.
+
+      ```mermaid
+      graph TB
+          subgraph "AWS Responsibility: Security OF the Cloud"
+              PHY["Physical Security\n(data centres, hardware, facilities)"]
+              HYP["Hypervisor & Host OS\n(EC2 underlying infrastructure)"]
+              NET["Global Network\n(fibre, routers, DDoS protection)"]
+              REG["Regions, AZs,\nEdge Locations"]
+          end
+
+          subgraph "Customer Responsibility: Security IN the Cloud"
+              OS["Guest OS patching\n(EC2 instances)"]
+              APP["Application code\n& dependencies"]
+              DATA["Customer data\n(encryption, classification)"]
+              IAM_SEC["IAM configuration\n(users, roles, policies)"]
+              NW_CFG["Network configuration\n(VPC, SGs, NACLs)"]
+          end
+
+          PHY --> OS
+          HYP --> OS
+      ```
+
+      The model shifts based on service type:
+
+      - **EC2 (IaaS)**: You are responsible for the guest OS, patching, application, and data. AWS manages the hypervisor and hardware.
+      - **RDS (Managed service)**: AWS handles OS patching, database engine patching, backups, and hardware. You are responsible for database-level security (access control, encryption, parameter tuning).
+      - **S3 (Fully managed)**: AWS manages all infrastructure. You are responsible for bucket policies, access control lists, encryption configuration, and the data content itself.
+      - **Lambda (Serverless)**: AWS manages the execution environment, OS, runtime patches. You are responsible for function code, IAM execution role permissions, and input validation.
+
+      **Practical security checklist for every AWS deployment:**
+
+      ```bash
+      # 1. Enable CloudTrail in all regions
+      aws cloudtrail create-trail \
+        --name cs401-audit-trail \
+        --s3-bucket-name cs401-cloudtrail-logs \
+        --is-multi-region-trail \
+        --enable-log-file-validation
+
+      # 2. Enable AWS Config for configuration compliance
+      aws configservice put-configuration-recorder \
+        --configuration-recorder name=default,roleARN=arn:aws:iam::123456789012:role/ConfigRole
+
+      # 3. Enable Security Hub (aggregates GuardDuty, Inspector, Macie findings)
+      aws securityhub enable-security-hub \
+        --enable-default-standards
+
+      # 4. Enable GuardDuty (ML-based threat detection)
+      aws guardduty create-detector --enable --finding-publishing-frequency FIFTEEN_MINUTES
+      ```
+
+quiz:
+  - question: "An e-commerce company needs to run a legacy inventory management system on a virtual machine in the cloud, requiring full control over the operating system, installed software, and network configuration. Which cloud service model is most appropriate?"
+    options:
+      - "SaaS — the provider manages everything including the application"
+      - "IaaS — the customer controls the OS, middleware, and application while the provider manages physical infrastructure"
+      - "PaaS — the provider manages the runtime and the customer deploys only application code"
+      - "FaaS — the application runs as event-driven functions with no server management"
+    answer: 1
+    explanation: |
+      IaaS (Infrastructure as a Service) provides virtualised compute, storage, and networking resources. The customer manages everything from the OS upward: patching, installing middleware, configuring network interfaces, and deploying the application. This is the appropriate model when a legacy system requires specific OS configurations or full administrative access. PaaS abstracts the OS and runtime; SaaS provides a complete application; FaaS (Lambda) is for stateless event-driven functions.
+  - question: "You launch an EC2 instance in a public subnet. The instance has a public IP and port 80 is open in its security group, but HTTP requests from the internet time out. What is the most likely missing configuration?"
+    options:
+      - "The EC2 instance needs an IAM role with AmazonEC2FullAccess attached"
+      - "The subnet's route table has no route for 0.0.0.0/0 pointing to an Internet Gateway"
+      - "The VPC does not have DNS hostnames enabled"
+      - "The instance type does not support public IP assignment"
+    answer: 1
+    explanation: |
+      For a subnet to be "public" — able to send and receive traffic from the internet — its associated route table must have a route with destination 0.0.0.0/0 pointing to an Internet Gateway (igw-xxxxxxxx). Without this route, traffic cannot leave or enter the VPC from the internet, causing connection timeouts. IAM roles control API permissions, not network routing. DNS hostname enablement affects name resolution but not connectivity. All instance types support public IPs in public subnets.
+  - question: "Which S3 storage class provides the lowest per-GB monthly storage cost and is designed for data that is accessed at most once or twice per year, with a 12-hour retrieval SLA?"
+    options:
+      - "S3 Standard-IA"
+      - "S3 Glacier Instant Retrieval"
+      - "S3 Glacier Deep Archive"
+      - "S3 One Zone-IA"
+    answer: 2
+    explanation: |
+      S3 Glacier Deep Archive is the lowest-cost AWS storage at approximately $0.00099/GB/month, designed for data retained for 7–10 years that is rarely or never accessed. It has a retrieval time of up to 12 hours (standard) or 48 hours (bulk). Standard-IA costs $0.0125/GB with millisecond retrieval. Glacier Instant Retrieval costs $0.004/GB but provides millisecond access. One Zone-IA is $0.01/GB but stores data in a single AZ.
+  - question: "A developer creates an IAM policy with an Allow on s3:* for all S3 resources, but an explicit Deny on s3:DeleteObject for a specific bucket. The developer's account also has an AWS managed policy with Allow on s3:DeleteObject for all resources. What happens when the developer tries to delete an object from that specific bucket?"
+    options:
+      - "The action succeeds because the Allow in the managed policy overrides the inline Deny"
+      - "The action is denied because an explicit Deny always takes precedence over any Allow"
+      - "The action succeeds because the user-created policy's s3:* Allow is more specific"
+      - "The action fails because s3:DeleteObject requires MFA and the developer has not enabled it"
+    answer: 1
+    explanation: |
+      IAM policy evaluation follows a strict precedence: explicit Deny always wins, regardless of how many Allow statements exist across any number of attached policies. Even though both a customer-managed policy and an AWS-managed policy grant s3:DeleteObject, the explicit Deny on that specific bucket resource overrides all Allows. This is the fundamental mechanism behind Deny-based guardrails like Service Control Policies (SCPs) in AWS Organizations. The only exception is the root account, which cannot be denied by SCPs.
+  - question: "According to the AWS Well-Architected Framework, a team runs all database administration tasks manually via SSH sessions. This violates which pillar's core design principle?"
+    options:
+      - "Reliability — manual operations cannot recover from failure automatically"
+      - "Operational Excellence — operations should be performed as code to enable repeatability, auditing, and automation"
+      - "Security — SSH access should be replaced with AWS Systems Manager Session Manager"
+      - "Performance Efficiency — manual tasks create latency in the operational workflow"
+    answer: 1
+    explanation: |
+      The Operational Excellence pillar's primary design principle is to perform operations as code (Infrastructure as Code, automation scripts, runbooks implemented as Systems Manager documents). Manual SSH sessions are not repeatable, not auditable (unless CloudTrail captures session activity), and not scalable. While Security is also a concern (SSH key management, open port 22), the direct pillar violation is Operational Excellence. The framework recommends using AWS Systems Manager Run Command or Session Manager instead of direct SSH.

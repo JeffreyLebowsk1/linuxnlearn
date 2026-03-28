@@ -1,0 +1,293 @@
+title: "Kubernetes & Infrastructure as Code Assignment"
+category: "cloud"
+difficulty: "advanced"
+estimated_minutes: 45
+related_lesson: "03_kubernetes"
+instructions: |
+  Demonstrate your understanding of Kubernetes resource management and Terraform Infrastructure
+  as Code by completing the tasks below. Multiple-choice questions are graded instantly.
+  Written and practical answers are graded by AI with detailed feedback. For practical tasks,
+  write production-quality manifests and configurations that reflect real-world best practices.
+
+tasks:
+  - id: 1
+    type: "multiple_choice"
+    points: 10
+    question: "In Kubernetes, what is the fundamental difference between a Pod and a Deployment, and why does this difference matter for production workloads?"
+    options:
+      - "A Pod is immutable once created; a Deployment allows containers to be modified after creation by updating its spec in-place"
+      - "A Deployment manages a ReplicaSet which in turn manages Pods — providing declarative updates, automatic rollbacks, and ensuring the desired replica count is always maintained; a standalone Pod provides no self-healing or replication"
+      - "Pods run on worker nodes; Deployments run on control-plane nodes — they differ only in scheduling location"
+      - "A Deployment is simply a Pod with more than one container; a Pod by definition contains only a single container"
+    answer: 1
+    explanation: "A Pod is the smallest schedulable unit in Kubernetes — it is a thin wrapper around one or more containers. If a standalone Pod crashes or the node it runs on fails, the Pod is gone permanently. A Deployment introduces the controller pattern: it declares desired state (e.g., 3 replicas of nginx:1.25) and the Deployment Controller continuously reconciles actual state toward desired state by managing a ReplicaSet, which in turn manages the individual Pods. If a Pod dies, the ReplicaSet recreates it. Deployments also support rolling updates (gradually replace old Pods with new ones) and rollbacks (revert to a previous ReplicaSet revision) — capabilities that bare Pods cannot provide."
+
+  - id: 2
+    type: "multiple_choice"
+    points: 10
+    question: "What does `terraform plan` do, and why is it considered essential practice to always run it before `terraform apply`?"
+    options:
+      - "terraform plan validates the syntax of .tf files and checks for missing provider plugins, but does not inspect existing infrastructure state"
+      - "terraform plan locks the remote state file so no other team member can run apply concurrently while you are reviewing changes"
+      - "terraform plan generates a detailed execution plan — showing which resources will be created, modified, or destroyed — by comparing the desired configuration to the current state, without making any changes to real infrastructure"
+      - "terraform plan provisions resources in a staging environment first so you can test them before applying to production"
+    answer: 2
+    explanation: "terraform plan performs a read-only dry run: it reads the current state file (local or remote), refreshes resource attributes from the real infrastructure provider, then computes the diff between current state and the desired configuration in your .tf files. The output shows each resource action with a +, ~, or - symbol (create, update in-place, destroy). No API calls that modify infrastructure are made. Running plan before apply is essential because it lets you catch mistakes — such as accidentally destroying a production database, mistyping a CIDR block, or a provider bug causing unexpected replacements — before they cause damage. In CI/CD pipelines plan output is commonly posted as a pull request comment for peer review."
+
+  - id: 3
+    type: "short_answer"
+    points: 15
+    question: |
+      Explain the four core components of the Kubernetes control plane. For each component,
+      describe: (1) where it runs, (2) its primary responsibility, and (3) what would break
+      if that component went down.
+
+      Components to address: API Server, etcd, Scheduler, Controller Manager.
+    rubric: |
+      Award full marks (15) if the answer correctly describes all four components (3-4 pts each):
+
+      1. API Server (4 pts): single entry point for all cluster operations; all kubectl commands,
+         internal components, and external clients communicate exclusively through the API server
+         over HTTPS; it validates and authenticates requests, persists objects to etcd. If down:
+         no cluster management is possible; existing workloads continue running but cannot be
+         modified or observed through the API.
+
+      2. etcd (4 pts): distributed, consistent key-value store; the sole source of truth for all
+         cluster state (Pod specs, ConfigMaps, Secrets, Service definitions, etc.); should be
+         backed up regularly. If down: no state changes can be persisted; the cluster freezes —
+         existing Pods keep running but nothing new can be scheduled or updated.
+
+      3. Scheduler (3 pts): watches for unscheduled Pods (Pods with no nodeName set) and assigns
+         them to worker nodes based on resource requests, affinity/anti-affinity rules, taints/
+         tolerations, and node capacity. If down: new Pods remain in Pending state indefinitely;
+         existing running Pods are unaffected.
+
+      4. Controller Manager (4 pts): runs a collection of control loops (controllers) that
+         continuously reconcile actual state with desired state; includes ReplicaSet controller,
+         Deployment controller, Job controller, and more. If down: no reconciliation occurs —
+         if a Pod dies it will not be recreated; Deployments cannot roll out updates.
+
+      Award 10/15 if three components are correctly described.
+      Award 5/15 if only one or two are correct but with good detail.
+    sample_answer: |
+      The Kubernetes control plane runs on dedicated master nodes (or is managed by the cloud
+      provider in services like EKS and GKE) and is responsible for the global decision-making
+      and desired-state enforcement of the cluster.
+
+      **1. API Server (kube-apiserver)**
+      The API server is the single, central entry point for all cluster interactions. Every
+      kubectl command, every internal component communication, and every external client request
+      goes through the API server via authenticated, authorised HTTPS requests. It validates
+      objects against their OpenAPI schemas and persists them to etcd. If the API server goes
+      down, the cluster becomes unmanageable — you cannot deploy, scale, or observe resources —
+      but existing running Pods continue until they restart (since kubelet on each node operates
+      independently).
+
+      **2. etcd**
+      etcd is a distributed, strongly-consistent key-value store that acts as the cluster's
+      database and single source of truth. All cluster state — Pod specs, Deployments, ConfigMaps,
+      Secrets, Service definitions, node registrations — is stored in etcd. It uses the Raft
+      consensus algorithm to ensure consistency across replicas. If etcd becomes unavailable,
+      no state changes can be written; the cluster effectively freezes. etcd data loss without
+      a backup means permanent loss of cluster state.
+
+      **3. Scheduler (kube-scheduler)**
+      The scheduler watches for newly created Pods that have no node assignment (nodeName is
+      empty) and selects the best worker node for each Pod based on resource availability
+      (CPU/memory requests vs. node capacity), affinity and anti-affinity rules, taints and
+      tolerations, and custom priority classes. If the scheduler goes down, new Pods remain
+      stuck in Pending state but all currently running Pods are unaffected.
+
+      **4. Controller Manager (kube-controller-manager)**
+      The controller manager runs dozens of reconciliation control loops as goroutines within
+      a single binary. Each controller watches specific resource types and takes corrective action
+      when actual state diverges from desired state. For example, the ReplicaSet controller
+      ensures the correct number of Pod replicas are running; the Deployment controller manages
+      rolling updates; the Job controller ensures batch jobs run to completion. If the controller
+      manager stops, no automatic healing occurs: crashed Pods are not replaced, scaling changes
+      are not applied, and Deployment rollouts stall.
+
+  - id: 4
+    type: "short_answer"
+    points: 15
+    question: |
+      What is Terraform state, and why is using remote state with state locking critical for
+      teams? Your answer should address:
+      (1) What information Terraform state stores and why it is needed.
+      (2) The specific problems that arise when multiple engineers use local state files.
+      (3) How remote state backends (e.g., S3 + DynamoDB on AWS) solve these problems.
+    rubric: |
+      Award full marks (15) if the answer covers all three areas:
+
+      1. (5 pts) State stores the mapping between Terraform resource definitions and real
+         infrastructure resource IDs/attributes; without state, Terraform cannot know which
+         cloud resource corresponds to which .tf block, cannot detect drift, and would
+         recreate everything on every apply.
+
+      2. (5 pts) Local state problems in teams: (a) race condition — two engineers run apply
+         simultaneously, both read the same stale state, and both attempt to create/modify the
+         same resource, leading to corruption or duplicate infrastructure; (b) state is siloed
+         on one developer's machine — teammates cannot run plan/apply; (c) no history or
+         versioning of state changes.
+
+      3. (5 pts) Remote backend with locking: S3 stores the state file durably with versioning
+         (so previous state can be restored after a bad apply); DynamoDB provides a distributed
+         lock — only one terraform apply can run at a time, preventing concurrent modification;
+         all team members point to the same backend so state is always shared and consistent.
+
+      Award 10/15 if two of three areas are well covered.
+      Award 5/15 if only the definition of state is given without discussing team problems.
+    sample_answer: |
+      **What is Terraform State?**
+      Terraform state is a JSON file (terraform.tfstate) that records the mapping between
+      the resources defined in your .tf configuration and the real infrastructure objects that
+      Terraform created. For each managed resource, the state stores the resource ID, all
+      current attributes (e.g., an EC2 instance's instance-id, private IP, security group IDs),
+      and metadata. State is what allows Terraform to compute diffs: on the next plan, Terraform
+      compares the desired configuration to the state (and optionally refreshes state against
+      the live cloud APIs) to determine what needs to change. Without state, Terraform would
+      have no way to know that `aws_instance.web` already exists and would attempt to create it
+      again.
+
+      **Problems with Local State in Teams:**
+      1. **Race conditions / state corruption:** If two engineers run `terraform apply`
+         simultaneously from their own machines, both read the same (potentially stale) state
+         file, compute independent plans, and both submit changes to the cloud provider. This
+         can result in duplicate resources, conflicting modifications, or a state file that no
+         longer accurately reflects reality.
+      2. **Siloed state:** The state file lives on one developer's laptop. Other team members
+         cannot run `terraform plan` meaningfully because their local state is either empty or
+         out of date, making collaboration impossible.
+      3. **No disaster recovery:** A local state file has no versioning. If a bad apply corrupts
+         state, or the developer's machine is lost, recovering the mapping between Terraform
+         config and live infrastructure is extremely difficult.
+
+      **Remote State with S3 + DynamoDB:**
+      - **S3** stores the state file durably in the cloud with versioning enabled, so every
+        apply creates a new state version. If an apply goes wrong, you can roll back to the
+        previous version.
+      - **DynamoDB** provides a distributed lock table. Before any `terraform apply` (or plan
+        with -lock=true), Terraform writes a lock entry to DynamoDB. If a lock already exists,
+        the second apply is blocked with a clear error. This prevents concurrent state
+        modifications entirely.
+      - All team members configure the same backend, so everyone operates on the same shared
+        state — plan and apply always reflect the true current infrastructure.
+
+  - id: 5
+    type: "practical"
+    points: 50
+    question: |
+      **Part A — Kubernetes Deployment (36 pts):**
+      Write a complete Kubernetes Deployment YAML manifest for an nginx web server that satisfies
+      ALL of the following requirements:
+        1. Uses the nginx:1.25-alpine image.
+        2. Runs exactly 3 replicas.
+        3. Sets resource requests (CPU: 100m, memory: 128Mi) and limits (CPU: 200m, memory: 256Mi).
+        4. Adds a liveness probe using HTTP GET on path / and port 80, with initialDelaySeconds: 10
+           and periodSeconds: 15.
+        5. Adds a readiness probe using HTTP GET on path /ready and port 80.
+        6. Injects an environment variable NGINX_ENV sourced from a ConfigMap named nginx-config
+           with key environment.
+
+      **Part B — Service (14 pts):**
+      Write a separate Service YAML of type ClusterIP that exposes port 80 and routes traffic
+      to the nginx Pods from Part A. Use appropriate label selectors.
+    rubric: |
+      Part A — Deployment (36 pts, 6 pts per requirement):
+      1. image: nginx:1.25-alpine in the container spec (6 pts).
+      2. replicas: 3 at the Deployment spec level (6 pts).
+      3. resources block with requests and limits for both CPU and memory at the correct values
+         under the container spec (6 pts).
+      4. livenessProbe with httpGet path "/" port 80, initialDelaySeconds: 10, periodSeconds: 15
+         (or reasonable period) (6 pts).
+      5. readinessProbe with httpGet path "/ready" port 80 (initialDelay and period optional
+         but accepted) (6 pts).
+      6. env entry using valueFrom.configMapKeyRef referencing configmap "nginx-config" key
+         "environment" for the variable NGINX_ENV (6 pts).
+
+      Part B — Service (14 pts):
+      - apiVersion and kind: Service correct (2 pts).
+      - type: ClusterIP (2 pts).
+      - port 80 in ports section (2 pts).
+      - selector that matches the labels on the Deployment's Pod template (4 pts).
+      - targetPort: 80 (or matching container port) (4 pts).
+      Award partial credit proportionally for partially correct manifests.
+    sample_answer: |
+      **Part A — Deployment:**
+
+      ```yaml
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: nginx-deployment
+        labels:
+          app: nginx
+      spec:
+        replicas: 3
+        selector:
+          matchLabels:
+            app: nginx
+        template:
+          metadata:
+            labels:
+              app: nginx
+          spec:
+            containers:
+              - name: nginx
+                image: nginx:1.25-alpine
+                ports:
+                  - containerPort: 80
+                resources:
+                  requests:
+                    cpu: "100m"
+                    memory: "128Mi"
+                  limits:
+                    cpu: "200m"
+                    memory: "256Mi"
+                env:
+                  - name: NGINX_ENV
+                    valueFrom:
+                      configMapKeyRef:
+                        name: nginx-config
+                        key: environment
+                livenessProbe:
+                  httpGet:
+                    path: /
+                    port: 80
+                  initialDelaySeconds: 10
+                  periodSeconds: 15
+                  failureThreshold: 3
+                readinessProbe:
+                  httpGet:
+                    path: /ready
+                    port: 80
+                  initialDelaySeconds: 5
+                  periodSeconds: 10
+                  failureThreshold: 3
+      ```
+
+      **Part B — Service:**
+
+      ```yaml
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: nginx-service
+        labels:
+          app: nginx
+      spec:
+        type: ClusterIP
+        selector:
+          app: nginx
+        ports:
+          - name: http
+            protocol: TCP
+            port: 80
+            targetPort: 80
+      ```
+
+      The Service's selector (`app: nginx`) matches the labels on the Deployment's Pod template,
+      so kube-proxy routes ClusterIP traffic to the healthy nginx Pods. The liveness probe
+      determines when to restart a container; the readiness probe determines when a Pod is safe
+      to receive traffic — Pods failing the readiness probe are removed from the Service endpoint
+      list without being restarted.

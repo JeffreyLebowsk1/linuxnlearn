@@ -1,0 +1,937 @@
+title: "Containerisation with Docker"
+order: 2
+summary: |
+  Master Docker's architecture from first principles: namespaces, cgroups, and the OCI specification. Students will author production-grade Dockerfiles using multi-stage builds, manage the full container lifecycle with the Docker CLI, design multi-service stacks with Docker Compose, and apply container security best practices including non-root execution, image scanning with Trivy, and capability dropping.
+learning_objectives:
+  - "Explain how Linux namespaces and cgroups underpin container isolation and contrast containers with virtual machines"
+  - "Write production-quality Dockerfiles using multi-stage builds, non-root users, and layer-caching techniques"
+  - "Build, run, debug, and clean up containers using the Docker CLI with confidence"
+  - "Design and operate multi-service applications using Docker Compose with health checks, named volumes, and custom networks"
+  - "Apply container security best practices: non-root execution, read-only filesystems, image scanning, and capability dropping"
+builds_on:
+  - "Linux CLI fundamentals (SYS 202) — Docker commands are run from the terminal; filesystem and process concepts are essential"
+  - "Python programming (CS 215) — all application examples use Python/Flask"
+  - "Cloud Computing Fundamentals (CS 401 Lesson 1) — containers are the deployment unit for EC2, Lambda, and ECS/EKS"
+sections:
+  - heading: "Container vs VM Architecture"
+    content: |
+      ## Container vs VM Architecture
+
+      Before Docker there were virtual machines. Both containers and VMs provide isolation, but through fundamentally different mechanisms. Understanding this distinction explains why containers start in milliseconds rather than minutes and why a 300 MB Docker image can replace a 20 GB VM snapshot.
+
+      ### The Virtual Machine Stack
+
+      A VM runs a complete operating system — kernel, init system, standard library, and userspace tools — on top of a **hypervisor** that emulates or paravirtualises hardware. Two hypervisor types exist:
+
+      - **Type 1 (bare-metal)**: Runs directly on hardware. Examples: VMware ESXi, Microsoft Hyper-V, KVM (Linux Kernel-based Virtual Machine). High performance; used in production and cloud providers (AWS EC2 runs on a hardened KVM variant called the Nitro hypervisor).
+      - **Type 2 (hosted)**: Runs inside a host OS. Examples: VirtualBox, VMware Workstation. Convenient for development; performance overhead from double OS scheduling.
+
+      Each VM carries a full guest OS kernel. Booting a VM involves BIOS initialisation, bootloader, kernel decompression, init system startup, and service start — typically 30–90 seconds.
+
+      ### The Container Stack
+
+      Containers share the host OS kernel. Instead of hardware virtualisation, they use two Linux kernel features:
+
+      - **Namespaces**: Provide isolation by giving each process (or group of processes) a private view of specific system resources. A process in a container cannot see processes in other containers or on the host.
+      - **cgroups (Control Groups)**: Limit and account for resource usage (CPU, memory, network I/O, disk I/O) for a group of processes. Without cgroups, a runaway container could starve the host.
+
+      **Linux namespaces used by Docker:**
+
+      | Namespace | Isolates | Docker flag |
+      |-----------|---------|------------|
+      | `pid` | Process IDs — PID 1 in a container is the main process | Default |
+      | `net` | Network interfaces, IP addresses, routing tables, ports | Default |
+      | `mnt` | Filesystem mount points — the container sees its own root filesystem | Default |
+      | `uts` | Hostname and domain name | Default |
+      | `ipc` | System V IPC and POSIX message queues | Default |
+      | `user` | User and group IDs (UID/GID mapping) | `--userns-remap` |
+      | `cgroup` | cgroup root (prevents container from seeing host cgroup hierarchy) | Default in recent kernels |
+
+      **The OCI Specification and runc:**
+
+      The **Open Container Initiative (OCI)** defines two standards: the **Image Spec** (how container images are structured and stored) and the **Runtime Spec** (how to run a container from an image bundle). **runc** is the reference OCI runtime — a standalone CLI tool that creates and runs containers by setting up namespaces, cgroups, and pivot_root, then exec'ing the container process. **containerd** is the higher-level container runtime daemon that manages image pulls, container lifecycle, snapshotting, and networking, and calls runc under the hood. Docker Engine uses containerd internally.
+
+      ```mermaid
+      graph TB
+          subgraph "Virtual Machine Architecture"
+              HW_VM["Physical Hardware"]
+              HYP["Type 1 Hypervisor\n(KVM / Hyper-V / ESXi)"]
+              VM1["VM 1\nGuest OS Kernel\nLibraries\nApp A"]
+              VM2["VM 2\nGuest OS Kernel\nLibraries\nApp B"]
+              VM3["VM 3\nGuest OS Kernel\nLibraries\nApp C"]
+              HW_VM --> HYP --> VM1
+              HYP --> VM2
+              HYP --> VM3
+          end
+
+          subgraph "Container Architecture"
+              HW_C["Physical Hardware"]
+              HOST_OS["Host OS Kernel\n(Linux — namespaces + cgroups)"]
+              CTR["containerd daemon"]
+              C1["Container 1\nLibraries\nApp A"]
+              C2["Container 2\nLibraries\nApp B"]
+              C3["Container 3\nLibraries\nApp C"]
+              HW_C --> HOST_OS --> CTR --> C1
+              CTR --> C2
+              CTR --> C3
+          end
+      ```
+
+      **Why containers are faster and lighter:**
+
+      | Property | VM | Container |
+      |----------|-----|-----------|
+      | Startup time | 30–90 seconds | < 1 second |
+      | Image size | 2–20 GB | 5 MB – 500 MB |
+      | Memory overhead | 256 MB – 2 GB (guest OS) | 1–5 MB (namespace overhead only) |
+      | Kernel | Separate per VM | Shared host kernel |
+      | Isolation strength | Strong (hardware boundary) | Good (kernel boundary; kernel vulnerabilities affect all containers) |
+
+      The trade-off: containers share the kernel, so a kernel exploit can potentially break out of container isolation. VMs provide a stronger security boundary — which is why AWS Lambda, Fargate, and Firecracker use microVMs (lightweight KVM VMs that start in 125 ms) to isolate multi-tenant workloads.
+
+  - heading: "Docker Architecture & Image Layers"
+    content: |
+      ## Docker Architecture & Image Layers
+
+      ### Docker Components
+
+      Docker uses a **client–server architecture**. The Docker client (`docker` CLI) sends commands to the Docker daemon (`dockerd`) via a REST API over a Unix socket (`/var/run/docker.sock`) or TCP. The daemon does the actual work: building images, starting containers, managing volumes and networks.
+
+      ```mermaid
+      graph LR
+          subgraph "Docker Client"
+              CLI["docker CLI\n(docker build / run / push)"]
+          end
+
+          subgraph "Docker Host"
+              DAEMON["dockerd\n(Docker Daemon)"]
+              CONTAINERD["containerd"]
+              RUNC["runc\n(OCI runtime)"]
+              IMAGES["Image Store\n(/var/lib/docker/overlay2)"]
+              CONTAINERS["Running Containers"]
+              VOLUMES["Named Volumes\n(/var/lib/docker/volumes)"]
+              NETWORKS["Networks\n(bridge / host / overlay)"]
+
+              DAEMON --> CONTAINERD --> RUNC --> CONTAINERS
+              DAEMON --> IMAGES
+              DAEMON --> VOLUMES
+              DAEMON --> NETWORKS
+          end
+
+          subgraph "Registry"
+              REG["Docker Hub /\nAmazon ECR /\nGHCR"]
+          end
+
+          CLI -- "REST API\n(Unix socket or TCP)" --> DAEMON
+          DAEMON -- "docker push/pull" --> REG
+      ```
+
+      **Key components:**
+
+      - **dockerd**: The daemon process that listens for Docker API requests and manages Docker objects (images, containers, networks, volumes). It delegates container execution to containerd.
+      - **containerd**: An industry-standard container runtime daemon that manages the complete container lifecycle: image transfer, storage, container execution and supervision, low-level storage (snapshots), and network attachment.
+      - **runc**: The OCI-compliant low-level runtime that actually creates the container by calling Linux kernel APIs (clone(), unshare(), pivot_root(), setrlimit(), etc.).
+      - **Docker Registry**: A storage and distribution system for Docker images. Docker Hub is the public default. Amazon ECR (Elastic Container Registry) is the AWS-managed private registry used in production.
+
+      ### Union Filesystems and Image Layers
+
+      A Docker image is not a monolithic filesystem snapshot — it is a **stack of read-only layers**. Each instruction in a Dockerfile (`RUN`, `COPY`, `ADD`) creates a new layer containing only the filesystem diff introduced by that instruction. Layers are content-addressed using SHA256 digests and are shared across images.
+
+      When a container starts, Docker (via containerd) adds a thin **read-write layer** on top of the image layers using a union filesystem driver — **overlay2** on modern Linux kernels (OverlayFS). The container sees a unified filesystem but any writes go only to the R/W layer. When the container is removed, the R/W layer is discarded; the image layers remain untouched.
+
+      **Visualising layers:**
+
+      ```
+      ┌─────────────────────────────────┐  ← Container R/W layer (ephemeral)
+      ├─────────────────────────────────┤
+      │ Layer 4: COPY app/ /app/        │  ← Your application code (changes often)
+      ├─────────────────────────────────┤
+      │ Layer 3: RUN pip install -r ... │  ← Python dependencies (changes occasionally)
+      ├─────────────────────────────────┤
+      │ Layer 2: COPY requirements.txt  │  ← Requirements file (changes occasionally)
+      ├─────────────────────────────────┤
+      │ Layer 1: RUN apt-get update ... │  ← System dependencies (rarely changes)
+      ├─────────────────────────────────┤
+      │ Layer 0: python:3.12-slim base  │  ← Base image (pulled from registry)
+      └─────────────────────────────────┘
+      ```
+
+      **Working with images:**
+
+      ```bash
+      # Pull an image from Docker Hub (also triggers if not present on docker run)
+      docker pull python:3.12-slim
+
+      # List locally cached images
+      docker images
+      # REPOSITORY       TAG         IMAGE ID       CREATED        SIZE
+      # python           3.12-slim   a1b2c3d4e5f6   3 days ago     130MB
+
+      # Inspect image metadata (architecture, OS, environment variables, exposed ports)
+      docker inspect python:3.12-slim
+
+      # Show image layer history with sizes — reveals what each Dockerfile instruction did
+      docker history python:3.12-slim
+
+      # Show the image's full layer digests (useful for reproducibility and CVE tracking)
+      docker image inspect python:3.12-slim \
+        --format '{{range .RootFS.Layers}}{{println .}}{{end}}'
+
+      # Tag an image for pushing to Amazon ECR
+      docker tag myapp:latest 123456789012.dkr.ecr.us-east-1.amazonaws.com/cs401/myapp:1.0.0
+
+      # Authenticate to ECR and push
+      aws ecr get-login-password --region us-east-1 \
+        | docker login --username AWS --password-stdin \
+            123456789012.dkr.ecr.us-east-1.amazonaws.com
+      docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/cs401/myapp:1.0.0
+      ```
+
+      **Layer caching in builds**: Docker checks whether a layer can be reused from cache before executing a build step. If the instruction and its inputs (e.g., the contents of a `COPY`d file) are identical to a previous build, the cached layer is reused — drastically speeding up rebuilds. This is why `COPY requirements.txt` before `RUN pip install` is essential: pip install is only re-run when requirements.txt changes, not when application code changes.
+
+  - heading: "Writing Production Dockerfiles"
+    content: |
+      ## Writing Production Dockerfiles
+
+      A Dockerfile is a declarative script that defines how to build a Docker image. Writing a naive Dockerfile is easy; writing one that produces small, secure, reproducible, cache-friendly images requires deliberate choices.
+
+      ### Dockerfile Instruction Reference
+
+      | Instruction | Purpose | Notes |
+      |-------------|---------|-------|
+      | `FROM` | Set base image | Every Dockerfile must start with FROM. Use specific digests (`@sha256:...`) for reproducibility |
+      | `RUN` | Execute a command during build | Each RUN creates a layer; chain commands with `&&` to minimise layers |
+      | `COPY` | Copy files from build context into image | Preferred over ADD for local files; respects .dockerignore |
+      | `ADD` | Like COPY but also extracts archives and fetches URLs | Use only when you need tar extraction; COPY is explicit and safer |
+      | `WORKDIR` | Set the working directory | Creates the directory if it doesn't exist; use absolute paths |
+      | `ENV` | Set environment variables | Available at both build and runtime; don't use for secrets |
+      | `ARG` | Build-time variable | Only available during build; not persisted in final image |
+      | `EXPOSE` | Document which port the container listens on | Documentation only — does not publish the port; use `-p` at runtime |
+      | `USER` | Switch to a non-root user | Do this before CMD/ENTRYPOINT for security |
+      | `CMD` | Default command when no command is specified at `docker run` | Overridable. JSON array form preferred: `["python", "app.py"]` |
+      | `ENTRYPOINT` | Container executable — prepended before CMD | Use for containers that should always run a specific binary |
+      | `HEALTHCHECK` | Define how Docker checks container health | Enables `docker ps` health column and influences orchestrator restarts |
+      | `VOLUME` | Create a mount point | Documents intent; named volumes are preferred over VOLUME instruction |
+
+      ### Complete Annotated Production Dockerfile (Flask + multi-stage)
+
+      ```dockerfile
+      # syntax=docker/dockerfile:1.6
+      # ──────────────────────────────────────────────────────────────
+      # Stage 1: builder — install dependencies in an isolated stage
+      # ──────────────────────────────────────────────────────────────
+      FROM python:3.12-slim AS builder
+
+      # Install only build-time system dependencies (gcc for some C extensions)
+      RUN apt-get update && apt-get install -y --no-install-recommends \
+              gcc \
+          && rm -rf /var/lib/apt/lists/*
+
+      WORKDIR /app
+
+      # Copy ONLY requirements first — Docker will cache this layer until
+      # requirements.txt changes, avoiding a full pip install on every code change.
+      COPY requirements.txt .
+
+      # Install into a separate prefix so we can copy cleanly to the final stage
+      RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+      # ──────────────────────────────────────────────────────────────
+      # Stage 2: final runtime image — minimal footprint
+      # ──────────────────────────────────────────────────────────────
+      FROM python:3.12-slim AS final
+
+      # Build-time arguments (not exposed in final image env)
+      ARG APP_VERSION=unknown
+      ARG BUILD_DATE
+
+      # Runtime environment variables
+      ENV PYTHONDONTWRITEBYTECODE=1 \
+          PYTHONUNBUFFERED=1 \
+          APP_VERSION=${APP_VERSION} \
+          PORT=8080
+
+      # Add non-root user and group before copying any files
+      RUN groupadd --gid 1001 appuser \
+          && useradd --uid 1001 --gid 1001 --no-create-home --shell /sbin/nologin appuser
+
+      WORKDIR /app
+
+      # Copy installed Python packages from builder stage (no gcc in final image)
+      COPY --from=builder /install /usr/local
+
+      # Copy application source (this layer invalidates most frequently)
+      COPY --chown=appuser:appuser src/ .
+
+      # Switch to non-root user — all subsequent RUN/CMD/ENTRYPOINT run as appuser
+      USER appuser
+
+      # Document the port; actual publishing happens at runtime with -p or Compose ports:
+      EXPOSE 8080
+
+      # Health check: Docker will mark the container unhealthy after 3 consecutive failures.
+      # The orchestrator (Compose, ECS, Kubernetes) uses this to decide whether to restart.
+      HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+          CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
+
+      # ENTRYPOINT defines the executable; CMD provides default arguments.
+      # Using JSON (exec form) avoids a shell wrapper and ensures signals are delivered
+      # directly to the process (important for graceful shutdown).
+      ENTRYPOINT ["python", "-m", "gunicorn"]
+      CMD ["--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "app:create_app()"]
+      ```
+
+      **Corresponding `requirements.txt`:**
+
+      ```text
+      flask==3.0.3
+      gunicorn==22.0.0
+      psycopg2-binary==2.9.9
+      redis==5.0.4
+      ```
+
+      **Minimal Flask application (`src/app.py`):**
+
+      ```python
+      from flask import Flask, jsonify
+      import os
+
+      def create_app() -> Flask:
+          app = Flask(__name__)
+
+          @app.get("/health")
+          def health():
+              return jsonify({"status": "ok", "version": os.getenv("APP_VERSION", "dev")})
+
+          @app.get("/")
+          def index():
+              return jsonify({"message": "CS 401 Docker demo"})
+
+          return app
+      ```
+
+      **`.dockerignore`** — prevents unnecessary files from entering the build context, reducing upload time and preventing accidental secret leakage:
+
+      ```
+      # Version control
+      .git
+      .gitignore
+
+      # Python artefacts
+      __pycache__
+      *.pyc
+      *.pyo
+      .pytest_cache
+      .coverage
+      htmlcov/
+
+      # Local development
+      .env
+      .env.*
+      *.local
+
+      # Docker files (no need to copy into the image)
+      Dockerfile*
+      docker-compose*.yml
+      .dockerignore
+
+      # CI/CD and documentation
+      .github/
+      docs/
+      README.md
+
+      # Secrets and credentials — never let these enter an image
+      *.pem
+      *.key
+      secrets/
+      ```
+
+      **Building the image:**
+
+      ```bash
+      # Build with build args and a specific tag
+      docker build \
+        --build-arg APP_VERSION=1.2.0 \
+        --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+        --tag cs401/flaskapp:1.2.0 \
+        --tag cs401/flaskapp:latest \
+        --file Dockerfile \
+        .
+
+      # Show the final image size (multi-stage build removes gcc and build tools)
+      docker images cs401/flaskapp
+
+      # Inspect the image without running it
+      docker inspect cs401/flaskapp:1.2.0 | python3 -m json.tool | head -60
+      ```
+
+  - heading: "Container Lifecycle & Debugging"
+    content: |
+      ## Container Lifecycle & Debugging
+
+      Mastering the Docker CLI is essential for day-to-day operations. This section covers the full lifecycle from build to removal and the debugging techniques used to diagnose problems in running (and crashed) containers.
+
+      ### Core Lifecycle Commands
+
+      ```bash
+      # ── BUILD ────────────────────────────────────────────────────
+      # Build image from Dockerfile in current directory
+      docker build -t cs401/flaskapp:dev .
+
+      # Build with no cache (force fresh layer build — slow but ensures reproducibility)
+      docker build --no-cache -t cs401/flaskapp:dev .
+
+      # ── RUN ──────────────────────────────────────────────────────
+      # Run a container in the foreground (Ctrl-C stops it)
+      docker run cs401/flaskapp:dev
+
+      # Run detached (-d), with port mapping (-p host:container), named (--name),
+      # environment variable (-e), and automatically removed on exit (--rm)
+      docker run -d \
+        --name cs401-web \
+        -p 8080:8080 \
+        -e DATABASE_URL="postgresql://user:pass@db:5432/cs401" \
+        -e FLASK_ENV=development \
+        --memory 512m \
+        --cpus 1.0 \
+        cs401/flaskapp:dev
+
+      # ── INSPECT RUNNING CONTAINERS ───────────────────────────────
+      # List running containers
+      docker ps
+
+      # List all containers including stopped ones
+      docker ps -a
+
+      # Show real-time resource usage (CPU, memory, network I/O, block I/O)
+      docker stats cs401-web
+
+      # ── LOGS ─────────────────────────────────────────────────────
+      # Stream logs (--follow like tail -f, --timestamps adds ISO timestamps)
+      docker logs --follow --timestamps cs401-web
+
+      # Show last 100 lines
+      docker logs --tail 100 cs401-web
+
+      # ── EXEC ─────────────────────────────────────────────────────
+      # Open an interactive shell inside the running container
+      # (-i: keep stdin open, -t: allocate a pseudo-TTY)
+      docker exec -it cs401-web /bin/bash
+
+      # Run a one-off command without an interactive shell
+      docker exec cs401-web python -c "import flask; print(flask.__version__)"
+
+      # Check environment variables inside the container
+      docker exec cs401-web env | sort
+
+      # ── INSPECT ──────────────────────────────────────────────────
+      # Full JSON metadata: mounts, network settings, restart policy, etc.
+      docker inspect cs401-web
+
+      # Extract just the IP address using Go template
+      docker inspect cs401-web --format '{{.NetworkSettings.IPAddress}}'
+
+      # ── COPY ─────────────────────────────────────────────────────
+      # Copy a file from container to host (useful for retrieving logs/artefacts)
+      docker cp cs401-web:/app/logs/app.log ./app.log
+
+      # Copy a file from host into a running container
+      docker cp ./updated_config.py cs401-web:/app/config.py
+
+      # ── STOP / REMOVE ────────────────────────────────────────────
+      # Send SIGTERM, wait 10 seconds, then SIGKILL if still running
+      docker stop cs401-web
+
+      # Remove a stopped container
+      docker rm cs401-web
+
+      # Force remove a running container (sends SIGKILL immediately — use carefully)
+      docker rm -f cs401-web
+
+      # Remove all stopped containers, unused networks, dangling images, build cache
+      docker system prune -f
+
+      # Full cleanup including unused volumes and all unused images (not just dangling)
+      docker system prune -af --volumes
+      ```
+
+      ### Volumes: Bind Mounts vs Named Volumes
+
+      | Type | Syntax | When to use |
+      |------|--------|------------|
+      | **Named volume** | `-v mydata:/app/data` | Persistent data (databases, uploads). Managed by Docker; survives container removal. |
+      | **Bind mount** | `-v $(pwd)/src:/app/src` | Development: live-reload source code without rebuilding. Not recommended for production. |
+      | **tmpfs mount** | `--tmpfs /app/tmp` | Sensitive temporary data (tokens, session files) that should not touch disk. |
+
+      ```bash
+      # Create a named volume explicitly
+      docker volume create cs401-postgres-data
+
+      # Run PostgreSQL with a named volume (data persists across container restarts)
+      docker run -d \
+        --name cs401-db \
+        -e POSTGRES_USER=cs401admin \
+        -e POSTGRES_PASSWORD=supersecret \
+        -e POSTGRES_DB=cs401 \
+        -v cs401-postgres-data:/var/lib/postgresql/data \
+        -p 5432:5432 \
+        postgres:16-alpine
+
+      # Inspect volume mount point on the host
+      docker volume inspect cs401-postgres-data
+      ```
+
+      ### Debugging Workflow for a Crashed Container
+
+      ```bash
+      # 1. Check the exit code and last state
+      docker inspect cs401-web --format \
+        '{{.State.Status}} (exit {{.State.ExitCode}}) — {{.State.Error}}'
+
+      # 2. Read logs from the dead container (container must not be removed)
+      docker logs cs401-web
+
+      # 3. If the container exits immediately, override the entrypoint to get a shell
+      docker run -it --entrypoint /bin/bash cs401/flaskapp:dev
+
+      # 4. Run with strace to trace system calls (requires --cap-add SYS_PTRACE)
+      docker run -it --cap-add SYS_PTRACE --entrypoint strace \
+        cs401/flaskapp:dev -e trace=file python app.py
+
+      # 5. Check if a port binding conflict is the issue
+      ss -tlnp | grep 8080
+      docker ps --format "table {{.Names}}\t{{.Ports}}"
+      ```
+
+  - heading: "Docker Compose for Multi-Service Apps"
+    content: |
+      ## Docker Compose for Multi-Service Apps
+
+      Most real applications consist of multiple services: a web server, a database, a cache, a background worker. Running them individually with `docker run` and managing their networking, volumes, and startup order by hand is tedious and error-prone. Docker Compose solves this with a declarative `docker-compose.yml` that defines the entire stack.
+
+      ### Complete Production-Style `docker-compose.yml`
+
+      This example defines a three-tier stack: a Flask web application, a PostgreSQL database, and a Redis cache. It demonstrates every important Compose feature.
+
+      ```yaml
+      # docker-compose.yml
+      # Requires Docker Compose v2 (bundled with Docker Desktop and Docker Engine >= 20.10)
+      name: cs401-app
+
+      services:
+
+        # ── Web Application ──────────────────────────────────────────
+        web:
+          build:
+            context: .
+            dockerfile: Dockerfile
+            args:
+              APP_VERSION: "1.0.0"
+          image: cs401/flaskapp:dev          # tag the built image
+          container_name: cs401-web
+          restart: unless-stopped            # restart on failure; stop on explicit docker stop
+          ports:
+            - "8080:8080"                    # host_port:container_port
+          environment:
+            DATABASE_URL: "postgresql://cs401admin:${DB_PASSWORD}@db:5432/cs401"
+            REDIS_URL: "redis://redis:6379/0"
+            FLASK_ENV: "production"
+            SECRET_KEY: "${SECRET_KEY}"      # injected from .env file or shell environment
+          depends_on:
+            db:
+              condition: service_healthy     # wait for db health check to pass
+            redis:
+              condition: service_healthy
+          healthcheck:
+            test: ["CMD", "python", "-c",
+                   "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+            interval: 30s
+            timeout: 5s
+            start_period: 20s
+            retries: 3
+          networks:
+            - frontend
+            - backend
+          volumes:
+            - app-logs:/app/logs             # named volume for log persistence
+          deploy:
+            resources:
+              limits:
+                cpus: "1.0"
+                memory: 512M
+
+        # ── PostgreSQL Database ──────────────────────────────────────
+        db:
+          image: postgres:16-alpine
+          container_name: cs401-db
+          restart: unless-stopped
+          environment:
+            POSTGRES_USER: cs401admin
+            POSTGRES_PASSWORD: "${DB_PASSWORD}"
+            POSTGRES_DB: cs401
+            PGDATA: /var/lib/postgresql/data/pgdata
+          volumes:
+            - postgres-data:/var/lib/postgresql/data   # data persists across restarts
+            - ./db/init:/docker-entrypoint-initdb.d:ro # SQL scripts run on first start
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U cs401admin -d cs401"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+          networks:
+            - backend
+          # db is NOT in the frontend network — web can reach it; internet cannot
+
+        # ── Redis Cache ──────────────────────────────────────────────
+        redis:
+          image: redis:7.2-alpine
+          container_name: cs401-redis
+          restart: unless-stopped
+          command: >
+            redis-server
+            --save 60 1
+            --loglevel warning
+            --requirepass "${REDIS_PASSWORD}"
+          volumes:
+            - redis-data:/data
+          healthcheck:
+            test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+            interval: 10s
+            timeout: 3s
+            retries: 5
+          networks:
+            - backend
+
+        # ── Background Worker (Celery) ────────────────────────────────
+        worker:
+          build:
+            context: .
+            dockerfile: Dockerfile
+          command: ["python", "-m", "celery", "-A", "tasks.celery_app", "worker",
+                    "--loglevel=info", "--concurrency=2"]
+          environment:
+            DATABASE_URL: "postgresql://cs401admin:${DB_PASSWORD}@db:5432/cs401"
+            REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+          depends_on:
+            db:
+              condition: service_healthy
+            redis:
+              condition: service_healthy
+          networks:
+            - backend
+          restart: unless-stopped
+
+      # ── Networks ─────────────────────────────────────────────────────
+      networks:
+        frontend:
+          driver: bridge    # default; isolated from other Compose stacks
+        backend:
+          driver: bridge
+          internal: true    # no outbound internet access from this network
+
+      # ── Volumes ──────────────────────────────────────────────────────
+      volumes:
+        postgres-data:
+          driver: local
+        redis-data:
+          driver: local
+        app-logs:
+          driver: local
+      ```
+
+      **`.env` file** (never commit to git — add to `.gitignore`):
+
+      ```bash
+      DB_PASSWORD=change_me_in_production_use_vault
+      REDIS_PASSWORD=change_me_in_production_use_vault
+      SECRET_KEY=a-very-long-random-string-from-secrets-module
+      ```
+
+      **Development override `docker-compose.override.yml`** — automatically merged by `docker compose up`:
+
+      ```yaml
+      # docker-compose.override.yml — development-only settings
+      # Automatically applied when running `docker compose up` locally.
+      # Do NOT use in production CI/CD pipelines.
+      services:
+        web:
+          build:
+            target: builder      # use the builder stage (includes dev tools)
+          volumes:
+            - ./src:/app/src:ro  # bind-mount source for live reload
+          environment:
+            FLASK_ENV: development
+            FLASK_DEBUG: "1"
+          command: ["python", "-m", "flask", "run", "--host=0.0.0.0",
+                    "--port=8080", "--reload"]
+
+        db:
+          ports:
+            - "5432:5432"        # expose DB port locally for DBeaver/pgAdmin
+      ```
+
+      ### Essential Docker Compose CLI Commands
+
+      ```bash
+      # Start all services (builds images if needed; -d for detached)
+      docker compose up -d
+
+      # Build (or rebuild) images without starting containers
+      docker compose build --no-cache
+
+      # View aggregated logs from all services (--follow streams in real time)
+      docker compose logs --follow --tail 50
+
+      # View logs for a single service
+      docker compose logs --follow web
+
+      # Execute a command in a running service container
+      docker compose exec web python manage.py db upgrade
+      docker compose exec db psql -U cs401admin cs401
+
+      # Scale a stateless service to 3 replicas
+      docker compose up -d --scale web=3
+
+      # Check the health status of all services
+      docker compose ps
+
+      # Stop all services (preserves volumes and networks)
+      docker compose stop
+
+      # Stop and remove containers, networks (--volumes also removes named volumes)
+      docker compose down --volumes
+
+      # Pull latest upstream images (e.g., postgres:16-alpine)
+      docker compose pull
+
+      # Run a one-off command in a new container (useful for migrations)
+      docker compose run --rm web python manage.py db migrate
+      ```
+
+      ### How Docker Compose Networking Works
+
+      Compose creates a **dedicated bridge network** for each project (named `<project>_<network>`). Services on the same network can reach each other by **service name** — Docker's embedded DNS resolver maps service names to container IPs automatically. This is why `db` in `DATABASE_URL` resolves to the PostgreSQL container: Compose injects the DNS record into each container's `/etc/resolv.conf`. No hardcoded IP addresses needed.
+
+  - heading: "Container Security Best Practices"
+    content: |
+      ## Container Security Best Practices
+
+      Containers are not a security boundary — they are an isolation mechanism. A misconfigured container can become a pivot point for a full host compromise. Production container deployments require deliberate security hardening at every layer: image, runtime, orchestration, and network.
+
+      ### 1. Never Run as Root
+
+      By default, most base images run processes as root (UID 0). A root process inside a container that escapes the namespace gains root on the host. Always create and switch to a non-root user:
+
+      ```dockerfile
+      RUN groupadd --gid 1001 appuser \
+          && useradd --uid 1001 --gid 1001 \
+                     --no-create-home \
+                     --shell /sbin/nologin \
+                     appuser
+      USER appuser
+      ```
+
+      Verify at runtime:
+      ```bash
+      docker run --rm cs401/flaskapp:dev whoami   # should output: appuser
+      docker run --rm cs401/flaskapp:dev id        # uid=1001(appuser) gid=1001(appuser)
+      ```
+
+      ### 2. Read-Only Root Filesystem
+
+      Mount the container's root filesystem as read-only at runtime. This prevents an attacker who gains code execution from writing persistence mechanisms (cron jobs, SSH keys, backdoors) to disk:
+
+      ```bash
+      docker run -d \
+        --read-only \
+        --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+        --tmpfs /app/logs:rw,noexec,nosuid \
+        cs401/flaskapp:prod
+      ```
+
+      In Docker Compose:
+      ```yaml
+      services:
+        web:
+          read_only: true
+          tmpfs:
+            - /tmp:exec,size=64m
+            - /app/logs
+      ```
+
+      ### 3. Drop All Linux Capabilities
+
+      Linux capabilities granularise root privileges (e.g., `CAP_NET_BIND_SERVICE` allows binding to ports < 1024 without full root). Docker grants 14 capabilities by default. Drop all and add back only what is needed:
+
+      ```bash
+      # Drop all capabilities, add back only what the app needs
+      docker run -d \
+        --cap-drop ALL \
+        --cap-add NET_BIND_SERVICE \
+        --security-opt no-new-privileges \
+        cs401/flaskapp:prod
+      ```
+
+      `--security-opt no-new-privileges` prevents the process from gaining additional capabilities via setuid binaries. This is a low-cost, high-value security control that should be applied universally.
+
+      ### 4. Never Put Secrets in Environment Variables or Images
+
+      Secrets passed via `-e` are visible in `docker inspect`, in `/proc/<pid>/environ` on the host, and in container logs if accidentally printed. Do not bake secrets into images — they are visible in every layer.
+
+      **Correct approach — Docker secrets (Swarm) or bind-mounted secret files:**
+
+      ```bash
+      # With Docker Swarm secrets (production approach)
+      printf "supersecretpassword" | docker secret create db_password -
+
+      # In docker-compose.yml (Swarm mode)
+      # secrets:
+      #   db_password:
+      #     external: true
+      # services:
+      #   web:
+      #     secrets:
+      #       - db_password   # mounted at /run/secrets/db_password
+
+      # For standalone Compose, use a secrets manager (AWS Secrets Manager, Vault)
+      # and inject at startup via an entrypoint wrapper:
+      ```
+
+      ```python
+      # entrypoint.py — fetch secrets from AWS Secrets Manager at startup
+      import json
+      import os
+      import subprocess
+      import boto3
+
+      def fetch_secrets() -> None:
+          client = boto3.client("secretsmanager", region_name="us-east-1")
+          secret = json.loads(
+              client.get_secret_value(SecretId="cs401/app/db")["SecretString"]
+          )
+          # Set as environment variables for the child process only
+          os.environ["DATABASE_URL"] = (
+              f"postgresql://{secret['username']}:{secret['password']}"
+              f"@{secret['host']}:{secret['port']}/{secret['dbname']}"
+          )
+
+      if __name__ == "__main__":
+          fetch_secrets()
+          os.execvp("gunicorn", ["gunicorn", "--bind", "0.0.0.0:8080", "app:create_app()"])
+      ```
+
+      ### 5. Scan Images for Vulnerabilities with Trivy
+
+      **Trivy** (by Aqua Security) is the most widely used open-source container image scanner. It checks the OS package layer, language-specific dependencies (pip, npm, Maven), and IaC files against the NVD and multiple advisory databases.
+
+      ```bash
+      # Install Trivy (Linux)
+      sudo apt-get install -y wget apt-transport-https gnupg
+      wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+        | gpg --dearmor | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+      echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] \
+        https://aquasecurity.github.io/trivy-repo/deb generic main" \
+        | sudo tee /etc/apt/sources.list.d/trivy.list
+      sudo apt-get update && sudo apt-get install -y trivy
+
+      # Scan a local image — show only HIGH and CRITICAL vulnerabilities
+      trivy image --severity HIGH,CRITICAL cs401/flaskapp:dev
+
+      # Scan a remote image without pulling first
+      trivy image --severity CRITICAL python:3.12
+
+      # Output in SARIF format for GitHub Advanced Security integration
+      trivy image --format sarif --output results.sarif cs401/flaskapp:dev
+
+      # Scan the filesystem for vulnerabilities in requirements.txt
+      trivy fs --security-checks vuln,config .
+
+      # Exit with non-zero code if HIGH/CRITICAL found (useful in CI pipelines)
+      trivy image --exit-code 1 --severity HIGH,CRITICAL cs401/flaskapp:dev
+      ```
+
+      ### 6. Use Minimal Base Images
+
+      Every package in a base image is a potential vulnerability surface. Choose the smallest image that works:
+
+      | Base image | Compressed size | Shell | Package manager | Use case |
+      |-----------|----------------|-------|----------------|---------|
+      | `python:3.12` | ~370 MB | bash | apt | Development |
+      | `python:3.12-slim` | ~45 MB | bash | apt (minimal) | General production |
+      | `python:3.12-alpine` | ~20 MB | sh | apk | Minimal production; beware musl libc compatibility |
+      | `gcr.io/distroless/python3` | ~15 MB | None | None | Maximum hardening; no shell at all |
+      | `scratch` | 0 MB | None | None | Statically compiled binaries only (Go, Rust) |
+
+      Prefer `python:3.12-slim` as the baseline. Use `distroless` when you need to eliminate shell-based attack vectors entirely.
+
+      ### 7. Pin Image Versions with Digest
+
+      Tags like `latest` or even `3.12-slim` are mutable — the registry can update them to a different image. For reproducible and secure builds, pin to the immutable SHA256 digest:
+
+      ```dockerfile
+      # Resolve the digest first:
+      # docker inspect --format='{{index .RepoDigests 0}}' python:3.12-slim
+      FROM python:3.12-slim@sha256:da2d7af143dab7cd5b0d5a5c9545fe14e67fc24c394fcf1cf15e8ea16cbd8637
+      ```
+
+      ### Summary Security Checklist
+
+      ```bash
+      # Quick audit of a running container's security posture
+      docker inspect cs401-web --format '
+      User:         {{.Config.User}}
+      ReadOnly FS:  {{.HostConfig.ReadonlyRootfs}}
+      Privileged:   {{.HostConfig.Privileged}}
+      Cap Drop:     {{.HostConfig.CapDrop}}
+      Cap Add:      {{.HostConfig.CapAdd}}
+      No New Privs: {{.HostConfig.SecurityOpt}}
+      '
+      ```
+
+quiz:
+  - question: "A container running on a Linux host is consuming 4 GB of memory, starving other containers. Which Linux kernel feature enforces the memory limit you set with `docker run --memory 512m`?"
+    options:
+      - "Namespaces — the memory namespace isolates each container's view of available RAM"
+      - "cgroups (Control Groups) — they limit and account for resource usage for a group of processes"
+      - "OverlayFS — the union filesystem restricts how much data each layer can store"
+      - "seccomp — the system call filter prevents the process from allocating more memory"
+    answer: 1
+    explanation: |
+      cgroups (Control Groups) is the Linux kernel feature that limits, accounts for, and isolates the resource usage (CPU, memory, I/O, network bandwidth) of process groups. When you run `docker run --memory 512m`, Docker creates a cgroup with a 512 MiB memory limit; the kernel's OOM killer terminates the container process if it exceeds this limit. Namespaces provide visibility isolation (each container sees its own process/network/filesystem view), not resource limits. OverlayFS is a filesystem driver for image layers, not a resource limiter. seccomp filters system calls but does not enforce memory quotas.
+  - question: "You build a Docker image and notice that changing a single Python source file causes `pip install -r requirements.txt` to re-run from scratch on every build, even though requirements.txt has not changed. What is the most likely Dockerfile ordering mistake?"
+    options:
+      - "The FROM instruction specifies a mutable tag like `python:3.12-slim` instead of a digest-pinned image"
+      - "The application source code is COPYed into the image before the requirements.txt file, invalidating the pip install cache layer"
+      - "The RUN pip install command uses --no-cache-dir, which disables Docker layer caching"
+      - "The WORKDIR is set after the COPY instructions, preventing Docker from finding the requirements file"
+    answer: 1
+    explanation: |
+      Docker's layer cache invalidation is sequential: once a layer is invalidated, all subsequent layers must be rebuilt. If you COPY the entire application source (including .py files) before COPYing requirements.txt, any change to a .py file invalidates the COPY layer, which in turn invalidates the RUN pip install layer — triggering a full dependency install. The fix is to COPY requirements.txt first, run pip install, and COPY the application source last. The --no-cache-dir flag in pip affects pip's own HTTP cache, not Docker's layer cache.
+  - question: "In a docker-compose.yml, the `web` service has `depends_on: db: condition: service_healthy`. The `db` service has a healthcheck defined. What is the precise behaviour?"
+    options:
+      - "Docker Compose starts the `db` container first, waits 30 seconds, then starts `web`"
+      - "Docker Compose starts `db` first and only starts `web` after `db`'s healthcheck returns a healthy status"
+      - "Docker Compose starts both containers simultaneously and retries the `web` service if it fails to connect"
+      - "`depends_on` only controls the order of container creation, not the health state; `web` may start before `db` is ready"
+    answer: 1
+    explanation: |
+      When `depends_on` uses `condition: service_healthy`, Docker Compose starts the dependency service (`db`) first and actively waits for its healthcheck to report a `healthy` status before starting the dependent service (`web`). This requires the dependency to have a `healthcheck` defined in the Compose file. Without `condition: service_healthy` (using the default `condition: service_started`), Compose only waits for the container to start — not for the application inside to be ready — which is the common race condition that causes "connection refused" errors in application startup.
+  - question: "A security audit flags a container image because the process runs as UID 0. Which combination of Dockerfile instruction and `docker run` flag provides the strongest defence-in-depth against privilege escalation?"
+    options:
+      - "`EXPOSE 8080` in Dockerfile and `-p 8080:8080` at runtime — exposing non-privileged ports avoids needing root"
+      - "`USER appuser` in Dockerfile combined with `--security-opt no-new-privileges` and `--cap-drop ALL` at runtime"
+      - "`ENV USER=appuser` in Dockerfile and `--user appuser` at runtime — environment variables override the default user"
+      - "`HEALTHCHECK` in Dockerfile — health checks run as a separate non-root process by default"
+    answer: 1
+    explanation: |
+      The `USER` instruction in a Dockerfile sets the non-root user for all subsequent RUN, CMD, and ENTRYPOINT instructions. At runtime, `--cap-drop ALL` removes all 14 Linux capabilities granted by default, eliminating a large attack surface (e.g., CAP_NET_ADMIN, CAP_SYS_CHROOT). `--security-opt no-new-privileges` prevents the process from gaining capabilities through setuid binaries or file capabilities. Together, these three controls implement defence-in-depth. EXPOSE is documentation only; ENV USER does not change the executing user; HEALTHCHECK runs in the same security context as the container.
+  - question: "You run `trivy image --exit-code 1 --severity CRITICAL myapp:latest` in your CI pipeline and the command exits with code 1. What does this indicate, and what is the recommended next step?"
+    options:
+      - "Trivy failed to pull the image from the registry; check your registry credentials and network connectivity"
+      - "The image contains at least one CRITICAL severity CVE; investigate the vulnerability report and update affected packages or change the base image"
+      - "Trivy found configuration misconfigurations in the Dockerfile but no actual CVEs in installed packages"
+      - "Exit code 1 means Trivy ran successfully with no vulnerabilities found; exit code 0 indicates failures were found"
+    answer: 1
+    explanation: |
+      When run with `--exit-code 1 --severity CRITICAL`, Trivy exits with a non-zero exit code if it finds any vulnerability at or above the specified severity threshold. This intentionally fails the CI pipeline to prevent deploying vulnerable images. The output includes the CVE ID, package name, installed version, fixed version, and a description. The correct remediation steps are: (1) read the report to identify affected packages, (2) update the base image to a newer version with the patch, (3) update application dependencies with `pip install -U`, or (4) if no fix is available, document the risk and apply mitigating controls. Exit code 0 means no vulnerabilities at or above the threshold were found.
