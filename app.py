@@ -637,6 +637,7 @@ Target: at least **15/20** before advancing.
         "linux": [
             {
                 "heading": "Linux Deep Ops Drill",
+                "interactive": "practice_vm",
                 "content": """
 Run this accelerated admin drill on a practice VM:
 

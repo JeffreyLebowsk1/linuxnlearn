@@ -1238,6 +1238,23 @@ textarea.open-answer {
 .ios-prompt { color: #00ff00; font-family: "Courier New", ui-monospace, monospace; font-size: .85rem; white-space: nowrap; }
 .ios-input  { background: transparent; border: none; outline: none; color: #00ff00; font-family: "Courier New", ui-monospace, monospace; font-size: .85rem; flex: 1; caret-color: #00ff00; }
 
+/* ---- Practice VM ---- */
+.pvm-body { background: #080d14; min-height: 220px; padding: .75rem; font-family: "Fira Code", ui-monospace, monospace; font-size: .85rem; color: #e2e8f0; overflow-y: auto; max-height: 420px; }
+.pvm-output-line { margin: 0; padding: 0; white-space: pre-wrap; word-break: break-all; }
+.pvm-output-line.cmd  { color: #67e8f9; }
+.pvm-output-line.out  { color: #d1d5db; }
+.pvm-output-line.err  { color: #fca5a5; }
+.pvm-output-line.info { color: #a78bfa; }
+.pvm-input-row { display: flex; align-items: center; gap: .4rem; background: #080d14; padding: .4rem .75rem; border-top: 1px solid #1e293b; flex-wrap: wrap; }
+.pvm-prompt { color: #4ade80; font-family: "Fira Code", ui-monospace, monospace; font-size: .85rem; white-space: nowrap; }
+.pvm-input { background: transparent; border: none; outline: none; color: #e2e8f0; font-family: "Fira Code", ui-monospace, monospace; font-size: .85rem; flex: 1; min-width: 8rem; caret-color: #4ade80; }
+.pvm-run-btn   { background: #1e3a5f; border: 1px solid #2563eb; color: #93c5fd; padding: .2rem .65rem; border-radius: 4px; font-size: .78rem; cursor: pointer; }
+.pvm-run-btn:hover { background: #2563eb; color: #fff; }
+.pvm-clear-btn { background: transparent; border: 1px solid #374151; color: #6b7280; padding: .2rem .55rem; border-radius: 4px; font-size: .75rem; cursor: pointer; }
+.pvm-clear-btn:hover { background: #1f2937; color: #9ca3af; }
+.pvm-reset-btn { background: transparent; border: 1px solid #7f1d1d; color: #f87171; padding: .2rem .55rem; border-radius: 4px; font-size: .75rem; cursor: pointer; }
+.pvm-reset-btn:hover { background: #450a0a; color: #fca5a5; }
+
 /* ---- Dark-theme overrides for new elements ---- */
 .syllabus-card, .lp-course-card, .course-progression-bar, .roadmap-step,
 .lp-builds-on, .lp-textbooks, .subnet-calc-body, .chmod-calc-body, .python-sandbox-body {

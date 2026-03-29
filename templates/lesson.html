@@ -44,6 +44,8 @@
             <div class="interactive-widget" data-widget="python_sandbox" data-code="{{ section.sandbox_code | default('') | e }}"></div>
             {% elif section.interactive == 'ios_terminal' %}
             <div class="interactive-widget" data-widget="ios_terminal"></div>
+            {% elif section.interactive == 'practice_vm' %}
+            <div class="interactive-widget" data-widget="practice_vm"></div>
             {% endif %}
         </div>
         {% endfor %}
