@@ -8,6 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
     else if (t === "chmod_calc")     buildChmodCalc(el);
     else if (t === "python_sandbox") buildPythonSandbox(el);
     else if (t === "ios_terminal")   buildIosTerminal(el);
+    else if (t === "practice_vm")    buildPracticeVM(el);
   });
 
   // Quiz handler
@@ -418,3 +419,660 @@ function buildIosTerminal(container) {
 }
 
 function esc(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+// ================================================================
+// PRACTICE VM  (stateful virtual-filesystem terminal)
+// ================================================================
+function buildPracticeVM(container) {
+
+  // ── Virtual Filesystem ─────────────────────────────────────────
+  // vfs: map of absolute path → { type:'dir'|'file', content, mode, owner, mtime }
+  var vfs = {};
+  var cwd = "/home/student";
+  var env = { HOME: "/home/student", USER: "student", SHELL: "/bin/bash" };
+
+  function initVFS() {
+    vfs = {};
+    cwd = "/home/student";
+    function d(p) {
+      vfs[p] = { type: "dir", mode: "drwxr-xr-x", owner: "student", mtime: new Date() };
+    }
+    function f(p, c, m) {
+      vfs[p] = { type: "file", content: c || "", mode: m || "-rw-r--r--", owner: "student", mtime: new Date() };
+    }
+    ["/", "/home", "/home/student", "/home/student/Desktop",
+     "/etc", "/tmp", "/var", "/var/log", "/usr", "/usr/bin"].forEach(d);
+    f("/home/student/notes.txt",
+      "# Lab Notes\n- Practiced ls, cd, pwd\n- Reviewed file permissions\n");
+    f("/home/student/script.sh",
+      "#!/bin/bash\necho \"Hello from script\"\n", "-rwxr-xr-x");
+    f("/etc/hostname", "linux-lab\n");
+    f("/etc/os-release",
+      "PRETTY_NAME=\"Ubuntu 24.04 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\n");
+    f("/etc/resolv.conf", "nameserver 8.8.8.8\nnameserver 8.8.4.4\n");
+    f("/etc/passwd",
+      "root:x:0:0:root:/root:/bin/bash\nstudent:x:1000:1000::/home/student:/bin/bash\n");
+  }
+  initVFS();
+
+  // ── Path helpers ──────────────────────────────────────────────
+  function resolve(p) {
+    if (!p || p === "~") return env.HOME;
+    if (p.startsWith("~/")) p = env.HOME + p.slice(1);
+    if (!p.startsWith("/")) p = cwd + "/" + p;
+    var parts = p.split("/").filter(Boolean);
+    var norm = [];
+    parts.forEach(function (part) {
+      if (part === ".") return;
+      if (part === "..") { norm.pop(); } else { norm.push(part); }
+    });
+    return "/" + norm.join("/");
+  }
+
+  function parentDir(p) {
+    var parts = p.split("/").filter(Boolean);
+    return "/" + parts.slice(0, -1).join("/");
+  }
+
+  function base(p) {
+    return p.split("/").filter(Boolean).pop() || "/";
+  }
+
+  // ── Expansion helpers ──────────────────────────────────────────
+  function expandVars(s) {
+    return s.replace(/\$\{?(\w+)\}?/g, function (_, k) {
+      return env[k] !== undefined ? env[k] : "$" + k;
+    });
+  }
+
+  function expandBraces(word) {
+    var m = word.match(/^(.*?)\{([^{}]+)\}(.*)$/);
+    if (!m) return [word];
+    var pre = m[1], expr = m[2], suf = m[3];
+    var rangeM = expr.match(/^(-?\d+)\.\.(-?\d+)$/);
+    if (rangeM) {
+      var from = parseInt(rangeM[1], 10), to = parseInt(rangeM[2], 10);
+      var step = from <= to ? 1 : -1;
+      var results = [];
+      for (var n = from; step > 0 ? n <= to : n >= to; n += step) {
+        results = results.concat(expandBraces(pre + n + suf));
+      }
+      return results;
+    }
+    var out = [];
+    expr.split(",").forEach(function (item) {
+      out = out.concat(expandBraces(pre + item + suf));
+    });
+    return out;
+  }
+
+  // ── Tokenizer (handles single/double quotes) ───────────────────
+  function tokenize(line) {
+    var tokens = [], cur = "", inS = false, inD = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (c === "'" && !inD) { inS = !inS; }
+      else if (c === '"' && !inS) { inD = !inD; }
+      else if (c === " " && !inS && !inD) { if (cur !== "") { tokens.push(cur); cur = ""; } }
+      else { cur += c; }
+    }
+    if (cur !== "") tokens.push(cur);
+    return tokens;
+  }
+
+  // ── Operator splitter (respects quotes) ────────────────────────
+  function splitOp(s, op) {
+    var parts = [], cur = "", inS = false, inD = false;
+    for (var i = 0; i < s.length; i++) {
+      if (s[i] === "'" && !inD) inS = !inS;
+      else if (s[i] === '"' && !inS) inD = !inD;
+      if (!inS && !inD && s.slice(i, i + op.length) === op) {
+        parts.push(cur); cur = ""; i += op.length - 1;
+      } else { cur += s[i]; }
+    }
+    parts.push(cur);
+    return parts;
+  }
+
+  // ── Execution engine ───────────────────────────────────────────
+  function execLine(raw) {
+    raw = raw.trim();
+    if (!raw || raw.startsWith("#")) return { lines: [], exitCode: 0 };
+    raw = expandVars(raw);
+
+    // for loop
+    var forM = raw.match(/^for\s+(\w+)\s+in\s+([^;]+);\s*do\s+([\s\S]+?);\s*done\s*$/);
+    if (forM) return execFor(forM[1], forM[2].trim(), forM[3].trim());
+
+    // && chains
+    var andParts = splitOp(raw, "&&");
+    if (andParts.length > 1) {
+      var out = [], code = 0;
+      for (var i = 0; i < andParts.length; i++) {
+        var r = execPipeline(andParts[i].trim());
+        out = out.concat(r.lines);
+        code = r.exitCode;
+        if (code !== 0) break;
+      }
+      return { lines: out, exitCode: code };
+    }
+
+    return execPipeline(raw);
+  }
+
+  function execFor(varName, inPart, body) {
+    var items = expandBraces(inPart.trim());
+    if (items.length === 1 && items[0] === inPart.trim()) {
+      items = inPart.trim().split(/\s+/);
+    }
+    var out = [];
+    items.forEach(function (val) {
+      var saved = env[varName];
+      env[varName] = val;
+      var expanded = expandVars(body);
+      var r = execPipeline(expanded);
+      out = out.concat(r.lines);
+      if (saved !== undefined) env[varName] = saved; else delete env[varName];
+    });
+    return { lines: out, exitCode: 0 };
+  }
+
+  function execPipeline(raw) {
+    var stages = splitOp(raw, "|");
+    if (stages.length > 1) {
+      var stdin = null;
+      var result = { lines: [], exitCode: 0 };
+      for (var i = 0; i < stages.length; i++) {
+        result = execSingle(stages[i].trim(), stdin);
+        stdin = result.lines.join("\n");
+      }
+      return result;
+    }
+    return execSingle(raw, null);
+  }
+
+  function execSingle(raw, stdin) {
+    raw = raw.trim();
+    // redirection
+    var appendM = raw.match(/^([\s\S]*?)>>\s*(\S+)\s*$/);
+    var redirectM = !appendM && raw.match(/^([\s\S]*?)>\s*(\S+)\s*$/);
+    var redirect = null;
+    if (appendM)   { raw = appendM[1].trim();   redirect = { path: appendM[2],   append: true  }; }
+    if (redirectM) { raw = redirectM[1].trim(); redirect = { path: redirectM[2], append: false }; }
+
+    var tokens = tokenize(raw);
+    if (!tokens.length) return { lines: [], exitCode: 0 };
+
+    // strip surrounding quotes, expand braces
+    var expanded = [];
+    tokens.forEach(function (t) {
+      var stripped = t.replace(/^(["'])([\s\S]*)\1$/, "$2").replace(/^["']|["']$/g, "");
+      expanded = expanded.concat(expandBraces(stripped));
+    });
+    tokens = expanded;
+
+    var cmd = tokens[0], args = tokens.slice(1);
+    var r = dispatch(cmd, args, stdin);
+
+    if (redirect) {
+      var rpath = resolve(redirect.path);
+      var text = r.lines.join("\n") + (r.lines.length ? "\n" : "");
+      var parD = parentDir(rpath);
+      if (!vfs[parD] || vfs[parD].type !== "dir") {
+        return { lines: ["bash: " + redirect.path + ": No such file or directory"], exitCode: 1 };
+      }
+      if (redirect.append && vfs[rpath] && vfs[rpath].type === "file") {
+        vfs[rpath].content += text;
+        vfs[rpath].mtime = new Date();
+      } else {
+        vfs[rpath] = { type: "file", content: text, mode: "-rw-r--r--", owner: "student", mtime: new Date() };
+      }
+      return { lines: [], exitCode: 0 };
+    }
+    return r;
+  }
+
+  // ── Command dispatch ───────────────────────────────────────────
+  function dispatch(cmd, args, stdin) {
+    switch (cmd) {
+      case "pwd":    return { lines: [cwd], exitCode: 0 };
+      case "cd":     return cmdCd(args);
+      case "ls":     return cmdLs(args);
+      case "mkdir":  return cmdMkdir(args);
+      case "touch":  return cmdTouch(args);
+      case "rm":     return cmdRm(args);
+      case "cp":     return cmdCp(args);
+      case "mv":     return cmdMv(args);
+      case "echo":   return { lines: [args.join(" ")], exitCode: 0 };
+      case "cat":    return cmdCat(args, stdin);
+      case "grep":   return cmdGrep(args, stdin);
+      case "wc":     return cmdWc(args, stdin);
+      case "find":   return cmdFind(args);
+      case "stat":   return cmdStat(args);
+      case "chmod":  return cmdChmod(args);
+      case "chown":  return cmdChown(args);
+      case "sudo":   return args.length ? dispatch(args[0], args.slice(1), stdin) : { lines: ["sudo: no command specified"], exitCode: 1 };
+      case "whoami": return { lines: ["student"], exitCode: 0 };
+      case "id":     return { lines: ["uid=1000(student) gid=1000(student) groups=1000(student),27(sudo)"], exitCode: 0 };
+      case "hostname": return { lines: ["linux-lab"], exitCode: 0 };
+      case "uname":  return cmdUname(args);
+      case "clear":  return { lines: ["__CLEAR__"], exitCode: 0 };
+      case "help":   return cmdHelp();
+      default:       return { lines: ["bash: " + cmd + ": command not found  (type 'help')"], exitCode: 127 };
+    }
+  }
+
+  // ── Individual commands ────────────────────────────────────────
+  function cmdCd(args) {
+    var target = args.length ? args[0] : env.HOME;
+    var p = resolve(target);
+    if (!vfs[p]) return { lines: ["bash: cd: " + target + ": No such file or directory"], exitCode: 1 };
+    if (vfs[p].type !== "dir") return { lines: ["bash: cd: " + target + ": Not a directory"], exitCode: 1 };
+    cwd = p;
+    return { lines: [], exitCode: 0 };
+  }
+
+  function cmdLs(args) {
+    var flags = { l: false, a: false, h: false };
+    var paths = [];
+    args.forEach(function (a) {
+      if (a.startsWith("-")) {
+        if (a.includes("l")) flags.l = true;
+        if (a.includes("a")) flags.a = true;
+        if (a.includes("h")) flags.h = true;
+      } else { paths.push(a); }
+    });
+    if (!paths.length) paths = ["."];
+    var out = [];
+    paths.forEach(function (p) {
+      var abs = resolve(p);
+      if (!vfs[abs]) { out.push("ls: cannot access '" + p + "': No such file or directory"); return; }
+      if (vfs[abs].type === "file") {
+        out.push(flags.l ? fmtLong(abs, flags.h) : base(abs));
+        return;
+      }
+      var children = Object.keys(vfs).filter(function (k) {
+        return k !== abs && parentDir(k) === abs;
+      }).map(base).sort();
+      if (flags.a) children = [".", ".."].concat(children);
+      if (flags.l) {
+        out.push("total " + (children.filter(function (e) { return e !== "." && e !== ".."; }).length * 4) + "K");
+        children.forEach(function (e) {
+          var fp = e === "." ? abs : e === ".." ? (parentDir(abs) || "/") : abs + (abs === "/" ? "" : "/") + e;
+          out.push(fmtLong(fp, flags.h));
+        });
+      } else {
+        out = out.concat(children.filter(function (e) { return flags.a || !e.startsWith("."); }));
+      }
+    });
+    return { lines: out, exitCode: 0 };
+  }
+
+  function fmtSize(n, human) {
+    if (!human) return String(n || 0).padStart(6);
+    if (n < 1024) return (n || 0) + "B";
+    if (n < 1024 * 1024) return Math.round(n / 1024) + "K";
+    return Math.round(n / 1024 / 1024) + "M";
+  }
+
+  function fmtLong(abs, human) {
+    var node = vfs[abs];
+    if (!node) return "?????????? 1 student student      0 Jan 15 10:00 " + base(abs);
+    var size = node.type === "file" ? (node.content || "").length : 4096;
+    var d = node.mtime || new Date();
+    var mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+    var day = String(d.getDate()).padStart(2);
+    var time = String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    return node.mode + " 1 " + (node.owner || "student") + " " + (node.owner || "student") +
+      " " + fmtSize(size, human).padStart(6) + " " + mon + " " + day + " " + time + " " + base(abs);
+  }
+
+  function cmdMkdir(args) {
+    var pflag = false, paths = [];
+    args.forEach(function (a) {
+      if (a === "-p" || a === "--parents") pflag = true; else paths.push(a);
+    });
+    var out = [];
+    paths.forEach(function (p) {
+      var abs = resolve(p);
+      if (vfs[abs]) { if (!pflag) out.push("mkdir: cannot create directory '" + p + "': File exists"); return; }
+      if (pflag) {
+        var parts = abs.split("/").filter(Boolean), built = "";
+        parts.forEach(function (part) {
+          built += "/" + part;
+          if (!vfs[built]) vfs[built] = { type: "dir", mode: "drwxr-xr-x", owner: "student", mtime: new Date() };
+        });
+      } else {
+        var par = parentDir(abs);
+        if (!vfs[par] || vfs[par].type !== "dir") { out.push("mkdir: cannot create directory '" + p + "': No such file or directory"); return; }
+        vfs[abs] = { type: "dir", mode: "drwxr-xr-x", owner: "student", mtime: new Date() };
+      }
+    });
+    return { lines: out, exitCode: out.length ? 1 : 0 };
+  }
+
+  function cmdTouch(args) {
+    var out = [];
+    args.forEach(function (p) {
+      var abs = resolve(p);
+      if (vfs[abs]) { vfs[abs].mtime = new Date(); return; }
+      var par = parentDir(abs);
+      if (!vfs[par] || vfs[par].type !== "dir") { out.push("touch: cannot touch '" + p + "': No such file or directory"); return; }
+      vfs[abs] = { type: "file", content: "", mode: "-rw-r--r--", owner: "student", mtime: new Date() };
+    });
+    return { lines: out, exitCode: out.length ? 1 : 0 };
+  }
+
+  function cmdRm(args) {
+    var rflag = false, fflag = false, paths = [];
+    args.forEach(function (a) {
+      if (a.startsWith("-")) { if (a.includes("r") || a.includes("R")) rflag = true; if (a.includes("f")) fflag = true; }
+      else paths.push(a);
+    });
+    var out = [];
+    paths.forEach(function (p) {
+      var abs = resolve(p);
+      if (!vfs[abs]) { if (!fflag) out.push("rm: cannot remove '" + p + "': No such file or directory"); return; }
+      if (vfs[abs].type === "dir") {
+        if (!rflag) { out.push("rm: cannot remove '" + p + "': Is a directory"); return; }
+        Object.keys(vfs).filter(function (k) { return k === abs || k.startsWith(abs + "/"); }).forEach(function (k) { delete vfs[k]; });
+      } else { delete vfs[abs]; }
+    });
+    return { lines: out, exitCode: out.length ? 1 : 0 };
+  }
+
+  function cmdCp(args) {
+    if (args.length < 2) return { lines: ["cp: missing operand"], exitCode: 1 };
+    var src = resolve(args[0]), dst = resolve(args[args.length - 1]);
+    if (!vfs[src]) return { lines: ["cp: '" + args[0] + "': No such file or directory"], exitCode: 1 };
+    if (vfs[src].type === "dir") return { lines: ["cp: -r not specified; omitting directory '" + args[0] + "'"], exitCode: 1 };
+    var target = (vfs[dst] && vfs[dst].type === "dir") ? dst + "/" + base(src) : dst;
+    vfs[target] = Object.assign({}, vfs[src], { mtime: new Date() });
+    return { lines: [], exitCode: 0 };
+  }
+
+  function cmdMv(args) {
+    if (args.length < 2) return { lines: ["mv: missing operand"], exitCode: 1 };
+    var src = resolve(args[0]), dst = resolve(args[args.length - 1]);
+    if (!vfs[src]) return { lines: ["mv: cannot stat '" + args[0] + "': No such file or directory"], exitCode: 1 };
+    var target = (vfs[dst] && vfs[dst].type === "dir") ? dst + "/" + base(src) : dst;
+    vfs[target] = Object.assign({}, vfs[src]);
+    delete vfs[src];
+    return { lines: [], exitCode: 0 };
+  }
+
+  function cmdCat(args, stdin) {
+    if (!args.length && stdin !== null) return { lines: stdin ? stdin.split("\n") : [], exitCode: 0 };
+    var out = [];
+    args.forEach(function (p) {
+      var abs = resolve(p);
+      if (!vfs[abs]) { out.push("cat: " + p + ": No such file or directory"); return; }
+      if (vfs[abs].type === "dir") { out.push("cat: " + p + ": Is a directory"); return; }
+      var lines = (vfs[abs].content || "").replace(/\n$/, "").split("\n");
+      out = out.concat(lines);
+    });
+    return { lines: out, exitCode: 0 };
+  }
+
+  function cmdGrep(args, stdin) {
+    var nflag = false, iflag = false, positional = [];
+    args.forEach(function (a) {
+      if (a.startsWith("-")) { if (a.includes("n")) nflag = true; if (a.includes("i")) iflag = true; }
+      else positional.push(a);
+    });
+    if (!positional.length) return { lines: ["grep: missing pattern"], exitCode: 1 };
+    var pattern = positional[0], filepaths = positional.slice(1);
+    var re;
+    try { re = new RegExp(pattern, iflag ? "i" : ""); } catch (_) { re = new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), iflag ? "i" : ""); }
+    var out = [];
+    var sources = [];
+    if (filepaths.length) {
+      filepaths.forEach(function (p) {
+        var abs = resolve(p);
+        if (!vfs[abs]) { out.push("grep: " + p + ": No such file or directory"); return; }
+        if (vfs[abs].type === "dir") { out.push("grep: " + p + ": Is a directory"); return; }
+        sources.push({ name: filepaths.length > 1 ? p : null, lines: (vfs[abs].content || "").split("\n") });
+      });
+    } else if (stdin !== null) {
+      sources.push({ name: null, lines: (stdin || "").split("\n") });
+    }
+    sources.forEach(function (src) {
+      src.lines.forEach(function (line, idx) {
+        if (re.test(line)) {
+          var prefix = (src.name ? src.name + ":" : "") + (nflag ? (idx + 1) + ":" : "");
+          out.push(prefix + line);
+        }
+      });
+    });
+    return { lines: out, exitCode: out.length ? 0 : 1 };
+  }
+
+  function cmdWc(args, stdin) {
+    var lflag = false, wflag = false, cflag = false, paths = [];
+    args.forEach(function (a) {
+      if (a.startsWith("-")) { if (a.includes("l")) lflag = true; if (a.includes("w")) wflag = true; if (a.includes("c")) cflag = true; }
+      else paths.push(a);
+    });
+    if (!lflag && !wflag && !cflag) { lflag = true; wflag = true; cflag = true; }
+    var sources = [];
+    if (paths.length) {
+      paths.forEach(function (p) {
+        var abs = resolve(p);
+        sources.push({ name: p, content: vfs[abs] ? vfs[abs].content || "" : null });
+      });
+    } else if (stdin !== null) { sources.push({ name: null, content: stdin || "" }); }
+    var out = [];
+    sources.forEach(function (src) {
+      if (src.content === null) { out.push("wc: " + src.name + ": No such file or directory"); return; }
+      var text = src.content;
+      var lc = text ? text.replace(/\n$/, "").split("\n").length : 0;
+      var wc2 = text ? text.split(/\s+/).filter(Boolean).length : 0;
+      var cc = text ? text.length : 0;
+      var parts = [];
+      if (lflag) parts.push(String(lc).padStart(4));
+      if (wflag) parts.push(String(wc2).padStart(4));
+      if (cflag) parts.push(String(cc).padStart(4));
+      if (src.name) parts.push(src.name);
+      out.push(parts.join(" "));
+    });
+    return { lines: out, exitCode: 0 };
+  }
+
+  function cmdFind(args) {
+    var searchRoot = cwd, typef = null, namePat = null, i = 0;
+    var rootArg = args[0];
+    if (args.length && !args[0].startsWith("-")) { searchRoot = resolve(args[0]); i = 1; }
+    while (i < args.length) {
+      if (args[i] === "-type" && args[i + 1]) { typef = args[++i]; }
+      else if (args[i] === "-name" && args[i + 1]) { namePat = args[++i]; }
+      i++;
+    }
+    if (!vfs[searchRoot]) return { lines: ["find: '" + (rootArg || ".") + "': No such file or directory"], exitCode: 1 };
+    var out = [];
+    Object.keys(vfs).sort().forEach(function (k) {
+      if (k !== searchRoot && !k.startsWith(searchRoot + "/")) return;
+      var node = vfs[k];
+      if (typef && ((typef === "f" && node.type !== "file") || (typef === "d" && node.type !== "dir"))) return;
+      if (namePat) {
+        var re = new RegExp("^" + namePat.replace(/\./g, "[.]").replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+        if (!re.test(base(k))) return;
+      }
+      var display = k === searchRoot
+        ? (rootArg || ".")
+        : (rootArg || ".") + k.slice(searchRoot.length);
+      out.push(display);
+    });
+    return { lines: out, exitCode: 0 };
+  }
+
+  function cmdStat(args) {
+    if (!args.length) return { lines: ["stat: missing operand"], exitCode: 1 };
+    var out = [];
+    args.forEach(function (p) {
+      var abs = resolve(p);
+      if (!vfs[abs]) { out.push("stat: cannot statx '" + p + "': No such file or directory"); return; }
+      var node = vfs[abs];
+      var size = node.type === "file" ? (node.content || "").length : 4096;
+      var d = node.mtime || new Date();
+      var ts = d.toISOString().replace("T", " ").slice(0, 19);
+      var inode = Math.floor(Math.random() * 89999 + 10000);
+      out.push("  File: " + p);
+      out.push("  Size: " + size + "\t\tBlocks: 8\tIO Block: 4096\t" + node.type);
+      out.push("Device: fd01h\t\tInode: " + inode + "\tLinks: 1");
+      out.push("Access: (" + octMode(node.mode) + "/" + node.mode + ")  Uid: (1000/student)  Gid: (1000/student)");
+      out.push("Modify: " + ts + ".000000000 +0000");
+    });
+    return { lines: out, exitCode: 0 };
+  }
+
+  function octMode(mode) {
+    var s = mode.slice(1);
+    var map = [["r",400],["w",200],["x",100],["r",40],["w",20],["x",10],["r",4],["w",2],["x",1]];
+    var val = 0;
+    map.forEach(function (m, i) { if (s[i] === m[0]) val += m[1]; });
+    return "0" + val.toString(8).padStart(4, "0");
+  }
+
+  function cmdChmod(args) {
+    if (args.length < 2) return { lines: ["chmod: missing operand"], exitCode: 1 };
+    var modeStr = args[0], paths = args.slice(1), out = [];
+    paths.forEach(function (p) {
+      var abs = resolve(p);
+      if (!vfs[abs]) { out.push("chmod: cannot access '" + p + "': No such file or directory"); return; }
+      vfs[abs].mode = applyChmod(vfs[abs].mode, modeStr, vfs[abs].type);
+      vfs[abs].mtime = new Date();
+    });
+    return { lines: out, exitCode: out.length ? 1 : 0 };
+  }
+
+  function applyChmod(current, modeStr, type) {
+    var pfx = type === "dir" ? "d" : "-";
+    if (/^\d+$/.test(modeStr)) {
+      var oct = parseInt(modeStr, 8);
+      var c = ["-","-","-","-","-","-","-","-","-"];
+      if (oct&0o400) c[0]="r"; if (oct&0o200) c[1]="w"; if (oct&0o100) c[2]="x";
+      if (oct&0o040) c[3]="r"; if (oct&0o020) c[4]="w"; if (oct&0o010) c[5]="x";
+      if (oct&0o004) c[6]="r"; if (oct&0o002) c[7]="w"; if (oct&0o001) c[8]="x";
+      return pfx + c.join("");
+    }
+    var parts = current.slice(1).split("");
+    var sym = modeStr.match(/^([uoga]*)([+\-=])([rwx]+)$/);
+    if (sym) {
+      var op = sym[2], perms = sym[3];
+      perms.split("").forEach(function (p) {
+        var idx = { r:[0,3,6], w:[1,4,7], x:[2,5,8] }[p] || [];
+        idx.forEach(function (i) {
+          if (op === "+") parts[i] = p;
+          else if (op === "-") parts[i] = "-";
+          else if (op === "=") parts[i] = p;
+        });
+      });
+      return pfx + parts.join("");
+    }
+    return current;
+  }
+
+  function cmdChown(args) {
+    var paths = args.filter(function (a) { return !a.startsWith("-"); });
+    if (paths.length < 2) return { lines: ["chown: missing operand"], exitCode: 1 };
+    var owner = paths[0].split(":")[0], out = [];
+    paths.slice(1).forEach(function (p) {
+      var abs = resolve(p);
+      if (!vfs[abs]) { out.push("chown: cannot access '" + p + "': No such file or directory"); return; }
+      vfs[abs].owner = owner;
+    });
+    return { lines: out, exitCode: out.length ? 1 : 0 };
+  }
+
+  function cmdUname(args) {
+    if (args.includes("-a")) return { lines: ["Linux linux-lab 6.8.0-49-generic #49-Ubuntu SMP x86_64 GNU/Linux"], exitCode: 0 };
+    if (args.includes("-r")) return { lines: ["6.8.0-49-generic"], exitCode: 0 };
+    return { lines: ["Linux"], exitCode: 0 };
+  }
+
+  function cmdHelp() {
+    return {
+      lines: [
+        "Practice VM \u2014 Available commands:",
+        "  Navigation : pwd  ls [-lah]  cd [dir]",
+        "  Files      : touch  mkdir [-p]  rm [-rf]  cp  mv",
+        "  Inspect    : cat  stat  find [-type f|d] [-name GLOB]",
+        "  Text       : echo  grep [-n|-i]  wc [-l|-w|-c]",
+        "  Permissions: chmod MODE  chown OWNER[:GROUP]  sudo chown \u2026",
+        "  System     : whoami  id  hostname  uname [-a|-r]  clear",
+        "  Chaining   : cmd1 && cmd2   cmd1 | cmd2",
+        "  Redirect   : echo text >> file   echo text > file",
+        "  Loops      : for i in {1..5}; do CMD; done",
+        "",
+        "Tip: paste any command from the Linux Deep Ops Drill above \u2191",
+      ],
+      exitCode: 0,
+    };
+  }
+
+  // ── UI ─────────────────────────────────────────────────────────
+  var uid = Math.random().toString(36).slice(2);
+  container.innerHTML =
+    '<div class="widget-header">' +
+    '<span>\uD83D\uDDA5\uFE0F</span>' +
+    '<span class="widget-title">Practice VM \u2014 Linux Admin Sandbox</span>' +
+    '<span class="widget-hint">stateful filesystem \u2022 type help</span>' +
+    '</div>' +
+    '<div class="pvm-body" id="pvmb' + uid + '"></div>' +
+    '<div class="pvm-input-row">' +
+    '<span class="pvm-prompt" id="pvmp' + uid + '">student@linux-lab:~$\u00a0</span>' +
+    '<input class="pvm-input" id="pvmi' + uid + '" type="text" autocomplete="off" spellcheck="false" placeholder="type a command\u2026">' +
+    '<button class="pvm-run-btn">Run \u21b5</button>' +
+    '<button class="pvm-clear-btn">Clear</button>' +
+    '<button class="pvm-reset-btn">Reset VM</button>' +
+    '</div>';
+
+  var body = container.querySelector(".pvm-body");
+  var inp = container.querySelector(".pvm-input");
+  var promptEl = container.querySelector(".pvm-prompt");
+  var histArr = [], hi = -1;
+
+  function promptStr() {
+    var disp = cwd.startsWith(env.HOME) ? "~" + cwd.slice(env.HOME.length) : cwd;
+    return "student@linux-lab:" + disp + "$\u00a0";
+  }
+
+  function updatePrompt() { promptEl.textContent = promptStr(); }
+
+  function pvmLine(txt, cls) {
+    var p = document.createElement("p");
+    p.className = "pvm-output-line " + (cls || "out");
+    p.textContent = txt;
+    body.appendChild(p);
+  }
+
+  function run(raw) {
+    var cmd = raw.trim();
+    if (!cmd) return;
+    histArr.unshift(cmd); hi = -1;
+    pvmLine(promptStr() + cmd, "cmd");
+    var r = execLine(cmd);
+    r.lines.forEach(function (l) {
+      if (l === "__CLEAR__") { body.innerHTML = ""; return; }
+      pvmLine(l, r.exitCode && l !== "__CLEAR__" ? "err" : "out");
+    });
+    updatePrompt();
+    body.scrollTop = body.scrollHeight;
+  }
+
+  container.querySelector(".pvm-run-btn").addEventListener("click", function () { run(inp.value); inp.value = ""; inp.focus(); });
+  container.querySelector(".pvm-clear-btn").addEventListener("click", function () { body.innerHTML = ""; inp.focus(); });
+  container.querySelector(".pvm-reset-btn").addEventListener("click", function () {
+    initVFS(); cwd = "/home/student"; updatePrompt();
+    body.innerHTML = "";
+    pvmLine("VM reset \u2014 filesystem restored to defaults.", "info");
+    inp.focus();
+  });
+  inp.addEventListener("keydown", function (e) {
+    if (e.key === "Enter")        { run(inp.value); inp.value = ""; }
+    else if (e.key === "ArrowUp")   { if (hi < histArr.length - 1) inp.value = histArr[++hi]; }
+    else if (e.key === "ArrowDown") { if (hi > 0) inp.value = histArr[--hi]; else { hi = -1; inp.value = ""; } }
+  });
+
+  pvmLine("Practice VM ready \u2014 type help for commands, or paste the drill commands above \u2191", "info");
+}
